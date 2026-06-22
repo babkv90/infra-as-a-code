@@ -1,0 +1,25 @@
+import { Router } from 'express';
+import {
+  applyDeployment,
+  createCanvasDeploymentSchema,
+  createDeploymentFromDiagram,
+  createDeploymentSchema,
+  createDeploymentFromCanvas,
+  getDeployment,
+  listDeployments,
+  queueDeployment,
+} from '../controllers/deploymentController.js';
+import { roles } from '../constants/roles.js';
+import { requireAuth } from '../middleware/auth.js';
+import { authorize } from '../middleware/authorize.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+
+export const deploymentRouter = Router();
+
+deploymentRouter.use(requireAuth);
+deploymentRouter.get('/', listDeployments);
+deploymentRouter.get('/:id', getDeployment);
+deploymentRouter.post('/from-canvas', authorize(roles.DEVOPS), validateRequest(createCanvasDeploymentSchema), createDeploymentFromCanvas);
+deploymentRouter.post('/from-diagram/:diagramId', authorize(roles.DEVOPS), validateRequest(createDeploymentSchema), createDeploymentFromDiagram);
+deploymentRouter.post('/:id/apply', authorize(roles.DEVOPS), applyDeployment);
+deploymentRouter.post('/:id/queue', authorize(roles.DEVOPS), queueDeployment);

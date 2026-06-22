@@ -1,0 +1,162 @@
+import { z } from 'zod';
+import { AwsAccount } from '../models/AwsAccount.js';
+import { Deployment } from '../models/Deployment.js';
+import { Diagram } from '../models/Diagram.js';
+import { ApiError } from '../utils/ApiError.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { auditLog } from '../utils/audit.js';
+import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
+import { runTerraformDeployment } from '../services/terraformDeploymentRunner.js';
+
+export const createDeploymentSchema = z.object({
+  body: z.object({
+    name: z.string().min(2).optional(),
+    awsAccountId: z.string().optional(),
+    status: z.enum(['draft', 'planned', 'approval_required', 'queued']).optional(),
+  }),
+});
+
+export const createCanvasDeploymentSchema = z.object({
+  body: z.object({
+    name: z.string().min(2).max(120).optional(),
+    awsAccountId: z.string().min(1, 'AWS account is required'),
+    activeRegion: z.string().min(2).optional(),
+    nodes: z.array(z.any()).default([]),
+    edges: z.array(z.any()).default([]),
+    autoApply: z.boolean().optional(),
+  }),
+});
+
+export const listDeployments = asyncHandler(async (req, res) => {
+  const deployments = await Deployment.find({ workspace: req.user.workspace }).sort({ createdAt: -1 }).populate('diagram', 'name');
+  res.json({ success: true, data: deployments });
+});
+
+export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
+  const diagram = await Diagram.findOne({ _id: req.params.diagramId, workspace: req.user.workspace });
+  if (!diagram) throw new ApiError(404, 'Diagram not found');
+
+  let awsAccount;
+  if (req.validated.body.awsAccountId) {
+    awsAccount = await AwsAccount.findOne({ _id: req.validated.body.awsAccountId, workspace: req.user.workspace });
+    if (!awsAccount) throw new ApiError(404, 'AWS account not found');
+  }
+
+  const plan = buildDeploymentPlan(diagram);
+  const deployment = await Deployment.create({
+    workspace: req.user.workspace,
+    diagram: diagram._id,
+    requestedBy: req.user._id,
+    awsAccount: awsAccount?._id,
+    name: req.validated.body.name ?? `${diagram.name} deployment`,
+    status: req.validated.body.status ?? (plan.plan.blockers ? 'draft' : 'planned'),
+    resourceCount: plan.resourceCount,
+    connectionCount: plan.connectionCount,
+    plan: plan.plan,
+    terraform: plan.terraform,
+    validationIssues: plan.validationIssues,
+    logs: [{ message: 'Deployment plan created from visual diagram' }],
+  });
+
+  await auditLog(req, 'deployment.create', 'Deployment', deployment._id, { diagram: diagram._id });
+  res.status(201).json({ success: true, data: deployment });
+});
+
+export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
+  const awsAccount = await AwsAccount.findOne({
+    _id: req.validated.body.awsAccountId,
+    workspace: req.user.workspace,
+    status: 'connected',
+  });
+
+  if (!awsAccount) throw new ApiError(404, 'Connected AWS account not found');
+
+  const diagramName = req.validated.body.name ?? `Canvas deployment ${new Date().toISOString().slice(0, 10)}`;
+  const diagram = await Diagram.create({
+    workspace: req.user.workspace,
+    createdBy: req.user._id,
+    updatedBy: req.user._id,
+    name: diagramName,
+    activeRegion: req.validated.body.activeRegion ?? awsAccount.defaultRegion,
+    nodes: req.validated.body.nodes,
+    edges: req.validated.body.edges,
+  });
+
+  const plan = buildDeploymentPlan(diagram);
+  const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
+  const deployment = await Deployment.create({
+    workspace: req.user.workspace,
+    diagram: diagram._id,
+    requestedBy: req.user._id,
+    awsAccount: awsAccount._id,
+    name: `${diagramName} deployment`,
+    status: hasBlockers ? 'draft' : 'queued',
+    resourceCount: plan.resourceCount,
+    connectionCount: plan.connectionCount,
+    plan: plan.plan,
+    terraform: plan.terraform,
+    validationIssues: plan.validationIssues,
+    logs: [
+      {
+        message: hasBlockers
+          ? 'Deployment draft created with blocking validation errors.'
+          : req.validated.body.autoApply
+            ? 'Deployment created. Terraform runner is starting.'
+            : 'Deployment queued. Click apply to execute Terraform against the selected AWS account.',
+        level: hasBlockers ? 'warning' : 'info',
+      },
+    ],
+  });
+
+  await auditLog(req, 'deployment.create_from_canvas', 'Deployment', deployment._id, {
+    diagram: diagram._id,
+    awsAccount: awsAccount._id,
+  });
+
+  if (!hasBlockers && req.validated.body.autoApply) {
+    void runTerraformDeployment(deployment._id);
+  }
+
+  res.status(201).json({ success: true, data: deployment });
+});
+
+export const queueDeployment = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
+    throw new ApiError(409, 'Deployment has blocking validation errors');
+  }
+
+  deployment.status = 'queued';
+  deployment.logs.push({ message: 'Deployment queued. Wire AWS/Terraform runner to execute apply.', level: 'info' });
+  await deployment.save();
+
+  await auditLog(req, 'deployment.queue', 'Deployment', deployment._id);
+  res.json({ success: true, data: deployment });
+});
+
+export const applyDeployment = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
+    throw new ApiError(409, 'Deployment has blocking validation errors');
+  }
+  if (deployment.status === 'deploying') {
+    return res.json({ success: true, data: deployment });
+  }
+
+  deployment.status = 'queued';
+  deployment.logs.push({ message: 'Deployment apply requested.', level: 'info' });
+  await deployment.save();
+
+  await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
+  void runTerraformDeployment(deployment._id);
+  res.json({ success: true, data: deployment });
+});
+
+export const getDeployment = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name');
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  res.json({ success: true, data: deployment });
+});
