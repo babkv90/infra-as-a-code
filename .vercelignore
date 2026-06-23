@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+dist
+IAAS backend/.env
+IAAS backend/.env.*
+!IAAS backend/.env.example
+IAAS backend/node_modules
+IAAS backend/.terraform-runs
+IAAS backend/bin
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

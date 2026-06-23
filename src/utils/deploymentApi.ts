@@ -1,7 +1,7 @@
 import { getStoredToken } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 export type DeploymentRecord = {
   _id: string;
