@@ -19,6 +19,32 @@ function isReadinessCheck(url = '') {
   return pathname === '/ready' || pathname === '/api/v1/ready';
 }
 
+function getDatabaseFailureHint(error) {
+  const message = error instanceof Error ? error.message : '';
+
+  if (!env.MONGODB_URI) {
+    return 'MONGODB_URI is not configured in Vercel environment variables.';
+  }
+
+  if (message.includes('bad auth') || message.includes('Authentication failed')) {
+    return 'MongoDB authentication failed. Check the username and password in Vercel MONGODB_URI.';
+  }
+
+  if (message.includes('IP') || message.includes('not authorized')) {
+    return 'MongoDB Atlas rejected the Vercel IP address. Update Atlas Network Access for Vercel.';
+  }
+
+  if (message.includes('ENOTFOUND') || message.includes('querySrv')) {
+    return 'MongoDB hostname could not be resolved. Check the cluster hostname in Vercel MONGODB_URI.';
+  }
+
+  if (message.includes('timed out') || message.includes('Server selection timed out')) {
+    return 'MongoDB connection timed out. Check Atlas Network Access and whether the cluster is paused.';
+  }
+
+  return 'Database connection failed. Check MongoDB Atlas network access and Vercel environment variables.';
+}
+
 async function ensureDatabase() {
   if (!databaseReady) {
     databaseReady = connectDatabase();
@@ -49,9 +75,8 @@ export default async function handler(req, res) {
 
     return res.status(503).json({
       success: false,
-      message: env.MONGODB_URI
-        ? 'Database connection failed. Check MongoDB Atlas network access and Vercel environment variables.'
-        : 'MONGODB_URI is not configured in Vercel environment variables.',
+      message: getDatabaseFailureHint(error),
+      errorType: error instanceof Error ? error.name : 'UnknownError',
     });
   }
 }

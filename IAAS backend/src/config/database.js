@@ -17,10 +17,14 @@ export async function connectDatabase() {
   }
 
   mongoose.set('strictQuery', true);
-  connectionPromise = mongoose.connect(env.MONGODB_URI).catch((error) => {
-    connectionPromise = undefined;
-    throw error;
-  });
+  connectionPromise = mongoose
+    .connect(env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+    })
+    .catch((error) => {
+      connectionPromise = undefined;
+      throw error;
+    });
   await connectionPromise;
   console.log('MongoDB connected');
   return mongoose.connection;
