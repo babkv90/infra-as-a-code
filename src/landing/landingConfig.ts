@@ -28,6 +28,7 @@ export const APP_NAME = 'InfraPilot AI';
 
 // Change app navigation routes here.
 export const DASHBOARD_ROUTE = '/dashboard';
+export const REFERENCE_DOCS_ROUTE = '/references';
 export const LOGIN_ROUTE = '/login';
 export const REGISTER_ROUTE = '/register';
 
@@ -53,7 +54,7 @@ export type DiagramEdge = {
   bend?: number;
 };
 
-export const navItems = ['Product', 'Visual Builder', 'AI Agent', 'Terraform Export', 'Pricing', 'Docs'];
+export const navItems = ['Product', 'Visual Builder', 'AI Agent', 'Terraform Export', /* 'Pricing', */ 'Docs'];
 
 export const problemCards: IconItem[] = [
   {
@@ -209,7 +210,7 @@ export const pricingPlans = [
 export const footerColumns = {
   Product: ['Visual Builder', 'AI Agent', 'Terraform Export', 'AWS Insights'],
   Resources: ['Docs', 'Tutorials', 'API Reference', 'Terraform Guide'],
-  Company: ['About', 'Pricing', 'Contact', 'Blog'],
+  Company: ['About', /* 'Pricing', */ 'Contact', 'Blog'],
   Legal: ['Privacy', 'Terms', 'Security'],
 };
 

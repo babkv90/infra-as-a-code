@@ -53,7 +53,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
         await login({ email: email.trim(), password });
       }
 
-      window.location.href = DASHBOARD_ROUTE;
+      window.location.href = getAuthRedirectTarget();
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : 'Authentication failed. Please try again.');
     } finally {
@@ -224,6 +224,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
       </section>
     </main>
   );
+}
+
+function getAuthRedirectTarget() {
+  const next = new URLSearchParams(window.location.search).get('next');
+  return next?.startsWith('/') && !next.startsWith('//') ? next : DASHBOARD_ROUTE;
 }
 
 export default AuthPage;

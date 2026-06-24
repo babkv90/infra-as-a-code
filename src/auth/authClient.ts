@@ -29,6 +29,14 @@ type ForgotPasswordResponse = {
   };
 };
 
+type MeResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    user: AuthUser;
+  };
+};
+
 export type LoginPayload = {
   email: string;
   password: string;
@@ -66,6 +74,22 @@ export async function forgotPassword(payload: Pick<LoginPayload, 'email'>) {
   return result;
 }
 
+export async function logout() {
+  const token = getStoredToken();
+
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+    });
+  } finally {
+    clearAuthSession();
+  }
+}
+
 export function getStoredToken() {
   return window.localStorage.getItem(TOKEN_KEY);
 }
@@ -89,6 +113,32 @@ export function storeAuthSession(accessToken: string, user: AuthUser) {
 export function clearAuthSession() {
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+}
+
+export async function validateStoredSession() {
+  const token = getStoredToken();
+
+  if (!token) {
+    clearAuthSession();
+    return null;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: 'include',
+  });
+
+  const result = (await response.json().catch(() => null)) as MeResponse | null;
+
+  if (!response.ok || !result?.success || !result.data?.user) {
+    clearAuthSession();
+    return null;
+  }
+
+  storeAuthSession(token, result.data.user);
+  return result.data.user;
 }
 
 async function authRequest(path: string, payload: LoginPayload | RegisterPayload) {

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CloudCog,
   Code2,
+  Cpu,
   Database,
   GitBranch,
   KeyRound,
@@ -33,6 +34,7 @@ export type DashboardPage =
   | 'deployments'
   | 'security'
   | 'cost'
+  | 'runtime-lab'
   | 'connect-aws';
 
 export type DashboardNavItem = {
@@ -51,6 +53,7 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'deployments', label: 'Deployments', icon: Rocket },
   { id: 'security', label: 'Security Review', icon: ShieldCheck },
   { id: 'cost', label: 'Cost Optimizer', icon: BadgeDollarSign },
+  { id: 'runtime-lab', label: 'Runtime Lab', icon: Cpu, badge: 'Node' },
   { id: 'connect-aws', label: 'Connect AWS', icon: CloudCog },
 ];
 

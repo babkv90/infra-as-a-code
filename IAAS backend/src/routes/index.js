@@ -7,6 +7,8 @@ import { terraformPayloadRouter } from './terraformPayloadRoutes.js';
 import { awsRouter } from './awsRoutes.js';
 import { agentRouter } from './agentRoutes.js';
 import { userRouter } from './userRoutes.js';
+import { nodeLabRouter } from './nodeLabRoutes.js';
+import { referenceDocRouter } from './referenceDocRoutes.js';
 
 export const apiRouter = Router();
 
@@ -22,3 +24,5 @@ apiRouter.use('/terraform-payload', terraformPayloadRouter);
 apiRouter.use('/aws', awsRouter);
 apiRouter.use('/agent', agentRouter);
 apiRouter.use('/users', userRouter);
+apiRouter.use('/node-lab', nodeLabRouter);
+apiRouter.use('/reference-docs', referenceDocRouter);

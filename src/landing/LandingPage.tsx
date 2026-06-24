@@ -6,8 +6,8 @@ import {
   CloudCog,
   Copy,
   ExternalLink,
+  FileText,
   Github,
-  LayoutDashboard,
   LockKeyhole,
   Moon,
   Play,
@@ -15,13 +15,16 @@ import {
   Sparkles,
   Sun,
   TerminalSquare,
+  X,
 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type React from 'react';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 import {
   APP_NAME,
   DASHBOARD_ROUTE,
   LOGIN_ROUTE,
+  REFERENCE_DOCS_ROUTE,
   REGISTER_ROUTE,
   aiBullets,
   awsMetrics,
@@ -34,7 +37,7 @@ import {
   heroStats,
   howItWorks,
   navItems,
-  pricingPlans,
+  // pricingPlans,
   problemCards,
   securityItems,
   solutionCards,
@@ -45,26 +48,59 @@ import {
   type IconItem,
 } from './landingConfig';
 
+type LearningDetail = {
+  title: string;
+  subtitle: string;
+  process: string;
+  example: string;
+  steps: string[];
+};
+
+const miniDiagramPositions: Record<string, { x: number; y: number; status?: string }> = {
+  api: { x: 19, y: 30, status: 'Public API' },
+  events: { x: 19, y: 68, status: 'Scheduler' },
+  lambda: { x: 50, y: 49, status: 'Runtime' },
+  ddb: { x: 81, y: 30, status: 'NoSQL' },
+  s3: { x: 81, y: 68, status: 'Object store' },
+};
+
+const miniDiagramEdges = [
+  { from: 'api', to: 'lambda', bend: 3 },
+  { from: 'events', to: 'lambda', bend: -3 },
+  { from: 'lambda', to: 'ddb', bend: -3 },
+  { from: 'lambda', to: 's3', bend: 3 },
+];
+
+const diagramBounds = {
+  xMin: 12,
+  xMax: 88,
+  yMin: 14,
+  yMax: 86,
+};
+
 function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+  const [detail, setDetail] = useState<LearningDetail | null>(null);
+
   return (
     <div className="landing-page">
       <Navbar theme={theme} onToggleTheme={onToggleTheme} />
       <main>
         <HeroSection />
         <TrustBar />
-        <ProblemSection />
-        <SolutionSection />
+        <ProblemSection onOpenDetail={setDetail} />
+        <SolutionSection onOpenDetail={setDetail} />
         <BuilderSection />
         <AgentSection />
         <TerraformSection />
-        <InsightsSection />
-        <UseCasesSection />
-        <SecuritySection />
-        <HowItWorksSection />
-        <PricingSection />
+        <InsightsSection onOpenDetail={setDetail} />
+        <UseCasesSection onOpenDetail={setDetail} />
+        <SecuritySection onOpenDetail={setDetail} />
+        <HowItWorksSection onOpenDetail={setDetail} />
+        {/* <PricingSection /> */}
         <FinalCTA />
       </main>
       <Footer />
+      {detail && <LearningDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
@@ -89,6 +125,10 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
         </button>
+        <a className="lp-reference-nav-button" href={REFERENCE_DOCS_ROUTE}>
+          <FileText size={15} />
+          Lab Reference
+        </a>
         <a className="lp-link-button" href={LOGIN_ROUTE}>
           Login
         </a>
@@ -168,24 +208,24 @@ function TrustBar() {
   );
 }
 
-function ProblemSection() {
+function ProblemSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <Section id="product-pain" eyebrow="Problem" title="Cloud infrastructure is powerful, but still too complex.">
       <div className="lp-card-grid lp-card-grid--4">
         {problemCards.map((card) => (
-          <InfoCard key={card.title} {...card} />
+          <InfoCard detail={getLandingInfoDetail('problem', card.title, card.description)} key={card.title} onOpenDetail={onOpenDetail} {...card} />
         ))}
       </div>
     </Section>
   );
 }
 
-function SolutionSection() {
+function SolutionSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <Section id="ai-agent" eyebrow="Solution" title="One visual canvas for designing, generating, and managing AWS infrastructure.">
       <div className="lp-card-grid lp-card-grid--3">
         {solutionCards.map((card) => (
-          <InfoCard key={card.title} {...card} large />
+          <InfoCard detail={getLandingInfoDetail('solution', card.title, card.description)} key={card.title} onOpenDetail={onOpenDetail} {...card} large />
         ))}
       </div>
     </Section>
@@ -271,10 +311,6 @@ function AgentSection() {
             Connect AWS Account
             <ExternalLink size={17} />
           </a>
-          <a className="lp-secondary-button" href={DASHBOARD_ROUTE}>
-            Go to Dashboard
-            <LayoutDashboard size={17} />
-          </a>
         </div>
       </div>
       <AIChatMockup />
@@ -317,18 +353,18 @@ function TerraformSection() {
   );
 }
 
-function InsightsSection() {
+function InsightsSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <Section id="aws-insights" eyebrow="AWS Insights" title="Know what is running in your AWS account.">
       <div className="lp-metric-grid">
         {awsMetrics.map((metric) => {
           const Icon = metric.icon;
           return (
-            <div className={`lp-metric-card lp-tone-${metric.tone}`} key={metric.label}>
+            <button className={`lp-metric-card lp-tone-${metric.tone}`} key={metric.label} onClick={() => onOpenDetail(getLandingMetricDetail(metric.label, metric.value))} type="button">
               <Icon size={18} />
               <strong>{metric.value}</strong>
               <span>{metric.label}</span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -351,22 +387,22 @@ function InsightsSection() {
   );
 }
 
-function UseCasesSection() {
+function UseCasesSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <Section id="use-cases" eyebrow="Use Cases" title="Built for modern cloud teams.">
       <div className="lp-usecase-grid">
         {useCases.map((item) => (
-          <div className="lp-usecase-card" key={item}>
+          <button className="lp-usecase-card" key={item} onClick={() => onOpenDetail(getLandingUseCaseDetail(item))} type="button">
             <Check size={16} />
             {item}
-          </div>
+          </button>
         ))}
       </div>
     </Section>
   );
 }
 
-function SecuritySection() {
+function SecuritySection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <section className="lp-security section-reveal">
       <div>
@@ -379,29 +415,29 @@ function SecuritySection() {
       </div>
       <div className="lp-security-grid">
         {securityItems.map((item) => (
-          <div key={item}>
+          <button className="lp-security-item" key={item} onClick={() => onOpenDetail(getLandingSecurityDetail(item))} type="button">
             <LockKeyhole size={15} />
             {item}
-          </div>
+          </button>
         ))}
       </div>
     </section>
   );
 }
 
-function HowItWorksSection() {
+function HowItWorksSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
     <Section id="docs" eyebrow="How it works" title="Design, validate, generate, and monitor.">
       <div className="lp-steps">
         {howItWorks.map((step, index) => {
           const Icon = step.icon;
           return (
-            <div className="lp-step-card" key={step.title}>
+            <button className="lp-step-card" key={step.title} onClick={() => onOpenDetail(getLandingStepDetail(step.title, step.description, index + 1))} type="button">
               <span className="lp-step-number">0{index + 1}</span>
               <Icon size={24} />
               <h3>{step.title}</h3>
               <p>{step.description}</p>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -409,37 +445,37 @@ function HowItWorksSection() {
   );
 }
 
-function PricingSection() {
-  return (
-    <Section id="pricing" eyebrow="Pricing" title="Start visually. Scale into connected AWS operations.">
-      <div className="lp-pricing-grid">
-        {pricingPlans.map((plan) => (
-          <div className={`lp-pricing-card ${plan.featured ? 'lp-pricing-card--featured' : ''}`} key={plan.name}>
-            <div>
-              <h3>{plan.name}</h3>
-              <p>{plan.description}</p>
-            </div>
-            <div className="lp-price">
-              {plan.price}
-              {plan.price.startsWith('$') && <span>/mo</span>}
-            </div>
-            <ul>
-              {plan.features.map((feature) => (
-                <li key={feature}>
-                  <Check size={14} />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <a className={plan.featured ? 'lp-primary-button' : 'lp-secondary-button'} href={DASHBOARD_ROUTE}>
-              {plan.cta}
-            </a>
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
+// function PricingSection() {
+//   return (
+//     <Section id="pricing" eyebrow="Pricing" title="Start visually. Scale into connected AWS operations.">
+//       <div className="lp-pricing-grid">
+//         {pricingPlans.map((plan) => (
+//           <div className={`lp-pricing-card ${plan.featured ? 'lp-pricing-card--featured' : ''}`} key={plan.name}>
+//             <div>
+//               <h3>{plan.name}</h3>
+//               <p>{plan.description}</p>
+//             </div>
+//             <div className="lp-price">
+//               {plan.price}
+//               {plan.price.startsWith('$') && <span>/mo</span>}
+//             </div>
+//             <ul>
+//               {plan.features.map((feature) => (
+//                 <li key={feature}>
+//                   <Check size={14} />
+//                   {feature}
+//                 </li>
+//               ))}
+//             </ul>
+//             <a className={plan.featured ? 'lp-primary-button' : 'lp-secondary-button'} href={DASHBOARD_ROUTE}>
+//               {plan.cta}
+//             </a>
+//           </div>
+//         ))}
+//       </div>
+//     </Section>
+//   );
+// }
 
 function FinalCTA() {
   return (
@@ -487,11 +523,86 @@ function Footer() {
 }
 
 function DiagramMockup({ variant }: { variant: 'hero' | 'builder' | 'mini' }) {
-  const nodes = variant === 'mini' ? heroDiagramNodes.slice(0, 5) : heroDiagramNodes;
-  const edges = variant === 'mini' ? heroDiagramEdges.slice(0, 4) : heroDiagramEdges;
+  const diagramRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [nodes, setNodes] = useState(() =>
+    variant === 'mini'
+      ? heroDiagramNodes.slice(0, 5).map((node) => ({
+          ...node,
+          ...miniDiagramPositions[node.id],
+        }))
+      : heroDiagramNodes,
+  );
+  const edges = variant === 'mini' ? miniDiagramEdges : heroDiagramEdges;
+
+  function pointerToDiagramPosition(event: React.PointerEvent) {
+    const rect = diagramRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * 100,
+      y: ((event.clientY - rect.top) / rect.height) * 100,
+    };
+  }
+
+  function moveNode(nodeId: string, x: number, y: number) {
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              x: clamp(x, diagramBounds.xMin, diagramBounds.xMax),
+              y: clamp(y, diagramBounds.yMin, diagramBounds.yMax),
+            }
+          : node,
+      ),
+    );
+  }
+
+  function handleNodePointerDown(event: React.PointerEvent<HTMLDivElement>, node: DiagramNode) {
+    const pointer = pointerToDiagramPosition(event);
+    if (!pointer) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      id: node.id,
+      offsetX: node.x - pointer.x,
+      offsetY: node.y - pointer.y,
+    };
+    setActiveNodeId(node.id);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    const pointer = pointerToDiagramPosition(event);
+    if (!pointer) return;
+
+    moveNode(dragRef.current.id, pointer.x + dragRef.current.offsetX, pointer.y + dragRef.current.offsetY);
+  }
+
+  function stopDragging() {
+    dragRef.current = null;
+    setActiveNodeId(null);
+  }
+
+  function handleNodeKeyDown(event: React.KeyboardEvent<HTMLDivElement>, node: DiagramNode) {
+    const step = event.shiftKey ? 4 : 2;
+    const movement = {
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+    }[event.key];
+
+    if (!movement) return;
+    event.preventDefault();
+    moveNode(node.id, node.x + movement[0], node.y + movement[1]);
+  }
 
   return (
-    <div className={`lp-diagram lp-diagram--${variant}`}>
+    <div className={`lp-diagram lp-diagram--${variant}`} onPointerCancel={stopDragging} onPointerMove={handlePointerMove} onPointerUp={stopDragging} ref={diagramRef}>
       <svg className="lp-diagram-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
         {edges.map((edge) => {
           const source = nodes.find((node) => node.id === edge.from);
@@ -504,8 +615,13 @@ function DiagramMockup({ variant }: { variant: 'hero' | 'builder' | 'mini' }) {
         const Icon = node.icon;
         return (
           <div
-            className="lp-diagram-node"
+            aria-label={`Drag ${node.label} node`}
+            className={`lp-diagram-node ${activeNodeId === node.id ? 'lp-diagram-node--active' : ''}`}
+            onKeyDown={(event) => handleNodeKeyDown(event, node)}
+            onPointerDown={(event) => handleNodePointerDown(event, node)}
+            role="button"
             style={{ left: `${node.x}%`, top: `${node.y}%`, borderColor: node.color, animationDelay: `${index * 120}ms` }}
+            tabIndex={0}
             key={node.id}
           >
             <span className="lp-connector lp-connector--left" />
@@ -532,6 +648,10 @@ function ConnectionLine({ source, target, bend }: { source: DiagramNode; target:
   return <path d={path} />;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function AIChatMockup() {
   return (
     <div className="lp-chat-card">
@@ -554,16 +674,142 @@ function ChatBubble({ role, children }: { role: 'user' | 'agent'; children: stri
   return <div className={`lp-chat-bubble lp-chat-bubble--${role}`}>{children}</div>;
 }
 
-function InfoCard({ title, description, icon: Icon, large }: IconItem & { large?: boolean }) {
+function InfoCard({
+  title,
+  description,
+  icon: Icon,
+  large,
+  detail,
+  onOpenDetail,
+}: IconItem & { large?: boolean; detail: LearningDetail; onOpenDetail: (detail: LearningDetail) => void }) {
   return (
-    <article className={`lp-info-card ${large ? 'lp-info-card--large' : ''}`}>
+    <button className={`lp-info-card ${large ? 'lp-info-card--large' : ''}`} onClick={() => onOpenDetail(detail)} type="button">
       <span className="lp-info-icon">
         <Icon size={22} />
       </span>
       <h3>{title}</h3>
       <p>{description}</p>
-    </article>
+    </button>
   );
+}
+
+function LearningDetailModal({ detail, onClose }: { detail: LearningDetail; onClose: () => void }) {
+  return (
+    <div className="runtime-lab-detail-backdrop" role="presentation" onClick={onClose}>
+      <section className="runtime-lab-detail-modal" role="dialog" aria-modal="true" aria-labelledby="learning-detail-title" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <span>{detail.subtitle}</span>
+            <h3 id="learning-detail-title">{detail.title}</h3>
+          </div>
+          <button aria-label="Close detail explanation" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="runtime-lab-detail-body">
+          <section>
+            <h4>Process</h4>
+            <p>{detail.process}</p>
+          </section>
+          <section>
+            <h4>Real application example</h4>
+            <p>{detail.example}</p>
+          </section>
+          <section>
+            <h4>How it works in this application</h4>
+            <ol>
+              {detail.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getLandingInfoDetail(kind: 'problem' | 'solution', title: string, description: string): LearningDetail {
+  const isProblem = kind === 'problem';
+  return {
+    title,
+    subtitle: isProblem ? 'Cloud operations problem' : 'Application workflow',
+    process: `${description} The process starts when a user designs or syncs infrastructure, then the app normalizes that information into resources, relationships, Terraform output, cost signals, and security checks.`,
+    example: isProblem
+      ? `Real example: a user creates S3, Lambda, API Gateway, and IAM manually in AWS. A missing permission or public access setting is easy to miss. In this app, the same architecture can be represented visually, validated, exported, and explained before deployment.`
+      : `Real example: a DevOps user opens the dashboard, builds an AWS diagram, exports Terraform, connects an AWS account, and uses the AI agent to understand cost, security, and deployment impact from the same workspace.`,
+    steps: [
+      'User opens the visual workflow from the landing page or dashboard.',
+      'React renders the cards, builder, and dashboard panels for the selected workflow.',
+      'The backend stores diagrams, reads AWS metadata, and prepares Terraform or insight payloads.',
+      'The UI presents a compact card first, then this popup explains the full process and real use case.',
+    ],
+  };
+}
+
+function getLandingMetricDetail(label: string, value: string): LearningDetail {
+  return {
+    title: label,
+    subtitle: `Current value: ${value}`,
+    process:
+      'Metric cards summarize operational signals from AWS or the local application state. In production, these values should come from Cost Explorer, CloudWatch, AWS inventory APIs, and saved diagram metadata.',
+    example:
+      'Real example: after connecting AWS, a DevOps user can see monthly spend, failed Lambda invocations, idle resources, and security warnings without opening multiple AWS console screens.',
+    steps: [
+      'The user connects an AWS account with an IAM role.',
+      'The backend syncs inventory, billing, logs, and security signals.',
+      'The dashboard API returns normalized metrics to React.',
+      'Each card shows the short value, while this popup explains what the metric means operationally.',
+    ],
+  };
+}
+
+function getLandingUseCaseDetail(item: string): LearningDetail {
+  return {
+    title: item,
+    subtitle: 'Real-world usage pattern',
+    process:
+      'A use case describes who uses the platform and what workflow they complete. The same React, Node, and Mongo stack supports design, storage, collaboration, AWS sync, and AI-assisted explanations.',
+    example: `Real example: ${item} starts with a user creating or importing architecture, validating it, generating Terraform, and then tracking AWS cost or risk from the dashboard.`,
+    steps: [
+      'Capture the infrastructure intent as a diagram or imported Terraform.',
+      'Persist the normalized design in MongoDB through the Node API.',
+      'Generate operational views such as cost, deployment, and security panels.',
+      'Use the AI agent and dashboard cards to explain what should be changed next.',
+    ],
+  };
+}
+
+function getLandingSecurityDetail(item: string): LearningDetail {
+  return {
+    title: item,
+    subtitle: 'Security control',
+    process:
+      'Security controls reduce deployment risk before infrastructure reaches AWS. The app should validate IAM scope, public exposure, secrets, and auditability as part of the design and deployment workflow.',
+    example: `Real example: ${item} helps a platform team let users inspect AWS resources and generate Terraform without exposing permanent AWS keys or allowing broad unsafe changes.`,
+    steps: [
+      'User connects AWS through a controlled role or creates a diagram locally.',
+      'The backend validates permissions and stores only the metadata required by the app.',
+      'Security checks are shown in dashboard cards and deployment gates.',
+      'The popup explains why the control matters before the user applies changes.',
+    ],
+  };
+}
+
+function getLandingStepDetail(title: string, description: string, order: number): LearningDetail {
+  return {
+    title,
+    subtitle: `Workflow step ${order}`,
+    process: `${description} This is one stage in the end-to-end platform workflow from architecture design to AWS-aware operations.`,
+    example:
+      'Real example: a user designs a Lambda API flow, validates missing IAM and networking links, exports Terraform, then monitors the deployed services and cost from the dashboard.',
+    steps: [
+      'React captures the user action in the landing page or dashboard.',
+      'The builder, API, or AWS sync service processes the request.',
+      'MongoDB stores durable app state such as diagrams, users, and account connections.',
+      'The next dashboard card summarizes the result and offers a detailed explanation popup.',
+    ],
+  };
 }
 
 function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string; title: string; children: React.ReactNode }) {
