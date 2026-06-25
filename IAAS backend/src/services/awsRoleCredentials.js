@@ -43,7 +43,7 @@ export async function assumeAwsRole(account = {}) {
   const response = await sts.send(
     new AssumeRoleCommand({
       RoleArn: account.roleArn,
-      RoleSessionName: `InfraPilot-${Date.now()}`,
+      RoleSessionName: `infraflow-${Date.now()}`,
       ExternalId: account.externalId || undefined,
       DurationSeconds: 3600,
     }),

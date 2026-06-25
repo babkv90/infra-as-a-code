@@ -21,7 +21,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const title = isRegister ? 'Create your InfraPilot account' : 'Login to InfraPilot AI';
+  const title = isRegister ? 'Create your infraflow account' : 'Login to infraflow';
   const description = isRegister
     ? 'Register your workspace and start designing AWS infrastructure visually.'
     : 'Access your diagrams, Terraform exports, AWS insights, and AI cloud agent.';
@@ -91,7 +91,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           <span className="auth-logo-mark">
             <CloudCog size={22} />
           </span>
-          <span>InfraPilot AI</span>
+          <span>infraflow</span>
         </div>
         <h1>{isRegister ? 'Build AWS infrastructure with your first workspace.' : 'Welcome back to your cloud workspace.'}</h1>
         <p>
@@ -218,7 +218,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
         </form>
 
         <p className="auth-switch">
-          {isRegister ? 'Already have an account?' : 'New to InfraPilot AI?'}
+          {isRegister ? 'Already have an account?' : 'New to infraflow?'}
           <a href={isRegister ? LOGIN_ROUTE : REGISTER_ROUTE}>{isRegister ? ' Login' : ' Create account'}</a>
         </p>
       </section>

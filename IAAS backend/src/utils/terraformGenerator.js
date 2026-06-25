@@ -85,7 +85,7 @@ provider "aws" {
   region = "${escapeString(region)}"
   default_tags {
     tags = {
-      ManagedBy = "InfraPilotAI"
+      ManagedBy = "infraflow"
     }
   }
 }`;
@@ -304,7 +304,7 @@ ${optionalLine('description', config.description)}${optionalLine('recovery_windo
       return [
         `resource "aws_security_group" "${name}" {
   name        = ${formatValue(uniqueName)}
-  description = ${formatValue(configString(config, 'description') || 'Managed by InfraPilot AI')}
+  description = ${formatValue(configString(config, 'description') || 'Managed by infraflow')}
   vpc_id      = ${formatMaybeExpression(configString(config, 'vpc_id'))}
 ${securityGroupIngressBlocks(configString(config, 'ingress_ports'), configString(config, 'ingress_cidr_blocks'))}${securityGroupEgressBlock(configString(config, 'egress_cidr_blocks'))}
   tags = {
@@ -439,7 +439,7 @@ function resourceName(node, suffix) {
 }
 
 function uniqueAwsName(label, suffix) {
-  return sanitizeName(`infrapilot-${label}-${suffix}`).replaceAll('_', '-').slice(0, 64);
+  return sanitizeName(`infraflow-${label}-${suffix}`).replaceAll('_', '-').slice(0, 64);
 }
 
 function uniqueBucketName(label, suffix) {

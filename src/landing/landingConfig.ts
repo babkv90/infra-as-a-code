@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 // Change the public product name here.
-export const APP_NAME = 'InfraPilot AI';
+export const APP_NAME = 'infraflow';
 
 // Change app navigation routes here.
 export const DASHBOARD_ROUTE = '/dashboard';

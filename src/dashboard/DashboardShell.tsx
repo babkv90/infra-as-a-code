@@ -1319,7 +1319,7 @@ function getRuntimeModeDetail(mode: NodeLabMode): RuntimeLabDetail {
       process:
         'A worker thread runs JavaScript on a separate thread while sharing the same Node.js process PID. It is useful for CPU-bound JavaScript such as parsing, graph scoring, encryption, compression, or policy checks. It avoids blocking the event loop but does not isolate memory like a separate process.',
       realTimeExample:
-        'Use this for InfraPilot diagram validation: a large architecture graph can be scored for missing IAM boundaries, public networking, and dependency cycles without freezing normal dashboard requests.',
+        'Use this for infraflow diagram validation: a large architecture graph can be scored for missing IAM boundaries, public networking, and dependency cycles without freezing normal dashboard requests.',
       steps: [
         'The dashboard sends POST /api/v1/node-lab/run with mode worker-thread.',
         'The runtime service spawns nodeConceptLabRunner.js.',
@@ -1490,7 +1490,7 @@ function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: AwsAcco
   }
 
   async function handleDisconnect(account: AwsAccountRecord) {
-    const confirmed = window.confirm(`Disconnect ${account.name} from InfraPilot? Live AWS insights and sync will stop for this account.`);
+    const confirmed = window.confirm(`Disconnect ${account.name} from infraflow? Live AWS insights and sync will stop for this account.`);
     if (!confirmed) return;
 
     setError('');
@@ -1538,7 +1538,7 @@ function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: AwsAcco
             </label>
             <label>
               IAM Role ARN
-              <input value={roleArn} onChange={(event) => setRoleArn(event.target.value)} placeholder="arn:aws:iam::123456789012:role/InfraPilotRole" required />
+              <input value={roleArn} onChange={(event) => setRoleArn(event.target.value)} placeholder="arn:aws:iam::123456789012:role/infraflowRole" required />
             </label>
             <label>
               External ID

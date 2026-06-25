@@ -1,6 +1,6 @@
-# IAAS Backend
+# infraflow backend
 
-Node.js backend for the InfraPilot AI visual AWS infrastructure automation app.
+Node.js backend for the infraflow visual AWS infrastructure automation app.
 
 ## Features
 

@@ -57,8 +57,8 @@ function loadEc2DefaultVpcDiagram(): SavedDiagram {
     edges: ec2DefaultVpcEdges(),
     createdAt: '2026-06-16T00:00:00.000Z',
     updatedAt: '2026-06-16T00:00:00.000Z',
-    createdBy: 'InfraPilot template',
-    updatedBy: 'InfraPilot template',
+    createdBy: 'infraflow template',
+    updatedBy: 'infraflow template',
   };
 }
 
@@ -72,8 +72,8 @@ function loadEc2EndToEndDiagram(): SavedDiagram {
     edges: ec2EndToEndEdges(),
     createdAt: '2026-06-16T00:00:00.000Z',
     updatedAt: '2026-06-16T00:00:00.000Z',
-    createdBy: 'InfraPilot template',
-    updatedBy: 'InfraPilot template',
+    createdBy: 'infraflow template',
+    updatedBy: 'infraflow template',
   };
 }
 

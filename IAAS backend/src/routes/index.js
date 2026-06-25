@@ -13,7 +13,7 @@ import { referenceDocRouter } from './referenceDocRoutes.js';
 export const apiRouter = Router();
 
 apiRouter.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'iaas-backend' });
+  res.json({ ok: true, service: 'infraflow-backend' });
 });
 
 apiRouter.use('/auth', authRouter);

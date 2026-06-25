@@ -95,7 +95,7 @@ async function assumeAwsRole(account = {}) {
   if (account.roleArn.includes(':user/')) {
     throw new Error(
       `Invalid roleArn: ${account.roleArn}. ` +
-        'sts:AssumeRole requires an IAM Role ARN like arn:aws:iam::<account-id>:role/InfraPilotRole, not an IAM User ARN.',
+        'sts:AssumeRole requires an IAM Role ARN like arn:aws:iam::<account-id>:role/infraflowRole, not an IAM User ARN.',
     );
   }
 
@@ -110,7 +110,7 @@ async function assumeAwsRole(account = {}) {
 
   const input = {
     RoleArn: account.roleArn,
-    RoleSessionName: `InfraPilot-${Date.now()}`,
+    RoleSessionName: `infraflow-${Date.now()}`,
     DurationSeconds: 3600,
   };
 

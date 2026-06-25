@@ -11,9 +11,9 @@ const referenceDocs = {
     fileName: 'Node_Runtime_Lab_Reference.pdf',
     title: 'Node Runtime Lab Reference',
   },
-  'infrapilot-architecture': {
-    fileName: 'InfraPilot_Full_Stack_Architecture_HLD_LLD_AWS_Scale.pdf',
-    title: 'InfraPilot Architecture HLD LLD AWS Scale',
+  'infraflow-architecture': {
+    fileName: 'infraflow_Full_Stack_Architecture_HLD_LLD_AWS_Scale.pdf',
+    title: 'infraflow Architecture HLD LLD AWS Scale',
   },
 };
 

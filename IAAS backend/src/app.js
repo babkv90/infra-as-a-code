@@ -39,7 +39,7 @@ if (env.NODE_ENV !== 'test') {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'iaas-backend' });
+  res.json({ ok: true, service: 'infraflow-backend' });
 });
 
 app.use('/api/v1', apiRouter);

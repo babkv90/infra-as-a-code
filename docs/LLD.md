@@ -1,4 +1,4 @@
-# Low Level Design: InfraPilot AI
+# Low Level Design: infraflow
 
 ## 1. Technology Stack
 

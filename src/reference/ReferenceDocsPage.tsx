@@ -23,12 +23,12 @@ const referenceDocs: ReferenceDoc[] = [
     url: '/api/v1/reference-docs/node-runtime-lab',
   },
   {
-    id: 'infrapilot-architecture',
-    title: 'InfraPilot Full Stack Architecture',
+    id: 'infraflow-architecture',
+    title: 'infraflow Full Stack Architecture',
     subtitle: 'Frontend, backend, MongoDB, AWS HLD/LLD',
     description: 'Study the React, Node, MongoDB, and AWS architecture for scaling this application toward millions of users.',
     example: 'Use this when learning how the landing page, dashboard, backend routes, MongoDB persistence, AWS integrations, and deployment architecture fit together.',
-    url: '/api/v1/reference-docs/infrapilot-architecture',
+    url: '/api/v1/reference-docs/infraflow-architecture',
   },
 ];
 
@@ -79,7 +79,7 @@ function ReferenceDocsPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
         <aside className="reference-sidebar">
           <div>
             <span className="dash-eyebrow">Interactive PDFs</span>
-            <h1>InfraPilot Lab Reference</h1>
+            <h1>infraflow Lab Reference</h1>
             <p>Open the generated documentation inside the app and switch between architecture and runtime learning references.</p>
           </div>
 

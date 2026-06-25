@@ -76,7 +76,7 @@ export async function runTerraformDeployment(deploymentId) {
 }
 
 async function createWorkDir(deploymentId) {
-  const baseDir = env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infrapilot-deployments');
+  const baseDir = env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infraflow-deployments');
   await mkdir(baseDir, { recursive: true });
   return mkdtemp(path.join(baseDir, `${deploymentId}-`));
 }
@@ -144,7 +144,7 @@ function addPermissionHint(message) {
 
 function createLambdaStubZip() {
   const content = Buffer.from(
-    "exports.handler = async () => ({ statusCode: 200, body: JSON.stringify({ ok: true, source: 'InfraPilot AI' }) });\n",
+    "exports.handler = async () => ({ statusCode: 200, body: JSON.stringify({ ok: true, source: 'infraflow' }) });\n",
     'utf8',
   );
   return zipSingleFile('index.js', content);

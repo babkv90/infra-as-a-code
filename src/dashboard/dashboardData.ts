@@ -211,7 +211,7 @@ export const costRecommendations: { title: string; savings: string; effort: stri
 
 export const awsConnectionSteps = [
   { title: 'Create deployment IAM role', description: 'Use a least-privilege role with AWS inventory reads plus Terraform permissions for selected services.', icon: LockKeyhole },
-  { title: 'Paste role ARN', description: 'InfraPilot AI assumes the role securely without storing long-lived access keys.', icon: KeyRound },
+  { title: 'Paste role ARN', description: 'infraflow assumes the role securely without storing long-lived access keys.', icon: KeyRound },
   { title: 'Run first sync', description: 'Pull resource inventory, billing trends, security posture, and deployment drift signals.', icon: CloudCog },
   { title: 'Enable agent context', description: 'Let the AI agent answer questions using live AWS metadata and your diagrams.', icon: BrainCircuit },
 ];

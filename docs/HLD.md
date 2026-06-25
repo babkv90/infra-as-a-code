@@ -1,8 +1,8 @@
-# High Level Design: InfraPilot AI
+# High Level Design: infraflow
 
 ## 1. Purpose
 
-InfraPilot AI is an AI-powered IaaS and cloud infrastructure automation platform. It allows users to visually design AWS architecture with a node-based builder, connect an AWS account, sync live account insights, generate Terraform, and deploy supported AWS resources to the connected account.
+infraflow is an AI-powered IaaS and cloud infrastructure automation platform. It allows users to visually design AWS architecture with a node-based builder, connect an AWS account, sync live account insights, generate Terraform, and deploy supported AWS resources to the connected account.
 
 The product has three main surfaces:
 
