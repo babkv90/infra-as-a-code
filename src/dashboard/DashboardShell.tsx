@@ -847,6 +847,7 @@ function DeploymentsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'successful' | 'pending' | 'error'>('all');
   const [isLoadingDeployments, setIsLoadingDeployments] = useState(false);
   const [destroyingDeploymentId, setDestroyingDeploymentId] = useState<string>();
+  const [pendingDestroyDeployment, setPendingDestroyDeployment] = useState<DeploymentRecord | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const visibleDeployments = deploymentRecords.filter((deployment) => statusFilter === 'all' || deploymentStatusGroup(deployment.status) === statusFilter);
@@ -872,9 +873,6 @@ function DeploymentsPage() {
   }
 
   async function handleDestroy(deployment: DeploymentRecord) {
-    const confirmed = window.confirm(`Destroy all AWS infrastructure created by "${deployment.name}"? This runs terraform destroy and cannot be undone from infraflow.`);
-    if (!confirmed) return;
-
     setMessage('');
     setError('');
     setDestroyingDeploymentId(deployment._id);
@@ -883,6 +881,7 @@ function DeploymentsPage() {
       const updatedDeployment = await destroyDeployment(deployment._id);
       setDeploymentRecords((records) => records.map((item) => (item._id === updatedDeployment._id ? updatedDeployment : item)));
       setMessage(`Destroy started for ${deployment.name}.`);
+      setPendingDestroyDeployment(null);
     } catch (destroyError) {
       setError(destroyError instanceof Error ? destroyError.message : 'Unable to destroy infrastructure.');
     } finally {
@@ -976,7 +975,7 @@ function DeploymentsPage() {
                     <button
                       className="dash-secondary-action dash-danger-action"
                       disabled={!canDestroyDeployment(deployment.status) || destroyingDeploymentId === deployment._id}
-                      onClick={() => void handleDestroy(deployment)}
+                      onClick={() => setPendingDestroyDeployment(deployment)}
                       type="button"
                     >
                       <Trash2 size={15} />
@@ -991,6 +990,52 @@ function DeploymentsPage() {
           )}
         </div>
       </Panel>
+      {pendingDestroyDeployment && (
+        <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !destroyingDeploymentId && setPendingDestroyDeployment(null)}>
+          <section
+            aria-labelledby="dash-destroy-dialog-title"
+            aria-modal="true"
+            className="dash-destroy-dialog"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <span>
+                <AlertTriangle size={22} />
+              </span>
+              <button
+                aria-label="Close destroy confirmation"
+                className="dash-icon-button"
+                disabled={Boolean(destroyingDeploymentId)}
+                onClick={() => setPendingDestroyDeployment(null)}
+                type="button"
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="dash-destroy-dialog__body">
+              <h2 id="dash-destroy-dialog-title">Destroy infrastructure?</h2>
+              <p>
+                This will run Terraform destroy for <strong>{pendingDestroyDeployment.name}</strong> and remove the AWS infrastructure created by this deployment.
+              </p>
+              <div className="dash-destroy-dialog__meta">
+                <span>{pendingDestroyDeployment.resourceCount} resources</span>
+                <span>{pendingDestroyDeployment.connectionCount} connections</span>
+                <span>{pendingDestroyDeployment.diagram?.activeRegion ?? 'region unknown'}</span>
+              </div>
+            </div>
+            <footer>
+              <button className="dash-secondary-action" disabled={Boolean(destroyingDeploymentId)} onClick={() => setPendingDestroyDeployment(null)} type="button">
+                Cancel
+              </button>
+              <button className="dash-secondary-action dash-danger-action" disabled={Boolean(destroyingDeploymentId)} onClick={() => void handleDestroy(pendingDestroyDeployment)} type="button">
+                <Trash2 size={15} />
+                {destroyingDeploymentId === pendingDestroyDeployment._id ? 'Destroying...' : 'Destroy infrastructure'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
