@@ -15,6 +15,7 @@ import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { SNSClient, ListTopicsCommand } from '@aws-sdk/client-sns';
 import { SQSClient, ListQueuesCommand } from '@aws-sdk/client-sqs';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
+import '../config/env.js';
 
 function roundCurrency(value) {
   return Math.round(Number(value || 0) * 100) / 100;
@@ -44,9 +45,9 @@ function makeCredentials(stsCredentials) {
 }
 
 function makeEnvCredentials() {
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const sessionToken = process.env.AWS_SESSION_TOKEN || undefined;
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
+  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() || undefined;
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(

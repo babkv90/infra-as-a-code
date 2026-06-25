@@ -491,7 +491,16 @@ function ec2AmiExpression(config: Record<string, string | number>): string {
 }
 
 function ec2SecurityGroupIdsLine(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[]): string {
-  const expression = mergeListExpression(configString(node.data.config, 'vpc_security_group_ids'), securityGroupRefsForEc2(node, allNodes, edges));
+  const declaredSecurityGroupNames = new Set(
+    allNodes
+      .filter((candidate) => candidate.data.serviceId === 'security-group')
+      .map((candidate) => sanitizeName(candidate.data.label)),
+  );
+  const expression = mergeListExpression(
+    configString(node.data.config, 'vpc_security_group_ids'),
+    securityGroupRefsForEc2(node, allNodes, edges),
+    declaredSecurityGroupNames,
+  );
   return expression ? `  vpc_security_group_ids = ${expression}\n` : '';
 }
 
@@ -510,8 +519,8 @@ function securityGroupRefsForEc2(node: AwsNode, allNodes: AwsNode[], edges: AwsE
   return Array.from(new Set(refs));
 }
 
-function mergeListExpression(configValue: string, inferredRefs: string[]): string {
-  const explicit = configValue.trim();
+function mergeListExpression(configValue: string, inferredRefs: string[], declaredSecurityGroupNames = new Set<string>()): string {
+  const explicit = sanitizeConfiguredListExpression(configValue.trim(), declaredSecurityGroupNames);
   const missingRefs = inferredRefs.filter((ref) => !explicit.includes(ref));
 
   if (!explicit && !missingRefs.length) return '';
@@ -521,6 +530,37 @@ function mergeListExpression(configValue: string, inferredRefs: string[]): strin
   if (!missingRefs.length) return explicitExpression;
 
   return `distinct(concat(${explicitExpression}, [${missingRefs.join(', ')}]))`;
+}
+
+function sanitizeConfiguredListExpression(value: string, declaredSecurityGroupNames: Set<string>): string {
+  if (!value) return '';
+
+  const entries = parseSimpleListExpression(value);
+  if (!entries) return value;
+
+  const filteredEntries = entries.filter((entry) => {
+    const match = entry.match(/^aws_security_group\.([A-Za-z0-9_]+)\.id$/);
+    return !match || declaredSecurityGroupNames.has(match[1]);
+  });
+
+  if (!filteredEntries.length) return '';
+  if (filteredEntries.length === entries.length) return value;
+  return `[${filteredEntries.map(formatListEntry).join(', ')}]`;
+}
+
+function parseSimpleListExpression(value: string): string[] | undefined {
+  const text = value.trim();
+  if (!text) return [];
+  if (/^(distinct|concat|flatten|toset|tolist)\s*\(/.test(text)) return undefined;
+
+  const listMatch = text.match(/^\[(.*)\]$/s);
+  const body = listMatch ? listMatch[1] : text;
+  return body.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function formatListEntry(entry: string): string {
+  if (/^".*"$/.test(entry) || /^'.*'$/.test(entry) || looksLikeTerraformExpression(entry)) return entry;
+  return formatValue(entry);
 }
 
 function formatListExpression(value: string | number | boolean): string {

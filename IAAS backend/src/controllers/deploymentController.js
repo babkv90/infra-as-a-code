@@ -6,7 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
-import { runTerraformDeployment } from '../services/terraformDeploymentRunner.js';
+import { runTerraformDeployment, runTerraformDestroy } from '../services/terraformDeploymentRunner.js';
 
 export const createDeploymentSchema = z.object({
   body: z.object({
@@ -28,7 +28,7 @@ export const createCanvasDeploymentSchema = z.object({
 });
 
 export const listDeployments = asyncHandler(async (req, res) => {
-  const deployments = await Deployment.find({ workspace: req.user.workspace }).sort({ createdAt: -1 }).populate('diagram', 'name');
+  const deployments = await Deployment.find({ workspace: req.user.workspace }).sort({ createdAt: -1 }).populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployments });
 });
 
@@ -156,7 +156,28 @@ export const applyDeployment = asyncHandler(async (req, res) => {
 });
 
 export const getDeployment = asyncHandler(async (req, res) => {
-  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name');
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name activeRegion nodes edges');
   if (!deployment) throw new ApiError(404, 'Deployment not found');
+  res.json({ success: true, data: deployment });
+});
+
+export const destroyDeployment = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (['queued', 'deploying', 'destroying'].includes(deployment.status)) {
+    throw new ApiError(409, 'Deployment is already running.');
+  }
+  if (!['deployed', 'failed'].includes(deployment.status)) {
+    throw new ApiError(409, 'Only deployed infrastructure can be destroyed.');
+  }
+
+  deployment.status = 'destroying';
+  deployment.logs.push({ message: 'Destroy requested. Terraform runner is starting.', level: 'warning' });
+  await deployment.save();
+
+  await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
+  void runTerraformDestroy(deployment._id);
+  await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });

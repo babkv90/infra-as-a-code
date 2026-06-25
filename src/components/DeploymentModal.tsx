@@ -27,6 +27,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [requestError, setRequestError] = useState('');
   const [queuedDeployment, setQueuedDeployment] = useState<DeploymentRecord | null>(null);
+  const [showDeploymentSuccess, setShowDeploymentSuccess] = useState(false);
   const terraform = useMemo(() => exportTerraform(nodes, edges), [edges, nodes]);
   const terraformIssues = useMemo(() => validateGeneratedTerraform(terraform), [terraform]);
   const effectiveIssues = useMemo(() => [...currentIssues, ...terraformIssues], [currentIssues, terraformIssues]);
@@ -34,6 +35,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
   const canDeploy = plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
+  const isAlreadyDeployed = deploymentStatus === 'success' || queuedDeployment?.status === 'deployed';
   const runnerLogs = useMemo(() => {
     const logs = queuedDeployment?.logs ?? [];
     const statusLog: RunnerLog[] = queuedDeployment
@@ -100,6 +102,10 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
     return () => window.clearInterval(timer);
   }, [queuedDeployment?._id, queuedDeployment?.status]);
 
+  useEffect(() => {
+    if (deploymentStatus === 'success') setShowDeploymentSuccess(true);
+  }, [deploymentStatus]);
+
   function rerunValidation() {
     setCurrentIssues(onValidate());
   }
@@ -119,11 +125,12 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   }
 
   async function deployToAws() {
-    if (!canDeploy || !selectedAccount) return;
+    if (!canDeploy || !selectedAccount || isAlreadyDeployed) return;
 
     setDeploymentStatus('running');
     setRequestError('');
     setQueuedDeployment(null);
+    setShowDeploymentSuccess(false);
 
     try {
       const deployment = await createCanvasDeployment({
@@ -143,6 +150,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   }
 
   return (
+    <>
     <section className="deployment-page">
       <header className="deployment-modal__header">
         <div>
@@ -186,7 +194,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
           <Download size={16} />
           Download Plan
         </button>
-        <button className="deployment-primary" disabled={!canDeploy || deploymentStatus === 'running'} onClick={deployToAws}>
+        <button className="deployment-primary" disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed} onClick={deployToAws}>
           <Rocket size={16} />
           {deploymentStatus === 'running' ? 'Deploying...' : deploymentStatus === 'success' ? 'Deployed' : 'Deploy to AWS'}
         </button>
@@ -198,8 +206,8 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
           {runnerLogs.length ? (
             <div className="deployment-log-list">
               {runnerLogs.map((log, index) => (
-                <div className={`deployment-log-line deployment-log-line--${log.level}`} key={`${log.at ?? index}-${log.message}`}>
-                  <span>{log.level}</span>
+                <div className={`deployment-log-line deployment-log-line--${deploymentLogLevel(log)}`} key={`${log.at ?? index}-${log.message}`}>
+                  <span>{deploymentLogLevel(log)}</span>
                   <p>{log.message}</p>
                 </div>
               ))}
@@ -261,7 +269,30 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
         </aside>
       </div>
     </section>
+    {showDeploymentSuccess && (
+      <div className="deployment-success-backdrop" role="presentation" onClick={() => setShowDeploymentSuccess(false)}>
+        <section className="deployment-success-popup" role="dialog" aria-modal="true" aria-labelledby="deployment-success-title" onClick={(event) => event.stopPropagation()}>
+          <span className="deployment-success-icon">
+            <CheckCircle2 size={28} />
+          </span>
+          <h2 id="deployment-success-title">Your resource has been deployed</h2>
+          <p>AWS deployment completed successfully. The created resource should now be visible in the target AWS account.</p>
+          <button className="deployment-primary" type="button" onClick={() => setShowDeploymentSuccess(false)}>
+            Continue
+          </button>
+        </section>
+      </div>
+    )}
+    </>
   );
+}
+
+function deploymentLogLevel(log: RunnerLog): 'error' | 'warning' | 'info' {
+  const level = String(log.level ?? '').toLowerCase();
+  const message = String(log.message ?? '').toLowerCase();
+  if (level.includes('error') || message.includes('error:') || message.includes('accessdenied') || message.includes('unauthorizedoperation') || message.includes('failed')) return 'error';
+  if (level.includes('warn')) return 'warning';
+  return 'info';
 }
 
 export default DeploymentModal;

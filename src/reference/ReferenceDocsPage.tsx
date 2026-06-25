@@ -1,7 +1,8 @@
 import { BookOpen, Download, ExternalLink, FileText, Home, LayoutDashboard, Moon, Sparkles, Sun } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { validateStoredSession } from '../auth/authClient';
-import { APP_NAME, DASHBOARD_ROUTE } from '../landing/landingConfig';
+import AppLogo from '../components/AppLogo';
+import { DASHBOARD_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 
 type ReferenceDoc = {
@@ -55,10 +56,7 @@ function ReferenceDocsPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     <div className="reference-page">
       <header className="reference-topbar">
         <a className="lp-logo" href="/">
-          <span className="lp-logo-mark">
-            <FileText size={20} />
-          </span>
-          <span>{APP_NAME} Reference</span>
+          <AppLogo className="app-logo--nav" suffix="Reference" />
         </a>
         <div className="reference-actions">
           <a className="dash-secondary-action" href="/">

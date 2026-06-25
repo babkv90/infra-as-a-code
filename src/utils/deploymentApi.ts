@@ -6,14 +6,35 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 export type DeploymentRecord = {
   _id: string;
   name: string;
-  status: 'draft' | 'validating' | 'planned' | 'approval_required' | 'queued' | 'deploying' | 'deployed' | 'failed' | 'cancelled';
+  status:
+    | 'draft'
+    | 'validating'
+    | 'planned'
+    | 'approval_required'
+    | 'queued'
+    | 'deploying'
+    | 'deployed'
+    | 'destroying'
+    | 'destroyed'
+    | 'failed'
+    | 'cancelled';
   resourceCount: number;
   connectionCount: number;
+  diagram?: {
+    _id: string;
+    name: string;
+    activeRegion?: string;
+    nodes?: AwsNode[];
+    edges?: AwsEdge[];
+  };
   terraform: string;
+  terraformWorkDir?: string;
   validationIssues: Array<{ severity: string; message: string; nodeId?: string; edgeId?: string }>;
   logs: Array<{ message: string; level: string; at?: string }>;
   startedAt?: string;
   finishedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type CreateCanvasDeploymentPayload = {
@@ -36,8 +57,16 @@ export async function getDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}`);
 }
 
+export async function listDeployments() {
+  return apiRequest<DeploymentRecord[]>('/deployments');
+}
+
 export async function applyDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}/apply`, { method: 'POST' });
+}
+
+export async function destroyDeployment(id: string) {
+  return apiRequest<DeploymentRecord>(`/deployments/${id}/destroy`, { method: 'POST' });
 }
 
 async function apiRequest<T>(path: string, init: RequestInit = {}) {

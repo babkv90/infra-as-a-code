@@ -1,4 +1,5 @@
 import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
+import '../config/env.js';
 
 export function makeCredentials(stsCredentials) {
   if (!stsCredentials?.AccessKeyId || !stsCredentials?.SecretAccessKey) {
@@ -13,9 +14,9 @@ export function makeCredentials(stsCredentials) {
 }
 
 export function makeEnvCredentials() {
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const sessionToken = process.env.AWS_SESSION_TOKEN || undefined;
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
+  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() || undefined;
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error('AWS credentials are missing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the backend .env file.');

@@ -36,12 +36,12 @@ import {
 } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
+import AppLogo from '../components/AppLogo';
 import DeploymentModal from '../components/DeploymentModal';
 import PropertiesPanel from '../components/PropertiesPanel';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
 import Toolbar from '../components/Toolbar';
-import { APP_NAME } from '../landing/landingConfig';
 import { getStoredUser, logout } from '../auth/authClient';
 import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDemoSource';
 import { useDiagramStore } from '../store/diagramStore';
@@ -58,7 +58,6 @@ import {
   costRecommendations,
   dashboardKpis,
   dashboardNavItems,
-  deployments,
   deploymentPipeline,
   resourceInventory,
   securityFindings,
@@ -84,6 +83,7 @@ import {
   type NodeLabMode,
   type NodeRuntimeSnapshot,
 } from './nodeLabApi';
+import { destroyDeployment, listDeployments, type DeploymentRecord } from '../utils/deploymentApi';
 
 const NODE_LAB_MODES: Array<{ mode: NodeLabMode; label: string; description: string }> = [
   {
@@ -184,10 +184,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
     <div className={`dash-shell ${isSidebarExpanded ? 'dash-shell--expanded' : ''}`}>
       <aside className="dash-sidebar">
         <a className="dash-brand" href="/">
-          <span>
-            <CloudCog size={20} />
-          </span>
-          <strong>{APP_NAME}</strong>
+          <AppLogo className="app-logo--dashboard" />
         </a>
         <div className="dash-sidebar-actions">
           <button
@@ -846,14 +843,86 @@ function InsightsPage({ insights, isSyncingAws, onSyncAws }: { insights?: AwsIns
 }
 
 function DeploymentsPage() {
+  const [deploymentRecords, setDeploymentRecords] = useState<DeploymentRecord[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'successful' | 'pending' | 'error'>('all');
+  const [isLoadingDeployments, setIsLoadingDeployments] = useState(false);
+  const [destroyingDeploymentId, setDestroyingDeploymentId] = useState<string>();
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const visibleDeployments = deploymentRecords.filter((deployment) => statusFilter === 'all' || deploymentStatusGroup(deployment.status) === statusFilter);
+  const counts = deploymentRecords.reduce(
+    (acc, deployment) => {
+      acc.all += 1;
+      acc[deploymentStatusGroup(deployment.status)] += 1;
+      return acc;
+    },
+    { all: 0, successful: 0, pending: 0, error: 0 },
+  );
+
+  async function refreshDeployments() {
+    setIsLoadingDeployments(true);
+    try {
+      setDeploymentRecords(await listDeployments());
+      setError('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load deployments.');
+    } finally {
+      setIsLoadingDeployments(false);
+    }
+  }
+
+  async function handleDestroy(deployment: DeploymentRecord) {
+    const confirmed = window.confirm(`Destroy all AWS infrastructure created by "${deployment.name}"? This runs terraform destroy and cannot be undone from infraflow.`);
+    if (!confirmed) return;
+
+    setMessage('');
+    setError('');
+    setDestroyingDeploymentId(deployment._id);
+
+    try {
+      const updatedDeployment = await destroyDeployment(deployment._id);
+      setDeploymentRecords((records) => records.map((item) => (item._id === updatedDeployment._id ? updatedDeployment : item)));
+      setMessage(`Destroy started for ${deployment.name}.`);
+    } catch (destroyError) {
+      setError(destroyError instanceof Error ? destroyError.message : 'Unable to destroy infrastructure.');
+    } finally {
+      setDestroyingDeploymentId(undefined);
+    }
+  }
+
+  useEffect(() => {
+    void refreshDeployments();
+  }, []);
+
+  useEffect(() => {
+    const hasActiveDeployment = deploymentRecords.some((deployment) => ['queued', 'deploying', 'destroying'].includes(deployment.status));
+    if (!hasActiveDeployment) return undefined;
+
+    const interval = window.setInterval(() => {
+      void refreshDeployments();
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [deploymentRecords]);
+
   return (
     <div className="dash-page">
       <div className="dash-inline-actions">
-        <button className="dash-primary-action">
-          <Rocket size={16} />
-          Deploy selected plan
+        <button className="dash-primary-action" disabled={isLoadingDeployments} onClick={() => void refreshDeployments()}>
+          <RefreshCw size={16} />
+          {isLoadingDeployments ? 'Refreshing...' : 'Refresh deployments'}
         </button>
       </div>
+      {message && <div className="dash-global-success">{message}</div>}
+      {error && <div className="dash-global-error">{error}</div>}
+      <section className="dash-deployment-status-grid">
+        {(['all', 'successful', 'pending', 'error'] as const).map((filter) => (
+          <button className={statusFilter === filter ? 'active' : ''} key={filter} onClick={() => setStatusFilter(filter)} type="button">
+            <span>{deploymentFilterLabel(filter)}</span>
+            <strong>{counts[filter]}</strong>
+          </button>
+        ))}
+      </section>
       <Panel title="Deployment pipeline" action="View logs">
         <div className="dash-pipeline">
           {deploymentPipeline.map((step) => {
@@ -868,25 +937,153 @@ function DeploymentsPage() {
           })}
         </div>
       </Panel>
-      <Panel title="Recent deployment plans" action="Create plan">
+      <Panel title="Deployed diagrams" action={`${visibleDeployments.length} shown`}>
         <div className="dash-deploy-grid">
-          {deployments.length ? (
-            deployments.map((deploy) => (
-              <div className="dash-deploy-card" key={deploy.app}>
-                <strong>{deploy.app}</strong>
-                <span>{deploy.env}</span>
-                <div>{deploy.resources} resources</div>
-                <em>{deploy.status}</em>
-                <small>Drift: {deploy.drift}</small>
-              </div>
+          {visibleDeployments.length ? (
+            visibleDeployments.map((deployment) => (
+              <article className={`dash-deploy-card dash-deploy-card--${deploymentStatusGroup(deployment.status)}`} key={deployment._id}>
+                <DeploymentDiagramPreview deployment={deployment} />
+                <div className="dash-deploy-card__body">
+                  <header>
+                    <div>
+                      <strong>{deployment.name}</strong>
+                      <span>{deployment.diagram?.name ?? 'Saved deployment diagram'}</span>
+                    </div>
+                    <em>{deploymentStatusLabel(deployment.status)}</em>
+                  </header>
+                  <div className="dash-deploy-metrics">
+                    <span>{deployment.resourceCount} resources</span>
+                    <span>{deployment.connectionCount} connections</span>
+                    <span>{deployment.diagram?.activeRegion ?? 'region unknown'}</span>
+                  </div>
+                  <small>
+                    {deployment.finishedAt
+                      ? `Updated ${new Date(deployment.finishedAt).toLocaleString()}`
+                      : `Created ${new Date(deployment.startedAt ?? deployment.createdAt ?? Date.now()).toLocaleString()}`}
+                  </small>
+                  <div className="dash-deploy-log">
+                    {deployment.logs.slice(-2).map((log, index) => (
+                      <p className={`dash-deploy-log--${deploymentLogLevel(log.level, log.message)}`} key={`${log.at ?? index}-${log.message}`}>
+                        {log.message}
+                      </p>
+                    ))}
+                  </div>
+                  <div className="dash-deploy-actions">
+                    <button className="dash-secondary-action" disabled={isLoadingDeployments} onClick={() => void refreshDeployments()} type="button">
+                      <RefreshCw size={15} />
+                      Refresh
+                    </button>
+                    <button
+                      className="dash-secondary-action dash-danger-action"
+                      disabled={!canDestroyDeployment(deployment.status) || destroyingDeploymentId === deployment._id}
+                      onClick={() => void handleDestroy(deployment)}
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                      {destroyingDeploymentId === deployment._id ? 'Destroying...' : 'Destroy infrastructure'}
+                    </button>
+                  </div>
+                </div>
+              </article>
             ))
           ) : (
-            <EmptyState>No deployment plans yet. Generate Terraform from a diagram first.</EmptyState>
+            <EmptyState>No deployments match this status. Deploy a diagram from the visual builder to see it here.</EmptyState>
           )}
         </div>
       </Panel>
     </div>
   );
+}
+
+function DeploymentDiagramPreview({ deployment }: { deployment: DeploymentRecord }) {
+  const nodes = deployment.diagram?.nodes ?? [];
+  const edges = deployment.diagram?.edges ?? [];
+  const positions = normalizeDiagramPreviewPositions(nodes);
+
+  if (!nodes.length) {
+    return (
+      <div className="dash-deploy-diagram dash-deploy-diagram--empty">
+        <Network size={22} />
+        <span>No diagram snapshot</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dash-deploy-diagram" aria-label={`${deployment.name} diagram preview`}>
+      <svg viewBox="0 0 100 62" role="img">
+        {edges.map((edge) => {
+          const source = positions.get(edge.source);
+          const target = positions.get(edge.target);
+          if (!source || !target) return null;
+          return <line key={edge.id} x1={source.x} x2={target.x} y1={source.y} y2={target.y} />;
+        })}
+        {nodes.slice(0, 16).map((node) => {
+          const position = positions.get(node.id);
+          if (!position) return null;
+          return (
+            <g key={node.id}>
+              <circle cx={position.x} cy={position.y} r="4.8" />
+              <text x={position.x} y={Math.min(position.y + 11, 59)}>
+                {node.data?.serviceName?.slice(0, 10) ?? node.data?.label?.slice(0, 10) ?? 'Node'}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function normalizeDiagramPreviewPositions(nodes: NonNullable<DeploymentRecord['diagram']>['nodes']) {
+  const positions = new Map<string, { x: number; y: number }>();
+  if (!nodes?.length) return positions;
+
+  const xs = nodes.map((node) => node.position?.x ?? 0);
+  const ys = nodes.map((node) => node.position?.y ?? 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 1);
+  const height = Math.max(maxY - minY, 1);
+
+  nodes.forEach((node, index) => {
+    const fallbackX = (index % 4) * 24 + 14;
+    const fallbackY = Math.floor(index / 4) * 18 + 14;
+    const x = nodes.length === 1 ? 50 : 10 + (((node.position?.x ?? fallbackX) - minX) / width) * 80;
+    const y = nodes.length === 1 ? 31 : 10 + (((node.position?.y ?? fallbackY) - minY) / height) * 42;
+    positions.set(node.id, { x, y });
+  });
+
+  return positions;
+}
+
+function deploymentStatusGroup(status: DeploymentRecord['status']): 'successful' | 'pending' | 'error' {
+  if (['deployed', 'destroyed'].includes(status)) return 'successful';
+  if (['failed', 'cancelled'].includes(status)) return 'error';
+  return 'pending';
+}
+
+function deploymentFilterLabel(filter: 'all' | 'successful' | 'pending' | 'error') {
+  if (filter === 'all') return 'All deployments';
+  if (filter === 'successful') return 'Successful';
+  if (filter === 'pending') return 'Pending';
+  return 'Error';
+}
+
+function deploymentStatusLabel(status: DeploymentRecord['status']) {
+  return status.replace(/_/g, ' ');
+}
+
+function canDestroyDeployment(status: DeploymentRecord['status']) {
+  return status === 'deployed' || status === 'failed';
+}
+
+function deploymentLogLevel(level: string, message: string): 'error' | 'warning' | 'info' {
+  if (level === 'error') return 'error';
+  if (level === 'warning') return 'warning';
+  return message.toLowerCase().includes('error') ? 'error' : 'info';
 }
 
 function SecurityPage({ insights }: { insights?: AwsInsights }) {

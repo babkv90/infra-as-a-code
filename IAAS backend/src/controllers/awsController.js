@@ -27,30 +27,65 @@ export const listAwsAccounts = asyncHandler(async (req, res) => {
 });
 
 export const connectAwsAccount = asyncHandler(async (req, res) => {
-  const account = await AwsAccount.create({
-    ...req.validated.body,
+  let account = await AwsAccount.findOne({
     workspace: req.user.workspace,
-    createdBy: req.user._id,
+    accountId: req.validated.body.accountId,
+  });
+  let isReconnect = Boolean(account);
+
+  if (!account) {
+    account = new AwsAccount({
+      workspace: req.user.workspace,
+      createdBy: req.user._id,
+      syncSummary: getMockAwsInsights(),
+    });
+  }
+
+  account.set({
+    ...req.validated.body,
     status: 'pending',
-    syncSummary: getMockAwsInsights(),
+    lastError: undefined,
   });
 
   try {
     account.syncSummary = await syncAwsAccountData(account);
-    account.accountId = account.syncSummary.identity?.accountId ?? account.accountId;
+    const syncedAccountId = account.syncSummary.identity?.accountId;
+    if (syncedAccountId && syncedAccountId !== account.accountId) {
+      const accountWithSyncedId = await AwsAccount.findOne({
+        _id: { $ne: account._id },
+        workspace: req.user.workspace,
+        accountId: syncedAccountId,
+      });
+
+      if (accountWithSyncedId) {
+        await AwsAccount.deleteOne({ _id: account._id });
+        accountWithSyncedId.set({
+          ...req.validated.body,
+          accountId: syncedAccountId,
+          status: 'connected',
+          lastError: undefined,
+          syncSummary: account.syncSummary,
+          lastSyncAt: new Date(),
+        });
+        account = accountWithSyncedId;
+        isReconnect = true;
+      } else {
+        account.accountId = syncedAccountId;
+      }
+    }
     account.status = 'connected';
     account.lastError = undefined;
     account.lastSyncAt = new Date();
     await account.save();
   } catch (error) {
     account.status = 'failed';
-    account.lastError = error.message;
+    account.lastError = addAwsConnectionHint(error.message);
     await account.save();
-    throw new ApiError(502, `AWS connection failed: ${error.message}`);
+    throw new ApiError(502, `AWS connection failed: ${addAwsConnectionHint(error.message)}`);
   }
 
-  await auditLog(req, 'aws.connect', 'AwsAccount', account._id);
-  res.status(201).json({ success: true, data: account });
+  await auditLog(req, isReconnect ? 'aws.reconnect' : 'aws.connect', 'AwsAccount', account._id);
+  res.status(isReconnect ? 200 : 201).json({ success: true, data: account });
 });
 
 export const syncAwsAccount = asyncHandler(async (req, res) => {
@@ -65,9 +100,9 @@ export const syncAwsAccount = asyncHandler(async (req, res) => {
     account.lastSyncAt = new Date();
   } catch (error) {
     account.status = 'failed';
-    account.lastError = error.message;
+    account.lastError = addAwsConnectionHint(error.message);
     await account.save();
-    throw new ApiError(502, `AWS sync failed: ${error.message}`);
+    throw new ApiError(502, `AWS sync failed: ${addAwsConnectionHint(error.message)}`);
   }
   await account.save();
 
@@ -92,3 +127,11 @@ export const getInsights = asyncHandler(async (req, res) => {
   const account = await AwsAccount.findOne({ workspace: req.user.workspace, status: 'connected' }).sort({ lastSyncAt: -1 });
   res.json({ success: true, data: account?.syncSummary ?? getMockAwsInsights() });
 });
+
+function addAwsConnectionHint(message = '') {
+  if (String(message).toLowerCase().includes('security token included in the request is invalid')) {
+    return `${message} Check IAAS backend/.env: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must belong to an active IAM user or valid temporary session that can call STS. If the access key starts with ASIA, AWS_SESSION_TOKEN is required. If you changed .env, restart the backend.`;
+  }
+
+  return message;
+}

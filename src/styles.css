@@ -1174,6 +1174,12 @@ textarea {
   color: #fca5a5;
 }
 
+.deployment-log-line--error {
+  border-color: rgba(248, 113, 113, 0.46);
+  background: rgba(127, 29, 29, 0.28);
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
 .deployment-target label {
   display: grid;
   gap: 8px;
@@ -1323,6 +1329,54 @@ textarea {
   color: #86efac;
 }
 
+.deployment-success-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.68);
+  backdrop-filter: blur(12px);
+}
+
+.deployment-success-popup {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+  text-align: center;
+}
+
+.deployment-success-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+}
+
+.deployment-success-popup h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.deployment-success-popup p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .deploy-toolbar-button {
   border-color: rgba(34, 197, 94, 0.36);
   color: #16a34a;
@@ -1420,6 +1474,49 @@ textarea {
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.app-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-logo img {
+  display: block;
+  width: 142px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.app-logo--footer img,
+.app-logo--nav img {
+  width: 148px;
+  height: 46px;
+}
+
+.app-logo--auth img {
+  width: 188px;
+  height: 58px;
+}
+
+.app-logo--dashboard img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.dash-shell--expanded .app-logo--dashboard img {
+  width: 142px;
+  height: 44px;
+}
+
+.app-logo__suffix {
+  color: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .lp-logo-mark {
@@ -3055,13 +3152,11 @@ button.lp-security-item {
   justify-content: flex-start;
 }
 
-.dash-brand strong,
 .dash-new-button span,
 .dash-nav span {
   display: none;
 }
 
-.dash-shell--expanded .dash-brand strong,
 .dash-shell--expanded .dash-new-button span,
 .dash-shell--expanded .dash-nav span {
   display: initial;
@@ -3089,7 +3184,7 @@ button.lp-security-item {
   flex-direction: column;
 }
 
-.dash-brand span {
+.dash-brand .app-logo {
   display: grid;
   place-items: center;
   width: 38px;
@@ -3100,8 +3195,9 @@ button.lp-security-item {
   color: #67e8f9;
 }
 
-.dash-brand strong {
-  font-size: 15px;
+.dash-shell--expanded .dash-brand .app-logo {
+  width: 150px;
+  height: 46px;
 }
 
 .dash-new-button,
@@ -4849,6 +4945,191 @@ button.dash-kpi-card {
   border-radius: 18px;
 }
 
+.dash-deploy-card {
+  align-content: start;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(2, 6, 23, 0.34);
+}
+
+.dash-deploy-card--successful {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.dash-deploy-card--pending {
+  border-color: rgba(34, 211, 238, 0.32);
+}
+
+.dash-deploy-card--error {
+  border-color: rgba(248, 113, 113, 0.38);
+}
+
+.dash-deployment-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dash-deployment-status-grid button {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.34);
+  color: inherit;
+  cursor: pointer;
+}
+
+.dash-deployment-status-grid button.active,
+.dash-deployment-status-grid button:hover {
+  border-color: rgba(34, 211, 238, 0.42);
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.dash-deployment-status-grid span {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dash-deployment-status-grid strong {
+  color: #fff;
+  font-size: 28px;
+}
+
+.dash-deploy-card__body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.dash-deploy-card__body header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dash-deploy-card__body header > div {
+  min-width: 0;
+}
+
+.dash-deploy-card__body strong,
+.dash-deploy-card__body span,
+.dash-deploy-card__body small {
+  overflow-wrap: anywhere;
+}
+
+.dash-deploy-card__body em {
+  flex-shrink: 0;
+  align-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dash-deploy-card--pending .dash-deploy-card__body em {
+  background: rgba(14, 165, 233, 0.13);
+  color: #bae6fd;
+}
+
+.dash-deploy-card--error .dash-deploy-card__body em {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.dash-deploy-metrics,
+.dash-deploy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dash-deploy-metrics span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.1);
+  font-size: 11px;
+}
+
+.dash-deploy-actions {
+  justify-content: space-between;
+}
+
+.dash-deploy-log {
+  display: grid;
+  gap: 6px;
+}
+
+.dash-deploy-log p {
+  margin: 0;
+  max-height: 52px;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dash-deploy-log--error {
+  color: #fecaca !important;
+}
+
+.dash-deploy-log--warning {
+  color: #fde68a !important;
+}
+
+.dash-deploy-diagram {
+  height: 170px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 24% 16%, rgba(34, 211, 238, 0.18), transparent 32%),
+    rgba(15, 23, 42, 0.58);
+  background-size: 18px 18px, 18px 18px, auto, auto;
+}
+
+.dash-deploy-diagram svg {
+  width: 100%;
+  height: 100%;
+}
+
+.dash-deploy-diagram line {
+  stroke: rgba(125, 211, 252, 0.55);
+  stroke-width: 0.8;
+}
+
+.dash-deploy-diagram circle {
+  fill: #06b6d4;
+  stroke: #e0f2fe;
+  stroke-width: 0.8;
+}
+
+.dash-deploy-diagram text {
+  fill: #dbeafe;
+  font-size: 3px;
+  text-anchor: middle;
+}
+
+.dash-deploy-diagram--empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 .dash-deploy-card span,
 .dash-deploy-card small,
 .dash-cost-card span {
@@ -5182,13 +5463,11 @@ button.dash-kpi-card {
     grid-template-columns: 248px minmax(0, 1fr);
   }
 
-  .dash-brand strong,
   .dash-nav span,
   .dash-new-button span {
     display: none;
   }
 
-  .dash-shell--expanded .dash-brand strong,
   .dash-shell--expanded .dash-nav span,
   .dash-shell--expanded .dash-new-button span {
     display: initial;
@@ -5244,6 +5523,7 @@ button.dash-kpi-card {
   .runtime-lab-kpis,
   .dash-feature-grid,
   .dash-overview-graphs,
+  .dash-deployment-status-grid,
   .dash-cost-summary,
   .dash-cost-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5283,7 +5563,6 @@ button.dash-kpi-card {
     width: auto;
   }
 
-  .dash-brand strong,
   .dash-new-button span {
     display: inline-flex;
   }
@@ -5367,6 +5646,7 @@ button.dash-kpi-card {
 
   .dash-pipeline,
   .dash-deploy-grid,
+  .dash-deployment-status-grid,
   .dash-connect-steps,
   .runtime-lab-mode-grid {
     grid-template-columns: 1fr;
@@ -5387,6 +5667,7 @@ button.dash-kpi-card {
   .runtime-lab-kpis,
   .dash-feature-grid,
   .dash-overview-graphs,
+  .dash-deployment-status-grid,
   .dash-cost-summary,
   .dash-cost-grid {
     grid-template-columns: 1fr;
@@ -6692,6 +6973,59 @@ button.dash-kpi-card {
   color: #0f172a;
 }
 
+.app-theme-light .dash-deployment-status-grid button,
+.app-theme-light .dash-deploy-card {
+  border-color: rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.app-theme-light .dash-deployment-status-grid button.active,
+.app-theme-light .dash-deployment-status-grid button:hover {
+  border-color: rgba(14, 165, 233, 0.28);
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.app-theme-light .dash-deployment-status-grid strong,
+.app-theme-light .dash-deploy-card__body strong {
+  color: #0f172a;
+}
+
+.app-theme-light .dash-deploy-card__body em {
+  color: #166534;
+}
+
+.app-theme-light .dash-deploy-card--pending .dash-deploy-card__body em {
+  color: #075985;
+}
+
+.app-theme-light .dash-deploy-card--error .dash-deploy-card__body em,
+.app-theme-light .dash-deploy-log--error {
+  color: #b91c1c !important;
+}
+
+.app-theme-light .dash-deploy-log p {
+  color: #475569;
+}
+
+.app-theme-light .dash-deploy-log--warning {
+  color: #92400e !important;
+}
+
+.app-theme-light .dash-deploy-diagram {
+  border-color: rgba(15, 23, 42, 0.1);
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+    radial-gradient(circle at 24% 16%, rgba(14, 165, 233, 0.16), transparent 32%),
+    #f8fafc;
+  background-size: 18px 18px, 18px 18px, auto, auto;
+}
+
+.app-theme-light .dash-deploy-diagram text {
+  fill: #334155;
+}
+
 .app-theme-light .dash-overview-bar-row > span,
 .app-theme-light .dash-overview-bar-row strong {
   color: #334155;
@@ -7044,6 +7378,12 @@ button.dash-kpi-card {
   color: #b91c1c;
 }
 
+.app-theme-light .deployment-log-line--error {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(254, 226, 226, 0.92);
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
 .app-theme-light .deployment-code {
   border-color: rgba(15, 23, 42, 0.1);
   background: #fff;
@@ -7067,6 +7407,20 @@ button.dash-kpi-card {
 
 .app-theme-light .deployment-note--success {
   color: #047857;
+}
+
+.app-theme-light .deployment-success-popup {
+  border-color: rgba(5, 150, 105, 0.24);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.18);
+}
+
+.app-theme-light .deployment-success-popup h2 {
+  color: #0f172a;
+}
+
+.app-theme-light .deployment-success-popup p {
+  color: #475569;
 }
 
 .app-theme-pearl {
@@ -7257,7 +7611,7 @@ button.dash-kpi-card {
 
 .app-theme-pearl .lp-logo-mark,
 .app-theme-pearl .auth-logo-mark,
-.app-theme-pearl .dash-brand span {
+.app-theme-pearl .dash-brand .app-logo {
   border-color: rgba(8, 145, 178, 0.24);
   background: linear-gradient(135deg, rgba(8, 145, 178, 0.18), rgba(225, 29, 72, 0.12), rgba(124, 58, 237, 0.14));
   color: var(--pearl-cyan);
@@ -7341,6 +7695,59 @@ button.dash-kpi-card {
   border-color: rgba(225, 29, 72, 0.42);
   background: rgba(255, 228, 230, 0.78);
   color: #9f1239;
+}
+
+.app-theme-pearl .dash-deployment-status-grid button,
+.app-theme-pearl .dash-deploy-card {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface);
+  box-shadow: 0 18px 48px rgba(20, 33, 61, 0.09);
+}
+
+.app-theme-pearl .dash-deployment-status-grid button.active,
+.app-theme-pearl .dash-deployment-status-grid button:hover {
+  border-color: rgba(8, 145, 178, 0.34);
+  background: rgba(8, 145, 178, 0.1);
+}
+
+.app-theme-pearl .dash-deployment-status-grid strong,
+.app-theme-pearl .dash-deploy-card__body strong {
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .dash-deploy-card__body em {
+  color: #047857;
+}
+
+.app-theme-pearl .dash-deploy-card--pending .dash-deploy-card__body em {
+  color: #075985;
+}
+
+.app-theme-pearl .dash-deploy-card--error .dash-deploy-card__body em,
+.app-theme-pearl .dash-deploy-log--error {
+  color: #be123c !important;
+}
+
+.app-theme-pearl .dash-deploy-log p {
+  color: var(--pearl-muted);
+}
+
+.app-theme-pearl .dash-deploy-log--warning {
+  color: #92400e !important;
+}
+
+.app-theme-pearl .dash-deploy-diagram {
+  border-color: var(--pearl-border);
+  background:
+    linear-gradient(rgba(20, 33, 61, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 33, 61, 0.06) 1px, transparent 1px),
+    radial-gradient(circle at 24% 16%, rgba(8, 145, 178, 0.16), transparent 32%),
+    #fffaf3;
+  background-size: 18px 18px, 18px 18px, auto, auto;
+}
+
+.app-theme-pearl .dash-deploy-diagram text {
+  fill: var(--pearl-ink);
 }
 
 .app-theme-pearl .lp-kicker,
@@ -7550,6 +7957,17 @@ button.dash-kpi-card {
   color: var(--pearl-text);
 }
 
+.app-theme-pearl .deployment-log-line--error {
+  border-color: rgba(190, 18, 60, 0.3);
+  background: rgba(255, 228, 230, 0.86);
+  box-shadow: inset 3px 0 0 #be123c;
+}
+
+.app-theme-pearl .deployment-log-line--error span,
+.app-theme-pearl .deployment-log-line--error p {
+  color: #9f1239;
+}
+
 .app-theme-pearl .dash-permission-errors div,
 .app-theme-pearl .deployment-issues div,
 .app-theme-pearl .warning-box,
@@ -7571,6 +7989,20 @@ button.dash-kpi-card {
 .app-theme-pearl .dash-global-success,
 .app-theme-pearl .deployment-note--success {
   color: #166534;
+}
+
+.app-theme-pearl .deployment-success-popup {
+  border-color: rgba(5, 150, 105, 0.22);
+  background: rgba(255, 252, 246, 0.96);
+  box-shadow: 0 28px 90px rgba(20, 33, 61, 0.18);
+}
+
+.app-theme-pearl .deployment-success-popup h2 {
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .deployment-success-popup p {
+  color: var(--pearl-text);
 }
 
 .app-theme-pearl .dash-nav button {

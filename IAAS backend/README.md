@@ -37,7 +37,7 @@ Health checks: `GET http://localhost:4000/health` or `GET http://localhost:4000/
 
 ## AWS Deployment Role
 
-The connected AWS role must allow both resource creation and Terraform read-back actions. For EC2 deployments, include `ec2:RunInstances`, `ec2:CreateTags`, `ec2:DescribeInstances`, and `ec2:DescribeInstanceAttribute`; otherwise Terraform can create an instance but fail while refreshing state.
+The connected AWS role must allow both resource creation and Terraform read-back actions. For EC2 deployments, include `ec2:RunInstances`, `ec2:CreateTags`, `ec2:DescribeInstances`, `ec2:DescribeInstanceAttribute`, `ec2:DescribeVpcs`, and `ec2:DescribeVpcAttribute`; otherwise Terraform can plan or create resources but fail while reading default VPC and EC2 state. If Terraform creates security groups, also include `ec2:CreateSecurityGroup`, `ec2:AuthorizeSecurityGroupIngress`, `ec2:AuthorizeSecurityGroupEgress`, `ec2:RevokeSecurityGroupIngress`, `ec2:RevokeSecurityGroupEgress`, and `ec2:DeleteSecurityGroup`. If the EC2 node uses an IAM role, also include `iam:GetRole`, `iam:PassRole`, `iam:CreateInstanceProfile`, `iam:AddRoleToInstanceProfile`, `iam:RemoveRoleFromInstanceProfile`, and `iam:DeleteInstanceProfile`.
 
 ## Important API Routes
 

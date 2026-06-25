@@ -3,10 +3,8 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
-  CloudCog,
   Copy,
   ExternalLink,
-  FileText,
   Github,
   LockKeyhole,
   Moon,
@@ -19,12 +17,11 @@ import {
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type React from 'react';
+import AppLogo from '../components/AppLogo';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 import {
-  APP_NAME,
   DASHBOARD_ROUTE,
   LOGIN_ROUTE,
-  REFERENCE_DOCS_ROUTE,
   REGISTER_ROUTE,
   aiBullets,
   awsMetrics,
@@ -109,10 +106,7 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
   return (
     <header className="lp-nav">
       <a className="lp-logo" href="/">
-        <span className="lp-logo-mark">
-          <CloudCog size={20} />
-        </span>
-        <span>{APP_NAME}</span>
+        <AppLogo className="app-logo--nav" />
       </a>
       <nav className="lp-nav-links">
         {navItems.map((item) => (
@@ -125,10 +119,10 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
         </button>
-        <a className="lp-reference-nav-button" href={REFERENCE_DOCS_ROUTE}>
+        {/* <a className="lp-reference-nav-button" href={REFERENCE_DOCS_ROUTE}>
           <FileText size={15} />
           Lab Reference
-        </a>
+        </a> */}
         <a className="lp-link-button" href={LOGIN_ROUTE}>
           Login
         </a>
@@ -501,10 +495,7 @@ function Footer() {
     <footer className="lp-footer">
       <div className="lp-footer-brand">
         <a className="lp-logo" href="/">
-          <span className="lp-logo-mark">
-            <CloudCog size={20} />
-          </span>
-          <span>{APP_NAME}</span>
+          <AppLogo className="app-logo--footer" />
         </a>
         <p>Design, generate, and deploy AWS infrastructure visually with AI.</p>
       </div>

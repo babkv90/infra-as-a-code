@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { env } from '../config/env.js';
@@ -40,8 +41,10 @@ export async function runTerraformDeployment(deploymentId) {
     await deployment.save();
 
     const credentials = await assumeAwsRole(account);
-    const workDir = await createWorkDir(id);
+    const workDir = await getOrCreateWorkDir(deployment, id);
     await writeFile(path.join(workDir, 'main.tf'), deployment.terraform, 'utf8');
+    deployment.terraformWorkDir = workDir;
+    await deployment.save();
 
     if (deployment.terraform.includes('lambda_stub.zip')) {
       await writeFile(path.join(workDir, 'lambda_stub.zip'), createLambdaStubZip());
@@ -75,10 +78,92 @@ export async function runTerraformDeployment(deploymentId) {
   }
 }
 
-async function createWorkDir(deploymentId) {
+export async function runTerraformDestroy(deploymentId) {
+  const id = String(deploymentId);
+  if (runningDeployments.has(id)) return;
+  runningDeployments.add(id);
+
+  try {
+    const deployment = await Deployment.findById(id).populate('awsAccount');
+    if (!deployment) return;
+
+    if (!env.TERRAFORM_APPLY_ENABLED) {
+      await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS destroy operations.');
+      return;
+    }
+
+    const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
+    if (!account) {
+      await failDeployment(deployment, 'AWS account not found for deployment destroy.');
+      return;
+    }
+
+    const workDir = deployment.terraformWorkDir || path.join(env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infraflow-deployments'), id);
+    const statePath = path.join(workDir, 'terraform.tfstate');
+    if (!(await pathExists(statePath))) {
+      await failDeployment(
+        deployment,
+        'Terraform state was not found for this deployment. Destroy can only run for infrastructure deployed by infraflow after state tracking was enabled.',
+      );
+      return;
+    }
+
+    await writeFile(path.join(workDir, 'main.tf'), deployment.terraform, 'utf8');
+
+    deployment.status = 'destroying';
+    deployment.startedAt = deployment.startedAt ?? new Date();
+    deployment.finishedAt = undefined;
+    deployment.logs.push({ message: 'Starting Terraform destroy runner.', level: 'warning' });
+    await deployment.save();
+
+    const credentials = await assumeAwsRole(account);
+    const terraformEnv = {
+      ...process.env,
+      AWS_ACCESS_KEY_ID: credentials.accessKeyId,
+      AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey,
+      AWS_SESSION_TOKEN: credentials.sessionToken ?? '',
+      AWS_REGION: account.defaultRegion,
+      AWS_DEFAULT_REGION: account.defaultRegion,
+      TF_IN_AUTOMATION: 'true',
+    };
+
+    await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
+    await runTerraformCommand(deployment, workDir, ['destroy', '-input=false', '-auto-approve'], terraformEnv);
+
+    deployment.status = 'destroyed';
+    deployment.finishedAt = new Date();
+    deployment.logs.push({ message: 'Terraform destroy completed. The infrastructure from this deployment has been removed.', level: 'info' });
+    await deployment.save();
+  } catch (error) {
+    const deployment = await Deployment.findById(id);
+    if (deployment) {
+      await failDeployment(deployment, error.message ?? 'Terraform destroy failed.');
+    }
+  } finally {
+    runningDeployments.delete(id);
+  }
+}
+
+async function getOrCreateWorkDir(deployment, deploymentId) {
+  if (deployment.terraformWorkDir) {
+    await mkdir(deployment.terraformWorkDir, { recursive: true });
+    return deployment.terraformWorkDir;
+  }
+
   const baseDir = env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infraflow-deployments');
   await mkdir(baseDir, { recursive: true });
-  return mkdtemp(path.join(baseDir, `${deploymentId}-`));
+  const workDir = path.join(baseDir, deploymentId);
+  await mkdir(workDir, { recursive: true });
+  return workDir;
+}
+
+async function pathExists(targetPath) {
+  try {
+    await access(targetPath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runTerraformCommand(deployment, cwd, args, commandEnv) {
@@ -137,6 +222,22 @@ function stripAnsi(value = '') {
 function addPermissionHint(message) {
   if (message.includes('ec2:DescribeInstanceAttribute')) {
     return `${message}\n\nFix: add ec2:DescribeInstanceAttribute to the IAM policy attached to the connected AWS role, then rerun deployment. Terraform creates the EC2 instance first, then reads this attribute to complete state refresh.`;
+  }
+
+  if (message.includes('ec2:DescribeVpcAttribute')) {
+    return `${message}\n\nFix: add ec2:DescribeVpcAttribute to the IAM policy attached to the connected AWS role, then rerun deployment. Terraform reads default VPC DNS attributes while planning resources that reference data.aws_vpc.default.`;
+  }
+
+  if (message.includes('iam:GetRole')) {
+    return `${message}\n\nFix: add iam:GetRole to the IAM policy attached to the connected AWS role, then rerun deployment. EC2 deployments with an IAM role need Terraform to read that role before creating or attaching an instance profile. You will also need iam:PassRole and instance-profile permissions if the EC2 node uses an IAM role.`;
+  }
+
+  if (message.includes('iam:CreateInstanceProfile')) {
+    return `${message}\n\nFix: add iam:CreateInstanceProfile to the IAM policy attached to the connected AWS role, then rerun deployment. EC2 deployments with an IAM role need Terraform to create an instance profile before attaching the role to the instance. You will also need iam:AddRoleToInstanceProfile and iam:PassRole.`;
+  }
+
+  if (message.includes('ec2:CreateSecurityGroup')) {
+    return `${message}\n\nFix: add ec2:CreateSecurityGroup to the IAM policy attached to the connected AWS role, then rerun deployment. If Terraform manages security group rules, also allow ec2:AuthorizeSecurityGroupIngress, ec2:AuthorizeSecurityGroupEgress, ec2:RevokeSecurityGroupIngress, ec2:RevokeSecurityGroupEgress, and ec2:DeleteSecurityGroup.`;
   }
 
   return message;

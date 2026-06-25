@@ -544,7 +544,12 @@ function ec2AmiExpression(config) {
 }
 
 function ec2SecurityGroupIdsLine(node, nodes, edges, names) {
-  const expression = mergeListExpression(configString(node.data?.config, 'vpc_security_group_ids'), securityGroupRefsForEc2(node, nodes, edges, names));
+  const declaredSecurityGroupNames = new Set(nodes.filter((candidate) => candidate.data?.serviceId === 'security-group').map((candidate) => names[candidate.id]).filter(Boolean));
+  const expression = mergeListExpression(
+    configString(node.data?.config, 'vpc_security_group_ids'),
+    securityGroupRefsForEc2(node, nodes, edges, names),
+    declaredSecurityGroupNames,
+  );
   return expression ? `  vpc_security_group_ids = ${expression}\n` : '';
 }
 
@@ -565,8 +570,8 @@ function securityGroupRefsForEc2(node, nodes, edges, names) {
   return Array.from(new Set(refs.filter(Boolean)));
 }
 
-function mergeListExpression(configValue, inferredRefs) {
-  const explicit = String(configValue ?? '').trim();
+function mergeListExpression(configValue, inferredRefs, declaredSecurityGroupNames = new Set()) {
+  const explicit = sanitizeConfiguredListExpression(String(configValue ?? '').trim(), declaredSecurityGroupNames);
   const missingRefs = inferredRefs.filter((ref) => !explicit.includes(ref));
 
   if (!explicit && !missingRefs.length) return '';
@@ -576,6 +581,37 @@ function mergeListExpression(configValue, inferredRefs) {
   if (!missingRefs.length) return explicitExpression;
 
   return `distinct(concat(${explicitExpression}, [${missingRefs.join(', ')}]))`;
+}
+
+function sanitizeConfiguredListExpression(value, declaredSecurityGroupNames) {
+  if (!value) return '';
+
+  const entries = parseSimpleListExpression(value);
+  if (!entries) return value;
+
+  const filteredEntries = entries.filter((entry) => {
+    const match = entry.match(/^aws_security_group\.([A-Za-z0-9_]+)\.id$/);
+    return !match || declaredSecurityGroupNames.has(match[1]);
+  });
+
+  if (!filteredEntries.length) return '';
+  if (filteredEntries.length === entries.length) return value;
+  return `[${filteredEntries.map(formatListEntry).join(', ')}]`;
+}
+
+function parseSimpleListExpression(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return [];
+  if (/^(distinct|concat|flatten|toset|tolist)\s*\(/.test(text)) return undefined;
+
+  const listMatch = text.match(/^\[(.*)\]$/s);
+  const body = listMatch ? listMatch[1] : text;
+  return body.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function formatListEntry(entry) {
+  if (/^".*"$/.test(entry) || /^'.*'$/.test(entry) || looksLikeTerraformExpression(entry)) return entry;
+  return formatValue(entry);
 }
 
 function securityGroupIngressBlocks(portsValue, cidrsValue) {

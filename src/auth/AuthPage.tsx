@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import type React from 'react';
 import { useMemo, useState } from 'react';
+import AppLogo from '../components/AppLogo';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
 import { forgotPassword, login, register } from './authClient';
@@ -88,10 +89,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           Back to home
         </a>
         <div className="auth-brand">
-          <span className="auth-logo-mark">
-            <CloudCog size={22} />
-          </span>
-          <span>infraflow</span>
+          <AppLogo className="app-logo--auth" />
         </div>
         <h1>{isRegister ? 'Build AWS infrastructure with your first workspace.' : 'Welcome back to your cloud workspace.'}</h1>
         <p>
