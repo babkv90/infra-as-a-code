@@ -10,7 +10,7 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
     ...ec2AmiDataBlocks(serviceNodes),
     ...bindingSupportBlocks(serviceNodes, nodes),
     ...ec2InstanceProfileBlocks(serviceNodes),
-    ...serviceNodes.flatMap((node) => resourceBlocksForNode(node, nodes)),
+    ...serviceNodes.flatMap((node) => resourceBlocksForNode(node, nodes, edges)),
   ]);
 
   if (selectedNodeId) {
@@ -106,7 +106,7 @@ data "aws_iam_role" "${resourceName}_role" {
   });
 }
 
-function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[]): string[] {
+function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[]): string[] {
   const service = serviceById[node.data.serviceId ?? ''];
   const config = node.data.config ?? {};
   const label = node.data.label || node.data.serviceName;
@@ -128,7 +128,7 @@ function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[]): string[] {
         `resource "aws_instance" "${name}" {
   ami           = ${formatMaybeExpression(ec2AmiExpression(config))}
   instance_type = ${formatValue(configString(config, 'instance_type'))}
-${optionalExpressionLine('subnet_id', config.subnet_id)}${optionalListExpressionLine('vpc_security_group_ids', config.vpc_security_group_ids)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
+${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLine(node, allNodes, edges)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
 
   tags = {
     Name = ${formatValue(awsName || label)}
@@ -482,17 +482,45 @@ function optionalExpressionLine(key: string, value: unknown): string {
   return `  ${key} = ${formatMaybeExpression(value as string | number | boolean)}\n`;
 }
 
-function optionalListExpressionLine(key: string, value: unknown): string {
-  if (isEmptyValue(value)) return '';
-  return `  ${key} = ${formatListExpression(value as string | number | boolean)}\n`;
-}
-
 function configString(config: Record<string, string | number>, key: string): string {
   return String(config[key] ?? '').trim();
 }
 
 function ec2AmiExpression(config: Record<string, string | number>): string {
   return configString(config, 'ami') || latestAmazonLinux2023Ami;
+}
+
+function ec2SecurityGroupIdsLine(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[]): string {
+  const expression = mergeListExpression(configString(node.data.config, 'vpc_security_group_ids'), securityGroupRefsForEc2(node, allNodes, edges));
+  return expression ? `  vpc_security_group_ids = ${expression}\n` : '';
+}
+
+function securityGroupRefsForEc2(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[]): string[] {
+  const nodeById = Object.fromEntries(allNodes.map((candidate) => [candidate.id, candidate]));
+  const refs = edges.flatMap((edge) => {
+    if (edge.source !== node.id && edge.target !== node.id) return [];
+
+    const otherId = edge.source === node.id ? edge.target : edge.source;
+    const otherNode = nodeById[otherId];
+    if (otherNode?.data.serviceId !== 'security-group') return [];
+
+    return `aws_security_group.${sanitizeName(otherNode.data.label)}.id`;
+  });
+
+  return Array.from(new Set(refs));
+}
+
+function mergeListExpression(configValue: string, inferredRefs: string[]): string {
+  const explicit = configValue.trim();
+  const missingRefs = inferredRefs.filter((ref) => !explicit.includes(ref));
+
+  if (!explicit && !missingRefs.length) return '';
+  if (!explicit) return `[${missingRefs.join(', ')}]`;
+
+  const explicitExpression = formatListExpression(explicit);
+  if (!missingRefs.length) return explicitExpression;
+
+  return `distinct(concat(${explicitExpression}, [${missingRefs.join(', ')}]))`;
 }
 
 function formatListExpression(value: string | number | boolean): string {

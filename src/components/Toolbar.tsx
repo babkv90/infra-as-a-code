@@ -158,7 +158,7 @@ function Toolbar({
 
     try {
       const result = await sendTerraformPayload({ nodes, edges, activeRegion });
-      if (result.data?.nodes?.length && hasAmiUpdates(nodes, result.data.nodes)) {
+      if (result.data?.nodes?.length && hasConfigUpdates(nodes, result.data.nodes)) {
         importDiagram({ nodes: result.data.nodes, edges: result.data.edges ?? edges });
       }
       console.info(result.message);
@@ -304,8 +304,8 @@ function Toolbar({
   );
 }
 
-function hasAmiUpdates(currentNodes: AwsNode[], nextNodes: AwsNode[]): boolean {
-  return nextNodes.some((node, index) => String(currentNodes[index]?.data?.config?.ami ?? '') !== String(node.data?.config?.ami ?? ''));
+function hasConfigUpdates(currentNodes: AwsNode[], nextNodes: AwsNode[]): boolean {
+  return nextNodes.some((node, index) => JSON.stringify(currentNodes[index]?.data?.config ?? {}) !== JSON.stringify(node.data?.config ?? {}));
 }
 
 export default Toolbar;
