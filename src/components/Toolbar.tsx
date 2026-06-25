@@ -29,7 +29,7 @@ import { useDiagramStore } from '../store/diagramStore';
 import { exportTerraform } from '../utils/exportTerraform';
 import { applyEnterpriseLayout, normalizeImportedDiagram } from '../utils/importDiagram';
 import { sendTerraformPayload } from '../utils/terraformPayloadApi';
-import type { DiagramViewMode, GroupKind, ToolMode } from '../types';
+import type { AwsNode, DiagramViewMode, GroupKind, ToolMode } from '../types';
 import type { ThemeMode } from '../theme';
 
 function Toolbar({
@@ -158,6 +158,9 @@ function Toolbar({
 
     try {
       const result = await sendTerraformPayload({ nodes, edges, activeRegion });
+      if (result.data?.nodes?.length && hasAmiUpdates(nodes, result.data.nodes)) {
+        importDiagram({ nodes: result.data.nodes, edges: result.data.edges ?? edges });
+      }
       console.info(result.message);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to send terraform payload.';
@@ -299,6 +302,10 @@ function Toolbar({
     </header>
     </>
   );
+}
+
+function hasAmiUpdates(currentNodes: AwsNode[], nextNodes: AwsNode[]): boolean {
+  return nextNodes.some((node, index) => String(currentNodes[index]?.data?.config?.ami ?? '') !== String(node.data?.config?.ami ?? ''));
 }
 
 export default Toolbar;

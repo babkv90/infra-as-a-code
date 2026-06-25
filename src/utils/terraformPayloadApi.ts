@@ -9,6 +9,12 @@ export type TerraformPayload = {
   activeRegion?: string;
 };
 
+export type TerraformPayloadResponse = {
+  success?: boolean;
+  message?: string;
+  data?: TerraformPayload;
+};
+
 export async function sendTerraformPayload(payload: TerraformPayload) {
   const token = getStoredToken();
   const response = await fetch(`${API_BASE_URL}/terraform-payload`, {
@@ -21,7 +27,7 @@ export async function sendTerraformPayload(payload: TerraformPayload) {
     body: JSON.stringify(payload),
   });
 
-  const result = (await response.json().catch(() => null)) as { success?: boolean; message?: string } | null;
+  const result = (await response.json().catch(() => null)) as TerraformPayloadResponse | null;
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message ?? 'Unable to send terraform payload.');

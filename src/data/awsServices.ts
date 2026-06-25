@@ -9,6 +9,7 @@ const booleanOptions = ['true', 'false'];
 const apiProtocols = ['HTTP', 'WEBSOCKET'];
 const versioningStatuses = ['Enabled', 'Suspended'];
 const loadBalancerProtocols = ['HTTP', 'HTTPS', 'TCP', 'TLS'];
+export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
 
 const commonFields: AwsField[] = [
   { key: 'region', label: 'Region', type: 'select' as const, options: regions },
@@ -31,10 +32,10 @@ export const groupStyles: Record<GroupKind, { color: string; bg: string }> = {
 };
 
 export const awsServices: AwsService[] = [
-  service('ec2', 'EC2', 'EC2', 'Compute', 'Server', '#f97316', ['SSH', 'HTTP'], ['ENI', 'Logs'], 'aws_instance', { name: '', ami: '', instance_type: '', subnet_id: '', vpc_security_group_ids: '', associate_public_ip_address: '', iam_role_arn: '', iam_instance_profile: '' }, [
+  service('ec2', 'EC2', 'EC2', 'Compute', 'Server', '#f97316', ['SSH', 'HTTP'], ['ENI', 'Logs'], 'aws_instance', { name: '', ami: latestAmazonLinux2023Ami, instance_type: '', subnet_id: '', vpc_security_group_ids: '', associate_public_ip_address: '', iam_role_arn: '', iam_instance_profile: '' }, [
     ...commonFields,
     nameField,
-    { key: 'ami', label: 'AMI ID', type: 'text' },
+    { key: 'ami', label: 'AMI ID / lookup', type: 'text' },
     { key: 'instance_type', label: 'Instance type', type: 'select', options: instanceTypes },
     { key: 'subnet_id', label: 'Subnet ID expression', type: 'text' },
     { key: 'vpc_security_group_ids', label: 'Security group IDs expression', type: 'text' },

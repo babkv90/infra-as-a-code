@@ -1,4 +1,4 @@
-import { serviceById } from '../data/awsServices';
+import { latestAmazonLinux2023Ami, serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsNode, NodeBinding } from '../types';
 
 export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNodeId?: string): string {
@@ -37,7 +37,7 @@ function terraformHeader(region: string): string {
 }
 
 function ec2AmiDataBlocks(nodes: AwsNode[]): string[] {
-  if (!nodes.some((node) => node.data.serviceId === 'ec2' && configString(node.data.config, 'ami') === 'data.aws_ami.amazon_linux_2023.id')) return [];
+  if (!nodes.some((node) => node.data.serviceId === 'ec2' && ec2AmiExpression(node.data.config) === latestAmazonLinux2023Ami)) return [];
 
   return [
     `data "aws_ami" "amazon_linux_2023" {
@@ -126,7 +126,7 @@ function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[]): string[] {
 
       return [
         `resource "aws_instance" "${name}" {
-  ami           = ${formatMaybeExpression(configString(config, 'ami'))}
+  ami           = ${formatMaybeExpression(ec2AmiExpression(config))}
   instance_type = ${formatValue(configString(config, 'instance_type'))}
 ${optionalExpressionLine('subnet_id', config.subnet_id)}${optionalListExpressionLine('vpc_security_group_ids', config.vpc_security_group_ids)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
 
@@ -489,6 +489,10 @@ function optionalListExpressionLine(key: string, value: unknown): string {
 
 function configString(config: Record<string, string | number>, key: string): string {
   return String(config[key] ?? '').trim();
+}
+
+function ec2AmiExpression(config: Record<string, string | number>): string {
+  return configString(config, 'ami') || latestAmazonLinux2023Ami;
 }
 
 function formatListExpression(value: string | number | boolean): string {

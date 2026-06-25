@@ -40,6 +40,7 @@ const terraformTypeByServiceId = {
 };
 
 const deployableServices = new Set(Object.keys(terraformTypeByServiceId));
+export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
 
 export function generateTerraform(nodes = [], edges = [], options = {}) {
   const region = options.region ?? firstRegion(nodes) ?? 'ap-south-1';
@@ -123,7 +124,7 @@ data "aws_iam_role" "${resourceName}_role" {
 }
 
 function ec2AmiDataBlocks(nodes) {
-  if (!nodes.some((node) => node.data?.serviceId === 'ec2' && configString(node.data?.config, 'ami') === 'data.aws_ami.amazon_linux_2023.id')) return [];
+  if (!nodes.some((node) => node.data?.serviceId === 'ec2' && ec2AmiExpression(node.data?.config) === latestAmazonLinux2023Ami)) return [];
 
   return [
     `data "aws_ami" "amazon_linux_2023" {
@@ -209,7 +210,7 @@ ${optionalLine('read_capacity', config.read_capacity)}${optionalLine('write_capa
       const instanceProfile = ec2InstanceProfileReference(node);
       return [
         `resource "aws_instance" "${name}" {
-  ami           = ${formatMaybeExpression(configString(config, 'ami'))}
+  ami           = ${formatMaybeExpression(ec2AmiExpression(config))}
   instance_type = ${formatValue(configString(config, 'instance_type'))}
 ${optionalExpressionLine('subnet_id', config.subnet_id)}${optionalListExpressionLine('vpc_security_group_ids', config.vpc_security_group_ids)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${instanceProfile ? `  iam_instance_profile = ${instanceProfile}\n` : ''}
 
@@ -541,6 +542,10 @@ function optionalListExpressionLine(key, value) {
 
 function configString(config, key) {
   return String(config?.[key] ?? '').trim();
+}
+
+function ec2AmiExpression(config) {
+  return configString(config, 'ami') || latestAmazonLinux2023Ami;
 }
 
 function securityGroupIngressBlocks(portsValue, cidrsValue) {
