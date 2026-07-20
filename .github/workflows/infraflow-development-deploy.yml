@@ -27,6 +27,7 @@ env:
   ECS_CLUSTER: infraflow-cluster
   ECS_SERVICE: static-frontend-edge-waf
   S3_BUCKET: infraflow-static-20260720210218962400000001
+  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
 
@@ -86,5 +87,5 @@ jobs:
           aws s3 sync "$BUILD_DIR/" s3://${{ env.S3_BUCKET }} --delete
 
       - name: Invalidate CloudFront cache
-        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
+        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
