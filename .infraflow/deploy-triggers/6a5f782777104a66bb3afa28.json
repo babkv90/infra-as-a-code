@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a5f782777104a66bb3afa28",
+  "pipelineName": "Production application test",
+  "environment": "development",
+  "target": "s3-cloudfront",
+  "requestedAt": "2026-07-21T13:46:34.007Z",
+  "source": "infraflow"
+}
