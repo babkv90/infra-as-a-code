@@ -1,4 +1,4 @@
-name: "Production applicat development CI/CD"
+name: "Production application pipeline vvvv development CI/CD"
 
 on:
   push:
