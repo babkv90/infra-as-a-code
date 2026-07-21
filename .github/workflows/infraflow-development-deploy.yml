@@ -25,8 +25,8 @@ env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: current-visual-infrastructure-deployment-app
   ECS_CLUSTER: infraflow-cluster
-  ECS_SERVICE: static-frontend-edge-waf
-  S3_BUCKET: infraflow-static-20260720210218962400000001
+  ECS_SERVICE: react-app-service
+  S3_BUCKET: infraflow-static-20260721103059975700000001
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
