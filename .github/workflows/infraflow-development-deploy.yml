@@ -1,4 +1,4 @@
-name: "Production application pipelinera3w development CI/CD"
+name: "Production applicat development CI/CD"
 
 on:
   push:
@@ -80,17 +80,30 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy static build to S3
+      - name: Verify build output
         run: |
+          echo "Looking for a static build output directory (dist/ or build/)..."
           if [ -d dist ]; then
-            BUILD_DIR=dist
+            echo "Found dist/ with $(find dist -type f | wc -l) file(s), $(du -sh dist | cut -f1) total."
+            find dist -maxdepth 2 -type f | head -20
           elif [ -d build ]; then
-            BUILD_DIR=build
+            echo "Found build/ with $(find build -type f | wc -l) file(s), $(du -sh build | cut -f1) total."
+            find build -maxdepth 2 -type f | head -20
           else
-            echo "No static build output found. Expected dist/ for Vite or build/ for Create React App."
+            echo "::error::No static build output found. Expected dist/ (Vite) or build/ (Create React App)."
+            echo "Contents of the repository root after the build step:"
+            ls -la
+            echo "If your build tool writes elsewhere (e.g. Angular's dist/<project-name>/), update this pipeline's build command or the target output directory."
             exit 1
           fi
+
+      - name: Deploy static build to S3
+        run: |
+          if [ -d dist ]; then BUILD_DIR=dist; else BUILD_DIR=build; fi
+          echo "Syncing $BUILD_DIR/ to s3://${{ env.S3_BUCKET }} ..."
           aws s3 sync "$BUILD_DIR/" s3://${{ env.S3_BUCKET }} --delete
+          echo "Sync complete. Bucket now contains:"
+          aws s3 ls "s3://${{ env.S3_BUCKET }}" --recursive --summarize | tail -5
 
       - name: Invalidate CloudFront cache
         if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
