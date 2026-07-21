@@ -11,8 +11,8 @@
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::infraflow-static-20260721105127285400000001",
-        "arn:aws:s3:::infraflow-static-20260721105127285400000001/*"
+        "arn:aws:s3:::infraflow-static-20260721112551100000000001",
+        "arn:aws:s3:::infraflow-static-20260721112551100000000001/*"
       ]
     },
     {
