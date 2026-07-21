@@ -1,7 +1,17 @@
-# reactApp new deployment pipeline
+# Production application pipeline deployment pipeline
 
 This pipeline deploys on every push to `main`. It authenticates to AWS using
 GitHub's OIDC provider — no long-lived AWS access keys are stored in GitHub.
+
+## Automatic setup
+
+If this pipeline is linked to an infraflow deployment with a connected AWS account,
+Infraflow automatically provisions the OIDC provider, the IAM deploy role (scoped to
+this exact repo/branch), and the `AWS_DEPLOY_ROLE_ARN` GitHub secret for you the
+moment you sync this pipeline to GitHub. Check the pipeline's "AWS deploy role" status
+in the dashboard — if it says "Provisioned", skip straight to pushing your code. The
+manual steps below are only needed if that status says "Skipped" (no AWS account
+linked) or "Failed" (check the error shown in the dashboard).
 
 ## Why "Configure AWS credentials with OIDC" fails
 
@@ -29,13 +39,13 @@ aws iam create-open-id-connect-provider \
 
 # 2. Create the deploy role, trusted only for this repo + branch (see deploy/oidc-trust-policy.json)
 aws iam create-role \
-  --role-name reactapp-new-deploy-role \
+  --role-name production-application-pipeline-deploy-role \
   --assume-role-policy-document file://deploy/oidc-trust-policy.json
 
 # 3. Attach the least-privilege permissions this pipeline needs (see deploy/oidc-permissions-policy.json)
 aws iam put-role-policy \
-  --role-name reactapp-new-deploy-role \
-  --policy-name reactapp-new-deploy-role-permissions \
+  --role-name production-application-pipeline-deploy-role \
+  --policy-name production-application-pipeline-deploy-role-permissions \
   --policy-document file://deploy/oidc-permissions-policy.json
 ```
 
@@ -46,7 +56,7 @@ AWS account ID. Before running step 3, replace `<ACCOUNT_ID>` in
 ## Required GitHub repository secret
 
 - `AWS_DEPLOY_ROLE_ARN`: the ARN printed by step 2 above, e.g.
-  `arn:aws:iam::<ACCOUNT_ID>:role/reactapp-new-deploy-role`.
+  `arn:aws:iam::<ACCOUNT_ID>:role/production-application-pipeline-deploy-role`.
 
 Recommended secrets by target:
 - `CLOUDFRONT_DISTRIBUTION_ID` for S3 and CloudFront apps (leave unset to skip cache invalidation).
