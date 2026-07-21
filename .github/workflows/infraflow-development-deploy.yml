@@ -1,4 +1,4 @@
-name: "Production application pipeline vvvv development CI/CD"
+name: "Production app raw  development CI/CD"
 
 on:
   push:
@@ -26,7 +26,7 @@ env:
   ECR_REPOSITORY: current-visual-infrastructure-deployment-app
   ECS_CLUSTER: infraflow-cluster
   ECS_SERVICE: react-app-service
-  S3_BUCKET: infraflow-static-20260721133904266200000001
+  S3_BUCKET: infraflow-static-20260721151749775800000001
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
