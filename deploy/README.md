@@ -1,4 +1,4 @@
-# Production application pipeline deployment pipeline
+# Production application test deployment pipeline
 
 This pipeline deploys on every push to `main`. It authenticates to AWS using
 GitHub's OIDC provider — no long-lived AWS access keys are stored in GitHub.
@@ -39,13 +39,13 @@ aws iam create-open-id-connect-provider \
 
 # 2. Create the deploy role, trusted only for this repo + branch (see deploy/oidc-trust-policy.json)
 aws iam create-role \
-  --role-name production-application-pipeline-deploy-role \
+  --role-name production-application-test-deploy-role \
   --assume-role-policy-document file://deploy/oidc-trust-policy.json
 
 # 3. Attach the least-privilege permissions this pipeline needs (see deploy/oidc-permissions-policy.json)
 aws iam put-role-policy \
-  --role-name production-application-pipeline-deploy-role \
-  --policy-name production-application-pipeline-deploy-role-permissions \
+  --role-name production-application-test-deploy-role \
+  --policy-name production-application-test-deploy-role-permissions \
   --policy-document file://deploy/oidc-permissions-policy.json
 ```
 
@@ -56,7 +56,7 @@ AWS account ID. Before running step 3, replace `<ACCOUNT_ID>` in
 ## Required GitHub repository secret
 
 - `AWS_DEPLOY_ROLE_ARN`: the ARN printed by step 2 above, e.g.
-  `arn:aws:iam::<ACCOUNT_ID>:role/production-application-pipeline-deploy-role`.
+  `arn:aws:iam::<ACCOUNT_ID>:role/production-application-test-deploy-role`.
 
 Recommended secrets by target:
 - `CLOUDFRONT_DISTRIBUTION_ID` for S3 and CloudFront apps (leave unset to skip cache invalidation).
