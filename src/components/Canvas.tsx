@@ -18,6 +18,8 @@ import GroupBoxNode from './nodes/GroupBoxNode';
 import LabelNode from './nodes/LabelNode';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdge } from '../types';
+import { getStoredUser } from '../auth/authClient';
+import { isServiceAllowedForUser } from '../utils/accessControl';
 
 const nodeTypes: NodeTypes = {
   awsService: AwsServiceNode,
@@ -85,6 +87,7 @@ function Canvas() {
       event.preventDefault();
       const serviceId = event.dataTransfer.getData('application/aws-service');
       if (!serviceId) return;
+      if (!isServiceAllowedForUser(serviceId, getStoredUser())) return;
       const position = reactFlow.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,

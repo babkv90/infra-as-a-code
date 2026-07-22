@@ -1,20 +1,29 @@
 import { latestAmazonLinux2023Ami, serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsNode, NodeBinding } from '../types';
+import { expectedOutputsForService } from './resourceRequirements';
 
 export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNodeId?: string): string {
   const targetNodes = selectedNodeId ? nodes.filter((node) => node.id === selectedNodeId) : nodes;
   const serviceNodes = targetNodes.filter((node) => node.type !== 'groupBox' && node.data.serviceId);
   const region = firstRegion(serviceNodes) ?? 'ap-south-1';
+  const createsManagedEc2Keys = serviceNodes.some(shouldCreateManagedEc2KeyPair);
+  const includesUsEast1Provider = serviceNodes.some(
+    (node) =>
+      (node.data.serviceId === 'waf' && configString(node.data.config, 'scope') === 'CLOUDFRONT') ||
+      (node.data.serviceId === 'cloudwatch' && configString(node.data.config, 'namespace') === 'AWS/CloudFront'),
+  );
   const resourceBlocks = dedupeTerraformBlocks([
     ...awsDataSourceBlocks(serviceNodes),
     ...ec2AmiDataBlocks(serviceNodes),
+    ...ec2ManagedKeyPairBlocks(serviceNodes),
     ...bindingSupportBlocks(serviceNodes, nodes),
     ...ec2InstanceProfileBlocks(serviceNodes),
     ...serviceNodes.flatMap((node) => resourceBlocksForNode(node, nodes, edges)),
+    resourceOutputBlock(serviceNodes),
   ]);
 
   if (selectedNodeId) {
-    return [terraformHeader(region), ...resourceBlocks].join('\n\n') || '# Select an AWS service node to export Terraform.';
+    return [terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider), ...resourceBlocks].join('\n\n') || '# Select an AWS service node to export Terraform.';
   }
 
   const edgeNotes = edges.length
@@ -23,17 +32,40 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
         .join('\n')}`
     : '';
 
-  return `${[terraformHeader(region), ...resourceBlocks].join('\n\n') || '# Add nodes to generate Terraform.'}${edgeNotes}`;
+  return `${[terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider), ...resourceBlocks].join('\n\n') || '# Add nodes to generate Terraform.'}${edgeNotes}`;
 }
 
 function sanitizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'resource';
 }
 
-function terraformHeader(region: string): string {
-  return `provider "aws" {
+function sanitizeMetricName(value: string): string {
+  return String(value || 'infraflowMetric').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 128) || 'infraflowMetric';
+}
+
+function terraformHeader(region: string, includeTlsProvider = false, includeUsEast1Provider = false): string {
+  return `terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }${includeTlsProvider ? `
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }` : ''}
+  }
+}
+
+provider "aws" {
   region = "${escapeString(region)}"
-}`;
+}${includeUsEast1Provider ? `
+
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}` : ''}`;
 }
 
 function ec2AmiDataBlocks(nodes: AwsNode[]): string[] {
@@ -77,6 +109,25 @@ function awsDataSourceBlocks(nodes: AwsNode[]): string[] {
   }
 
   return blocks;
+}
+
+function ec2ManagedKeyPairBlocks(nodes: AwsNode[]): string[] {
+  return nodes.filter(shouldCreateManagedEc2KeyPair).flatMap((node) => {
+    const label = node.data.label || node.data.serviceName;
+    const resourceName = managedEc2KeyPairResourceName(sanitizeName(label));
+    const keyName = uniqueAwsName(`${label}-key`);
+
+    return [
+      `resource "tls_private_key" "${resourceName}" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}`,
+      `resource "aws_key_pair" "${resourceName}" {
+  key_name   = ${formatValue(keyName)}
+  public_key = tls_private_key.${resourceName}.public_key_openssh
+}`,
+    ];
+  });
 }
 
 function ec2InstanceProfileBlocks(nodes: AwsNode[]): string[] {
@@ -123,12 +174,15 @@ function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[], edges: AwsEdg
         : roleName
           ? `aws_iam_instance_profile.${sharedEc2ProfileResourceName(roleName)}.name`
           : undefined;
+      const keyNameLine = configString(config, 'key_name')
+        ? optionalLine('key_name', config.key_name)
+        : `  key_name = aws_key_pair.${managedEc2KeyPairResourceName(name)}.key_name\n`;
 
       return [
         `resource "aws_instance" "${name}" {
   ami           = ${formatMaybeExpression(ec2AmiExpression(config))}
   instance_type = ${formatValue(configString(config, 'instance_type'))}
-${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLine(node, allNodes, edges)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
+${keyNameLine}${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLine(node, allNodes, edges)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
 
   tags = {
     Name = ${formatValue(awsName || label)}
@@ -136,11 +190,14 @@ ${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLin
 }`,
       ];
     }
-    case 'lambda':
+    case 'lambda': {
+      const iamNode = connectedServiceNode(node, allNodes, edges, 'iam');
+      const roleRef = configString(config, 'role_arn') ||
+        (iamNode ? `aws_iam_role.${sanitizeName(iamNode.data.label || iamNode.data.serviceName)}.arn` : '');
       return [
         `resource "aws_lambda_function" "${name}" {
   function_name    = ${formatValue(configString(config, 'function_name') || awsName)}
-  role             = ${formatValue(configString(config, 'role_arn'))}
+  role             = ${formatMaybeExpression(roleRef)}
   filename         = ${formatValue(configString(config, 'filename'))}
   source_code_hash = ${formatMaybeExpression(configString(config, 'source_code_hash'))}
   handler          = ${formatValue(configString(config, 'handler'))}
@@ -150,6 +207,7 @@ ${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLin
 ${lambdaEnvironmentBlock(node, allNodes)}
 }`,
       ];
+    }
     case 'ecs':
       return [
         `resource "aws_ecs_service" "${name}" {
@@ -221,6 +279,35 @@ ${ecsBindingComment(node, allNodes)}`,
   route_table_id = ${formatMaybeExpression(configString(config, 'route_table_id'))}
 }`,
       ];
+    case 'route53': {
+      const cloudfrontNode = connectedServiceNode(node, allNodes, edges, 'cloudfront');
+      const cloudfrontName = cloudfrontNode ? sanitizeName(cloudfrontNode.data.label || cloudfrontNode.data.serviceName) : '';
+      const recordType = configString(config, 'type') || 'A';
+      const common = `resource "aws_route53_record" "${name}" {
+  zone_id = ${formatMaybeExpression(configString(config, 'zone_id'))}
+  name    = ${formatValue(configString(config, 'name') || awsName)}
+  type    = ${formatValue(recordType)}`;
+
+      if (cloudfrontName && ['A', 'AAAA'].includes(recordType)) {
+        return [
+          `${common}
+
+  alias {
+    name                   = aws_cloudfront_distribution.${cloudfrontName}.domain_name
+    zone_id                = aws_cloudfront_distribution.${cloudfrontName}.hosted_zone_id
+    evaluate_target_health = false
+  }
+}`,
+        ];
+      }
+
+      return [
+        `${common}
+  ttl     = ${formatNumber(config.ttl || 300)}
+  records = ${formatListExpression(configString(config, 'records'))}
+}`,
+      ];
+    }
     case 'security-group':
       return [
         `resource "aws_security_group" "${name}" {
@@ -233,18 +320,94 @@ ${securityGroupIngressBlocks(configString(config, 'ingress_ports'), configString
   }
 }`,
       ];
-    case 's3':
-      return [
+    case 's3': {
+      const bucketLine = configString(config, 'bucket')
+        ? `  bucket = ${formatValue(configString(config, 'bucket'))}`
+        : `  bucket_prefix = ${formatValue(configString(config, 'bucket_prefix') || `${uniqueBucketName(label).slice(0, 37)}-`)}`;
+      const versioningStatus = configString(config, 'versioning');
+      const websiteIndex = configString(config, 'website_index_document');
+      const websiteError = configString(config, 'website_error_document') || websiteIndex;
+      const publicRead = configString(config, 'public_read') === 'true' || Boolean(websiteIndex);
+      const blocks = [
         `resource "aws_s3_bucket" "${name}" {
-  bucket = ${formatValue(configString(config, 'bucket'))}
-}`,
-        `resource "aws_s3_bucket_versioning" "${name}_versioning" {
-  bucket = aws_s3_bucket.${name}.id
-  versioning_configuration {
-    status = ${formatValue(configString(config, 'versioning'))}
-  }
+${bucketLine}
+  force_destroy = true
 }`,
       ];
+
+      if (['Enabled', 'Suspended'].includes(versioningStatus)) {
+        blocks.push(`resource "aws_s3_bucket_versioning" "${name}_versioning" {
+  bucket = aws_s3_bucket.${name}.id
+  versioning_configuration {
+    status = ${formatValue(versioningStatus)}
+  }
+}`);
+      }
+
+      if (websiteIndex) {
+        blocks.push(`resource "aws_s3_bucket_website_configuration" "${name}_website" {
+  bucket = aws_s3_bucket.${name}.id
+
+  index_document {
+    suffix = ${formatValue(websiteIndex)}
+  }
+
+  error_document {
+    key = ${formatValue(websiteError)}
+  }
+}`);
+      }
+
+      if (publicRead) {
+        blocks.push(`resource "aws_s3_bucket_public_access_block" "${name}_public_access" {
+  bucket = aws_s3_bucket.${name}.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}`);
+        blocks.push(`resource "aws_s3_bucket_policy" "${name}_public_read" {
+  bucket = aws_s3_bucket.${name}.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${'${'}aws_s3_bucket.${name}.arn}/*"
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.${name}_public_access]
+}`);
+      }
+
+      const kmsNode = connectedServiceNode(node, allNodes, edges, 'kms');
+      const kmsName = kmsNode ? sanitizeName(kmsNode.data.label || kmsNode.data.serviceName) : '';
+      // SSE-KMS requires an authenticated SigV4 request to decrypt on read. S3 static website
+      // hosting (and any anonymous public-read bucket) only ever serves unsigned requests, so
+      // combining the two always fails with "Requests specifying Server Side Encryption with AWS
+      // KMS managed keys require AWS Signature Version 4." Public content also gains nothing from
+      // KMS confidentiality-wise, so skip it here rather than break the site.
+      if (kmsName && !websiteIndex && !publicRead) {
+        blocks.push(`resource "aws_s3_bucket_server_side_encryption_configuration" "${name}_encryption" {
+  bucket = aws_s3_bucket.${name}.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.${kmsName}.arn
+    }
+  }
+}`);
+      }
+
+      return blocks;
+    }
     case 'dynamodb':
       return [
         `resource "aws_dynamodb_table" "${name}" {
@@ -289,9 +452,10 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
 }`,
       ];
     case 'cloudwatch':
+      const cloudWatchProviderLine = configString(config, 'namespace') === 'AWS/CloudFront' ? '  provider            = aws.us_east_1\n' : '';
       return [
         `resource "aws_cloudwatch_metric_alarm" "${name}" {
-  alarm_name          = ${formatValue(configString(config, 'alarm_name') || awsName)}
+${cloudWatchProviderLine}  alarm_name          = ${formatValue(configString(config, 'alarm_name') || awsName)}
   comparison_operator = ${formatValue(configString(config, 'comparison_operator'))}
   evaluation_periods  = ${formatNumber(config.evaluation_periods)}
   metric_name         = ${formatValue(configString(config, 'metric_name'))}
@@ -301,22 +465,152 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
   threshold           = ${formatNumber(config.threshold)}
 }`,
       ];
-    case 'apigw':
+    case 'cloudfront': {
+      const originNode = connectedServiceNode(node, allNodes, edges, 's3') ?? allNodes.find((candidate) => candidate.data.serviceId === 's3');
+      const originName = originNode ? sanitizeName(originNode.data.label || originNode.data.serviceName) : '';
+      const originId = originName ? `s3-${originName}` : `${name}-origin`;
+      const originDomain = originName ? `aws_s3_bucket.${originName}.bucket_regional_domain_name` : formatValue(configString(config, 'origin_domain_name') || 'replace-with-origin.example.com');
+      const wafNode = connectedServiceNode(node, allNodes, edges, 'waf');
+      const wafName = wafNode ? sanitizeName(wafNode.data.label || wafNode.data.serviceName) : '';
+      const wafLine = wafName ? `  web_acl_id          = aws_wafv2_web_acl.${wafName}.arn\n` : '';
+
       return [
+        `resource "aws_cloudfront_distribution" "${name}" {
+  enabled             = ${formatBoolean(config.enabled)}
+  comment             = ${formatValue(configString(config, 'comment') || awsName)}
+  default_root_object = ${formatValue(configString(config, 'default_root_object') || 'index.html')}
+  price_class         = ${formatValue(configString(config, 'price_class') || 'PriceClass_100')}
+${wafLine}
+  origin {
+    domain_name = ${originDomain}
+    origin_id   = ${formatValue(originId)}
+  }
+
+  default_cache_behavior {
+    target_origin_id       = ${formatValue(originId)}
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}`,
+      ];
+    }
+    case 'apigw': {
+      const lambdaNode = connectedServiceNode(node, allNodes, edges, 'lambda');
+      const blocks = [
         `resource "aws_apigatewayv2_api" "${name}" {
   name          = ${formatValue(awsName)}
-  protocol_type = ${formatValue(configString(config, 'protocol_type'))}
+  protocol_type = ${formatValue(configString(config, 'protocol_type') || 'HTTP')}
 }`,
       ];
-    case 'iam':
-      return [
+
+      if (lambdaNode) {
+        const lambdaName = sanitizeName(lambdaNode.data.label || lambdaNode.data.serviceName);
+        blocks.push(`resource "aws_apigatewayv2_integration" "${name}_lambda" {
+  api_id                 = aws_apigatewayv2_api.${name}.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.${lambdaName}.invoke_arn
+  payload_format_version = "2.0"
+}`);
+        blocks.push(`resource "aws_apigatewayv2_route" "${name}_default" {
+  api_id    = aws_apigatewayv2_api.${name}.id
+  route_key = ${formatValue(configString(config, 'route_key') || 'ANY /{proxy+}')}
+  target    = "integrations/\${aws_apigatewayv2_integration.${name}_lambda.id}"
+}`);
+        blocks.push(`resource "aws_apigatewayv2_stage" "${name}_default" {
+  api_id      = aws_apigatewayv2_api.${name}.id
+  name        = "$default"
+  auto_deploy = true
+}`);
+        blocks.push(`resource "aws_lambda_permission" "${name}_invoke" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.${lambdaName}.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "\${aws_apigatewayv2_api.${name}.execution_arn}/*/*"
+}`);
+      }
+
+      return blocks;
+    }
+    case 'iam': {
+      const forLambda = Boolean(connectedServiceNode(node, allNodes, edges, 'lambda'));
+      const trustPolicy = configString(config, 'assume_role_policy') || (forLambda
+        ? `jsonencode({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]})`
+        : '');
+      const blocks = [
         `resource "aws_iam_role" "${name}" {
   name               = ${formatValue(awsName)}
-  assume_role_policy = ${formatMaybeExpression(configString(config, 'assume_role_policy'))}
+  assume_role_policy = ${formatJsonOrExpression(trustPolicy)}
 }`,
       ];
+      if (forLambda) {
+        blocks.push(`resource "aws_iam_role_policy_attachment" "${name}_lambda_basic_execution" {
+  role       = aws_iam_role.${name}.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}`);
+      }
+      return blocks;
+    }
+    case 'waf': {
+      const defaultAction = configString(config, 'default_action') === 'block' ? 'block' : 'allow';
+      const metricName = configString(config, 'metric_name') || sanitizeMetricName(awsName);
+      const providerLine = configString(config, 'scope') === 'CLOUDFRONT' ? '  provider = aws.us_east_1\n' : '';
+      return [
+        `resource "aws_wafv2_web_acl" "${name}" {
+${providerLine}  name  = ${formatValue(awsName)}
+  scope = ${formatValue(configString(config, 'scope') || 'CLOUDFRONT')}
+
+  default_action {
+    ${defaultAction} {}
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = ${formatValue(metricName)}
+    sampled_requests_enabled   = true
+  }
+}`,
+      ];
+    }
     default: {
-      const fallbackConfig = Object.entries(config)
+      const fallbackFullConfig = { ...config };
+      const identifierField = identifierFieldByServiceId[node.data.serviceId ?? ''];
+      if (identifierField && isEmptyValue(fallbackFullConfig[identifierField])) {
+        fallbackFullConfig[identifierField] = uniqueAwsName(label);
+      }
+
+      const fallbackConfig = Object.entries(fallbackFullConfig)
         .filter(([, value]) => !isEmptyValue(value))
         .filter(([key]) => !['region', 'status'].includes(key))
         .map(([key, value]) => `  ${key} = ${formatMaybeExpression(value)}`)
@@ -325,6 +619,95 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
       return [`resource "${service?.terraformType ?? 'aws_resource'}" "${name}" {\n${fallbackConfig || '  # Add required arguments'}\n}`];
     }
   }
+}
+
+// Config key that AWS requires to be unique (per region/account, or globally for a few types) for
+// resource types handled by the default fallback above. When that field is left blank, the fallback
+// fills it with an auto-generated per-diagram name instead of omitting the argument entirely.
+const identifierFieldByServiceId: Record<string, string> = {
+  alb: 'name',
+  'lb-target-group': 'name',
+  ecs: 'name',
+  ecr: 'name',
+  eks: 'name',
+  elasticache: 'cluster_id',
+  redshift: 'cluster_identifier',
+  rds: 'identifier',
+  docdb: 'cluster_identifier',
+  'docdb-instance': 'identifier',
+  'docdb-subnet-group': 'name',
+  kinesis: 'name',
+  cognito: 'name',
+  codebuild: 'name',
+  codepipeline: 'name',
+  beanstalk: 'name',
+};
+
+function connectedServiceNode(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[], serviceId: string): AwsNode | undefined {
+  const nodeById = Object.fromEntries(allNodes.map((candidate) => [candidate.id, candidate]));
+  for (const edge of edges) {
+    if (edge.source !== node.id && edge.target !== node.id) continue;
+    const otherId = edge.source === node.id ? edge.target : edge.source;
+    const otherNode = nodeById[otherId];
+    if (otherNode?.data.serviceId === serviceId) return otherNode;
+  }
+  return undefined;
+}
+
+function resourceOutputBlock(nodes: AwsNode[]): string {
+  const hasManagedEc2Keys = nodes.some(shouldCreateManagedEc2KeyPair);
+  const entries = nodes
+    .filter((node) => node.data.serviceId && serviceById[node.data.serviceId])
+    .map((node) => {
+      const service = serviceById[node.data.serviceId!];
+      const resourceName = sanitizeName(node.data.label || node.data.serviceName);
+      const outputs = expectedOutputsForNode(node);
+      const attrs = outputs.map((attr) => outputAttributeExpression(node, service.terraformType, resourceName, attr)).join('\n');
+
+      return `    ${resourceName} = {
+      label = ${formatValue(node.data.label || node.data.serviceName)}
+      service = ${formatValue(node.data.serviceName)}
+      terraform_address = ${formatValue(`${service.terraformType}.${resourceName}`)}
+${attrs}
+    }`;
+    });
+
+  if (!entries.length) return '';
+
+  return `output "infraflow_resource_outputs" {
+  description = "Resource identifiers, ARNs, endpoints, and connectivity values generated by infraflow."
+  value = {
+${entries.join('\n')}
+  }${hasManagedEc2Keys ? '\n  sensitive = true' : ''}
+}`;
+}
+
+function outputAttributeExpression(node: AwsNode, terraformType: string, resourceName: string, attr: string): string {
+  if (node.data.serviceId === 'ec2' && attr === 'key_pair_name') {
+    return shouldCreateManagedEc2KeyPair(node)
+      ? `      ${attr} = try(aws_key_pair.${managedEc2KeyPairResourceName(resourceName)}.key_name, null)`
+      : `      ${attr} = try(${terraformType}.${resourceName}.key_name, null)`;
+  }
+
+  if (node.data.serviceId === 'ec2' && attr === 'ssh_private_key_pem') {
+    return shouldCreateManagedEc2KeyPair(node)
+      ? `      ${attr} = try(tls_private_key.${managedEc2KeyPairResourceName(resourceName)}.private_key_pem, null)`
+      : `      ${attr} = null`;
+  }
+
+  if (node.data.serviceId === 's3' && ['website_endpoint', 'website_domain'].includes(attr)) {
+    return `      ${attr} = try(aws_s3_bucket_website_configuration.${resourceName}_website.${attr}, null)`;
+  }
+
+  return `      ${attr} = try(${terraformType}.${resourceName}.${attr}, null)`;
+}
+
+function expectedOutputsForNode(node: AwsNode): string[] {
+  const outputs = expectedOutputsForService(node.data.serviceId);
+  if (node.data.serviceId === 's3' && configString(node.data.config ?? {}, 'website_index_document')) {
+    return [...outputs, 'website_endpoint', 'website_domain'];
+  }
+  return outputs;
 }
 
 function bindingSupportBlocks(nodes: AwsNode[], allNodes: AwsNode[]): string[] {
@@ -461,6 +844,24 @@ function formatMaybeExpression(value: string | number | boolean): string {
   return formatValue(trimmed);
 }
 
+// Like formatMaybeExpression, but for fields (like assume_role_policy) that Terraform expects to
+// be a *string* containing JSON. Raw pasted JSON ("{...}"/"[...]") is wrapped in jsonencode(...) so
+// it evaluates to a string, instead of being emitted as a bare HCL object (wrong type). Genuine
+// Terraform expressions (data.x.json, var.x, an already-wrapped jsonencode(...)) pass through as-is.
+function formatJsonOrExpression(value: string | number | boolean): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return formatValue('');
+  if (/^[{[]/.test(trimmed)) {
+    try {
+      JSON.parse(trimmed);
+      return `jsonencode(${trimmed})`;
+    } catch {
+      return formatValue(trimmed);
+    }
+  }
+  return formatMaybeExpression(trimmed);
+}
+
 function formatNumber(value: unknown): string {
   const parsed = Number(value);
   return Number.isFinite(parsed) && String(value).trim() !== '' ? String(parsed) : 'null';
@@ -488,6 +889,14 @@ function configString(config: Record<string, string | number>, key: string): str
 
 function ec2AmiExpression(config: Record<string, string | number>): string {
   return configString(config, 'ami') || latestAmazonLinux2023Ami;
+}
+
+function shouldCreateManagedEc2KeyPair(node: AwsNode): boolean {
+  return node.data.serviceId === 'ec2' && !configString(node.data.config ?? {}, 'key_name');
+}
+
+function managedEc2KeyPairResourceName(resourceName: string): string {
+  return `ec2_key_${resourceName}`.slice(0, 48);
 }
 
 function ec2SecurityGroupIdsLine(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[]): string {

@@ -6,6 +6,7 @@ import {
   createDeploymentSchema,
   createDeploymentFromCanvas,
   destroyDeployment,
+  forceDestroyDeployment,
   getDeployment,
   listDeployments,
   queueDeployment,
@@ -25,3 +26,4 @@ deploymentRouter.post('/from-diagram/:diagramId', authorize(roles.DEVOPS), valid
 deploymentRouter.post('/:id/apply', authorize(roles.DEVOPS), applyDeployment);
 deploymentRouter.post('/:id/queue', authorize(roles.DEVOPS), queueDeployment);
 deploymentRouter.post('/:id/destroy', authorize(roles.DEVOPS), destroyDeployment);
+deploymentRouter.post('/:id/force-destroy', authorize(roles.DEVOPS), forceDestroyDeployment);

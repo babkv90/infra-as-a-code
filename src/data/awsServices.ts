@@ -32,21 +32,22 @@ export const groupStyles: Record<GroupKind, { color: string; bg: string }> = {
 };
 
 export const awsServices: AwsService[] = [
-  service('ec2', 'EC2', 'EC2', 'Compute', 'Server', '#f97316', ['SSH', 'HTTP'], ['ENI', 'Logs'], 'aws_instance', { name: '', ami: latestAmazonLinux2023Ami, instance_type: '', subnet_id: '', vpc_security_group_ids: '', associate_public_ip_address: '', iam_role_arn: '', iam_instance_profile: '' }, [
+  service('ec2', 'EC2', 'EC2', 'Compute', 'Server', '#f97316', ['SSH', 'HTTP'], ['ENI', 'Logs'], 'aws_instance', { name: '', ami: latestAmazonLinux2023Ami, instance_type: '', key_name: '', subnet_id: '', vpc_security_group_ids: '', associate_public_ip_address: '', iam_role_arn: '', iam_instance_profile: '' }, [
     ...commonFields,
     nameField,
     { key: 'ami', label: 'AMI ID / lookup', type: 'text' },
     { key: 'instance_type', label: 'Instance type', type: 'select', options: instanceTypes },
+    { key: 'key_name', label: 'EC2 key pair name', type: 'text' },
     { key: 'subnet_id', label: 'Subnet ID expression', type: 'text' },
     { key: 'vpc_security_group_ids', label: 'Security group IDs expression', type: 'text' },
     { key: 'associate_public_ip_address', label: 'Associate public IP', type: 'select', options: booleanOptions },
-    { key: 'iam_role_arn', label: 'IAM role ARN', type: 'text' },
+    { key: 'iam_role_arn', label: 'IAM role ARN', type: 'iam-role' },
     { key: 'iam_instance_profile', label: 'Instance profile name', type: 'text' },
   ]),
   service('lambda', 'Lambda', 'Lambda', 'Compute', 'Function', '#f59e0b', ['Event'], ['Result', 'Logs'], 'aws_lambda_function', { function_name: '', role_arn: '', filename: '', source_code_hash: '', handler: '', runtime: '', memory_size: '', timeout: '' }, [
     ...commonFields,
     { key: 'function_name', label: 'Function name', type: 'text' },
-    { key: 'role_arn', label: 'Execution role ARN', type: 'text' },
+    { key: 'role_arn', label: 'Execution role ARN', type: 'iam-role' },
     { key: 'filename', label: 'Deployment zip path', type: 'text' },
     { key: 'source_code_hash', label: 'Source code hash expression', type: 'text' },
     { key: 'handler', label: 'Handler', type: 'text' },
@@ -65,7 +66,7 @@ export const awsServices: AwsService[] = [
   service('eks', 'EKS', 'EKS', 'Compute', 'Network', '#2563eb', ['API'], ['Pods', 'Logs'], 'aws_eks_cluster', { name: '', role_arn: '', version: '', subnet_ids: '' }, [
     ...commonFields,
     nameField,
-    { key: 'role_arn', label: 'Cluster role ARN', type: 'text' },
+    { key: 'role_arn', label: 'Cluster role ARN', type: 'iam-role' },
     { key: 'version', label: 'Kubernetes version', type: 'text' },
     { key: 'subnet_ids', label: 'Subnet IDs expression', type: 'text' },
   ]),
@@ -182,10 +183,14 @@ export const awsServices: AwsService[] = [
     { key: 'subnet_id', label: 'Subnet ID', type: 'text' },
     { key: 'connectivity_type', label: 'Connectivity type', type: 'select', options: ['public', 'private'] },
   ]),
-  service('s3', 'S3', 'S3', 'Storage', 'HardDrive', '#16a34a', ['Object'], ['Event', 'Object'], 'aws_s3_bucket', { bucket: '', versioning: '' }, [
+  service('s3', 'S3', 'S3', 'Storage', 'HardDrive', '#16a34a', ['Object'], ['Event', 'Object'], 'aws_s3_bucket', { bucket: '', bucket_prefix: '', versioning: '', website_index_document: '', website_error_document: '', public_read: '' }, [
     ...commonFields,
     { key: 'bucket', label: 'Bucket name', type: 'text' },
+    { key: 'bucket_prefix', label: 'Bucket name prefix', type: 'text' },
     { key: 'versioning', label: 'Versioning status', type: 'select', options: versioningStatuses },
+    { key: 'website_index_document', label: 'Website index document', type: 'text' },
+    { key: 'website_error_document', label: 'Website error document', type: 'text' },
+    { key: 'public_read', label: 'Public read objects', type: 'select', options: booleanOptions },
   ]),
   service('efs', 'EFS', 'EFS', 'Storage', 'DatabaseZap', '#059669', ['Mount'], ['Files'], 'aws_efs_file_system', { creation_token: '', encrypted: '', performance_mode: '', throughput_mode: '' }, [
     ...commonFields,
@@ -285,7 +290,7 @@ export const awsServices: AwsService[] = [
   service('iam', 'IAM Role', 'IAM', 'Security', 'KeyRound', '#d97706', ['Assume'], ['Policy'], 'aws_iam_role', { name: '', assume_role_policy: '' }, [
     ...commonFields,
     nameField,
-    { key: 'assume_role_policy', label: 'Assume role policy expression', type: 'text' },
+    { key: 'assume_role_policy', label: 'Assume role policy expression', type: 'json' },
   ]),
   service('secrets', 'Secrets Manager', 'Secret', 'Security', 'LockKeyhole', '#b45309', ['Read'], ['Secret'], 'aws_secretsmanager_secret', { name: '', description: '', recovery_window_in_days: '' }, [
     ...commonFields,
@@ -308,7 +313,7 @@ export const awsServices: AwsService[] = [
   service('codepipeline', 'CodePipeline', 'Pipe', 'DevOps', 'Workflow', '#475569', ['Source'], ['Deploy'], 'aws_codepipeline', { name: '', role_arn: '', pipeline_type: '' }, [
     ...commonFields,
     nameField,
-    { key: 'role_arn', label: 'Pipeline role ARN', type: 'text' },
+    { key: 'role_arn', label: 'Pipeline role ARN', type: 'iam-role' },
     { key: 'pipeline_type', label: 'Pipeline type', type: 'select', options: ['V1', 'V2'] },
   ]),
   service('codebuild', 'CodeBuild', 'Build', 'DevOps', 'Hammer', '#334155', ['Repo'], ['Image'], 'aws_codebuild_project', { name: '', service_role: '', compute_type: '', image: '', type: '' }, [

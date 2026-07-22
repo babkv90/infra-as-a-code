@@ -52,10 +52,6 @@ export function normalizeImportedDiagram(input: unknown): DiagramSnapshot {
   throw new Error('No supported diagram resources were found in this JSON file.');
 }
 
-export function normalizeTerraformHcl(input: string): DiagramSnapshot {
-  return normalizeTerraformFiles([{ name: 'architecture.tf', content: input }]);
-}
-
 export function normalizeTerraformFiles(files: TerraformSourceFile[]): DiagramSnapshot {
   const classifiedFiles = files.map((file) => ({ ...file, kind: terraformFileKind(file.name) }));
   const moduleFiles = classifiedFiles.filter((file) => file.kind === 'tf' || file.kind === 'hcl');

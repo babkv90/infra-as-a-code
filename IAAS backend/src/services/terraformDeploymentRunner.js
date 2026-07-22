@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DeleteObjectsCommand, ListObjectsV2Command, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '../config/env.js';
 import { AwsAccount } from '../models/AwsAccount.js';
 import { Deployment } from '../models/Deployment.js';
 import { assumeAwsRole } from './awsRoleCredentials.js';
+import { createNotification } from './notificationService.js';
 
 const runningDeployments = new Set();
 
@@ -63,24 +65,45 @@ export async function runTerraformDeployment(deploymentId) {
     await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
     await runTerraformCommand(deployment, workDir, ['plan', '-input=false', '-out=tfplan'], terraformEnv);
     await runTerraformCommand(deployment, workDir, ['apply', '-input=false', '-auto-approve', 'tfplan'], terraformEnv);
+    deployment.outputs = await readTerraformOutputs(deployment, workDir, terraformEnv);
 
     deployment.status = 'deployed';
     deployment.finishedAt = new Date();
     deployment.logs.push({ message: 'Terraform apply completed. AWS resources should now be visible in the target account console.', level: 'info' });
     await deployment.save();
+
+    await createNotification({
+      workspace: deployment.workspace,
+      type: 'deployment',
+      status: 'success',
+      title: `Deployment "${deployment.name}" succeeded`,
+      message: `${deployment.resourceCount} resource${deployment.resourceCount === 1 ? '' : 's'} applied to AWS.`,
+      resourceType: 'Deployment',
+      resourceId: deployment._id,
+      resourceName: deployment.name,
+    });
   } catch (error) {
     const deployment = await Deployment.findById(id);
     if (deployment) {
       await failDeployment(deployment, error.message ?? 'Terraform deployment failed.');
+
+      if (deployment.terraformWorkDir && (await hasTerraformState(deployment.terraformWorkDir))) {
+        deployment.logs.push({
+          message: 'Automatically destroying any AWS resources created before this failure, to avoid leaving orphaned infrastructure behind.',
+          level: 'warning',
+        });
+        await deployment.save();
+        await runTerraformDestroy(id, { force: true, auto: true });
+      }
     }
   } finally {
     runningDeployments.delete(id);
   }
 }
 
-export async function runTerraformDestroy(deploymentId) {
+export async function runTerraformDestroy(deploymentId, { force = false, auto = false } = {}) {
   const id = String(deploymentId);
-  if (runningDeployments.has(id)) return;
+  if (runningDeployments.has(id) && !force) return;
   runningDeployments.add(id);
 
   try {
@@ -88,22 +111,35 @@ export async function runTerraformDestroy(deploymentId) {
     if (!deployment) return;
 
     if (!env.TERRAFORM_APPLY_ENABLED) {
-      await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS destroy operations.');
+      await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS destroy operations.', 'destroy');
       return;
     }
 
     const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
     if (!account) {
-      await failDeployment(deployment, 'AWS account not found for deployment destroy.');
+      await failDeployment(deployment, 'AWS account not found for deployment destroy.', 'destroy');
       return;
     }
 
     const workDir = deployment.terraformWorkDir || path.join(env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infraflow-deployments'), id);
     const statePath = path.join(workDir, 'terraform.tfstate');
     if (!(await pathExists(statePath))) {
+      if (force) {
+        deployment.status = auto ? 'failed' : 'cancelled';
+        deployment.finishedAt = new Date();
+        deployment.logs.push({
+          message: auto
+            ? 'No Terraform state was found, so no AWS resources needed to be cleaned up after the failed deployment.'
+            : 'Force destroy requested. No Terraform state was found for this deployment, so there is nothing to remove from AWS. Marked as cancelled.',
+          level: 'warning',
+        });
+        await deployment.save();
+        return;
+      }
       await failDeployment(
         deployment,
         'Terraform state was not found for this deployment. Destroy can only run for infrastructure deployed by infraflow after state tracking was enabled.',
+        'destroy',
       );
       return;
     }
@@ -113,7 +149,14 @@ export async function runTerraformDestroy(deploymentId) {
     deployment.status = 'destroying';
     deployment.startedAt = deployment.startedAt ?? new Date();
     deployment.finishedAt = undefined;
-    deployment.logs.push({ message: 'Starting Terraform destroy runner.', level: 'warning' });
+    deployment.logs.push({
+      message: auto
+        ? 'Automatically destroying AWS resources created before this deployment failed.'
+        : force
+          ? 'Force destroy requested by user. Proceeding even though the deployment may still be running elsewhere; Terraform state locking will safely reject this run if that is the case.'
+          : 'Starting Terraform destroy runner.',
+      level: 'warning',
+    });
     await deployment.save();
 
     const credentials = await assumeAwsRole(account);
@@ -127,17 +170,36 @@ export async function runTerraformDestroy(deploymentId) {
       TF_IN_AUTOMATION: 'true',
     };
 
+    await emptyS3BucketsFromTerraformState(deployment, workDir, credentials, account.defaultRegion);
     await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
     await runTerraformCommand(deployment, workDir, ['destroy', '-input=false', '-auto-approve'], terraformEnv);
 
-    deployment.status = 'destroyed';
+    deployment.status = auto ? 'failed' : 'destroyed';
     deployment.finishedAt = new Date();
-    deployment.logs.push({ message: 'Terraform destroy completed. The infrastructure from this deployment has been removed.', level: 'info' });
+    deployment.logs.push({
+      message: auto
+        ? 'Automatic cleanup completed. All AWS resources created before the failure have been destroyed.'
+        : 'Terraform destroy completed. The infrastructure from this deployment has been removed.',
+      level: 'info',
+    });
     await deployment.save();
+
+    await createNotification({
+      workspace: deployment.workspace,
+      type: 'destroy',
+      status: 'success',
+      title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
+      message: auto
+        ? 'The deployment failed partway through. Resources it had already created in AWS were automatically destroyed, so nothing is left running or billing.'
+        : 'Terraform destroy completed successfully.',
+      resourceType: 'Deployment',
+      resourceId: deployment._id,
+      resourceName: deployment.name,
+    });
   } catch (error) {
     const deployment = await Deployment.findById(id);
     if (deployment) {
-      await failDeployment(deployment, error.message ?? 'Terraform destroy failed.');
+      await failDeployment(deployment, error.message ?? 'Terraform destroy failed.', 'destroy', { auto });
     }
   } finally {
     runningDeployments.delete(id);
@@ -166,6 +228,116 @@ async function pathExists(targetPath) {
   }
 }
 
+async function hasTerraformState(workDir) {
+  const statePath = path.join(workDir, 'terraform.tfstate');
+  if (!(await pathExists(statePath))) return false;
+
+  try {
+    const state = JSON.parse(await readFile(statePath, 'utf8'));
+    return Array.isArray(state.resources) && state.resources.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function emptyS3BucketsFromTerraformState(deployment, workDir, credentials, region) {
+  const buckets = await s3BucketsFromTerraformState(workDir);
+  if (!buckets.length) return;
+
+  for (const { bucket, bucketRegion } of buckets) {
+    const s3 = new S3Client({ region: bucketRegion || region, credentials });
+    try {
+      deployment.logs.push({ message: `Emptying S3 bucket ${bucket} before Terraform destroy.`, level: 'warning' });
+      await deployment.save();
+      await deleteCurrentS3Objects(s3, bucket);
+      try {
+        await deleteVersionedS3Objects(s3, bucket);
+      } catch (error) {
+        if (!isAwsAccessDenied(error)) throw error;
+        deployment.logs.push({
+          message: `Skipped versioned-object cleanup for ${bucket}; the AWS role does not allow listing object versions.`,
+          level: 'warning',
+        });
+      }
+      deployment.logs.push({ message: `S3 bucket ${bucket} is empty and ready for Terraform destroy.`, level: 'info' });
+      await deployment.save();
+    } catch (error) {
+      if (error?.name === 'NoSuchBucket') {
+        deployment.logs.push({ message: `S3 bucket ${bucket} no longer exists; continuing Terraform destroy.`, level: 'warning' });
+        await deployment.save();
+        continue;
+      }
+
+      throw new Error(
+        `Unable to empty S3 bucket ${bucket} before destroy: ${stripAnsi(error.message ?? String(error))}. ` +
+          'Ensure the connected AWS role has s3:ListBucket, s3:ListBucketVersions, s3:DeleteObject, and s3:DeleteObjectVersion.',
+      );
+    }
+  }
+}
+
+async function s3BucketsFromTerraformState(workDir) {
+  const state = JSON.parse(await readFile(path.join(workDir, 'terraform.tfstate'), 'utf8'));
+  const buckets = new Set();
+
+  for (const resource of state.resources ?? []) {
+    if (resource.type !== 'aws_s3_bucket') continue;
+    for (const instance of resource.instances ?? []) {
+      const bucket = instance.attributes?.bucket ?? instance.attributes?.id;
+      if (bucket) buckets.add(JSON.stringify({ bucket: String(bucket), bucketRegion: instance.attributes?.region ? String(instance.attributes.region) : '' }));
+    }
+  }
+
+  return Array.from(buckets).map((item) => JSON.parse(item));
+}
+
+async function deleteVersionedS3Objects(s3, bucket) {
+  let keyMarker;
+  let versionIdMarker;
+
+  do {
+    const response = await s3.send(
+      new ListObjectVersionsCommand({
+        Bucket: bucket,
+        KeyMarker: keyMarker,
+        VersionIdMarker: versionIdMarker,
+      }),
+    );
+    const objects = [...(response.Versions ?? []), ...(response.DeleteMarkers ?? [])]
+      .filter((item) => item.Key)
+      .map((item) => ({ Key: item.Key, VersionId: item.VersionId }));
+
+    await deleteS3Objects(s3, bucket, objects);
+    keyMarker = response.NextKeyMarker;
+    versionIdMarker = response.NextVersionIdMarker;
+  } while (keyMarker || versionIdMarker);
+}
+
+async function deleteCurrentS3Objects(s3, bucket) {
+  let continuationToken;
+
+  do {
+    const response = await s3.send(new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: continuationToken }));
+    const objects = (response.Contents ?? []).filter((item) => item.Key).map((item) => ({ Key: item.Key }));
+
+    await deleteS3Objects(s3, bucket, objects);
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+}
+
+async function deleteS3Objects(s3, bucket, objects) {
+  for (let index = 0; index < objects.length; index += 1000) {
+    const batch = objects.slice(index, index + 1000);
+    if (!batch.length) continue;
+    await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: batch, Quiet: true } }));
+  }
+}
+
+function isAwsAccessDenied(error) {
+  const value = `${error?.name ?? ''} ${error?.Code ?? ''} ${error?.message ?? ''}`.toLowerCase();
+  return value.includes('accessdenied') || value.includes('access denied');
+}
+
 async function runTerraformCommand(deployment, cwd, args, commandEnv) {
   deployment.logs.push({ message: `terraform ${args.join(' ')}`, level: 'info' });
   await deployment.save();
@@ -175,6 +347,23 @@ async function runTerraformCommand(deployment, cwd, args, commandEnv) {
     deployment.logs.push({ message: line.slice(0, 1800), level: line.toLowerCase().includes('error') ? 'error' : 'info' });
   }
   await deployment.save();
+}
+
+async function readTerraformOutputs(deployment, cwd, commandEnv) {
+  try {
+    const output = await runProcess(env.TERRAFORM_BIN, ['output', '-json', 'infraflow_resource_outputs'], cwd, commandEnv);
+    const parsed = JSON.parse(output || '{}');
+    deployment.logs.push({ message: 'Captured Terraform resource outputs for one-time resource info download.', level: 'info' });
+    await deployment.save();
+    return parsed;
+  } catch (error) {
+    deployment.logs.push({
+      message: `Terraform apply completed, but resource outputs could not be captured: ${stripAnsi(error.message ?? String(error)).slice(0, 1200)}`,
+      level: 'warning',
+    });
+    await deployment.save();
+    return {};
+  }
 }
 
 function runProcess(command, args, cwd, commandEnv) {
@@ -208,11 +397,29 @@ function runProcess(command, args, cwd, commandEnv) {
   });
 }
 
-async function failDeployment(deployment, message) {
+async function failDeployment(deployment, message, phase = 'deploy', { auto = false } = {}) {
+  const finalMessage = addPermissionHint(stripAnsi(message));
   deployment.status = 'failed';
   deployment.finishedAt = new Date();
-  deployment.logs.push({ message: addPermissionHint(stripAnsi(message)), level: 'error' });
+  deployment.logs.push({ message: finalMessage, level: 'error' });
   await deployment.save();
+
+  await createNotification({
+    workspace: deployment.workspace,
+    type: phase === 'destroy' ? 'destroy' : 'deployment',
+    status: 'failed',
+    title:
+      phase === 'destroy'
+        ? auto
+          ? `Automatic cleanup failed for "${deployment.name}" - resources may still exist in AWS`
+          : `Destroy failed for "${deployment.name}"`
+        : `Deployment "${deployment.name}" failed`,
+    message: auto ? `Automatic cleanup after the failed deployment did not finish: ${finalMessage.slice(0, 220)}` : finalMessage.slice(0, 300),
+    errorLog: finalMessage,
+    resourceType: 'Deployment',
+    resourceId: deployment._id,
+    resourceName: deployment.name,
+  });
 }
 
 function stripAnsi(value = '') {

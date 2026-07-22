@@ -64,7 +64,7 @@ export const register = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data: {
-      user: serializeUser(user),
+      user: serializeUser(user, workspace),
       workspace,
       accessToken: tokens.accessToken,
     },
@@ -88,11 +88,12 @@ export const login = asyncHandler(async (req, res) => {
 
   const tokens = sendAuthTokens(res, user);
   await auditLog({ user, ip: req.ip }, 'auth.login', 'User', user._id);
+  const workspace = await Workspace.findById(user.workspace);
 
   res.json({
     success: true,
     data: {
-      user: serializeUser(user),
+      user: serializeUser(user, workspace),
       accessToken: tokens.accessToken,
     },
   });
@@ -169,14 +170,14 @@ export const refresh = asyncHandler(async (req, res) => {
     success: true,
     data: {
       accessToken: signAccessToken(user),
-      user: serializeUser(user),
+      user: serializeUser(user, await Workspace.findById(user.workspace)),
     },
   });
 });
 
 export const me = asyncHandler(async (req, res) => {
   const workspace = await Workspace.findById(req.user.workspace);
-  res.json({ success: true, data: { user: serializeUser(req.user), workspace } });
+  res.json({ success: true, data: { user: serializeUser(req.user, workspace), workspace } });
 });
 
 export const logout = asyncHandler(async (_req, res) => {
@@ -184,12 +185,17 @@ export const logout = asyncHandler(async (_req, res) => {
   res.json({ success: true, message: 'Logged out' });
 });
 
-function serializeUser(user) {
+function serializeUser(user, workspace) {
   return {
     id: user._id,
     name: user.name,
     email: user.email,
     role: user.role,
+    demoCredits: user.demoCredits ?? 0,
+    creditRequest: user.creditRequest ?? { status: 'none' },
+    accessPlan: workspace?.plan ?? 'free',
+    workspacePlan: workspace?.plan ?? 'free',
+    workspaceName: workspace?.name ?? '',
     dashboardAccess: {
       modules: getDashboardModulesForRole(user.role),
       permissions: getDashboardPermissionsForRole(user.role),

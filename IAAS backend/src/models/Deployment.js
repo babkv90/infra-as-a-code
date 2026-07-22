@@ -17,6 +17,7 @@ const deploymentSchema = new mongoose.Schema(
     plan: { type: mongoose.Schema.Types.Mixed, default: {} },
     terraform: { type: String, default: '' },
     terraformWorkDir: { type: String, default: '' },
+    outputs: { type: mongoose.Schema.Types.Mixed, default: {} },
     validationIssues: { type: [mongoose.Schema.Types.Mixed], default: [] },
     startedAt: Date,
     finishedAt: Date,

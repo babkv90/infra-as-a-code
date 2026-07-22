@@ -23,9 +23,10 @@ export function buildDeploymentPlan(diagram) {
       blockers,
       warnings,
       steps: [
-        { label: 'Validate diagram', status: blockers ? 'blocked' : warnings ? 'warning' : 'ready' },
+        { label: 'Validate required resource fields', status: blockers ? 'blocked' : 'ready' },
+        { label: 'Validate diagram rules and security', status: blockers ? 'blocked' : warnings ? 'warning' : 'ready' },
         { label: 'Generate Terraform', status: resourceCount ? 'ready' : 'blocked' },
-        { label: 'Create plan artifact', status: resourceCount ? 'ready' : 'blocked' },
+        { label: 'Create plan and resource info artifacts', status: resourceCount ? 'ready' : 'blocked' },
         { label: 'Wait for approval', status: blockers ? 'blocked' : 'ready' },
         { label: 'Deploy to AWS', status: blockers ? 'blocked' : 'ready' },
       ],

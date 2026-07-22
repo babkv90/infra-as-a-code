@@ -29,6 +29,7 @@ export type DeploymentRecord = {
   };
   terraform: string;
   terraformWorkDir?: string;
+  outputs?: Record<string, unknown>;
   validationIssues: Array<{ severity: string; message: string; nodeId?: string; edgeId?: string }>;
   logs: Array<{ message: string; level: string; at?: string }>;
   startedAt?: string;
@@ -67,6 +68,10 @@ export async function applyDeployment(id: string) {
 
 export async function destroyDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}/destroy`, { method: 'POST' });
+}
+
+export async function forceDestroyDeployment(id: string) {
+  return apiRequest<DeploymentRecord>(`/deployments/${id}/force-destroy`, { method: 'POST' });
 }
 
 async function apiRequest<T>(path: string, init: RequestInit = {}) {

@@ -1,15 +1,20 @@
-import { ArrowLeft, CheckCircle2, Copy, Download, Rocket, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, Download, Eye, Rocket, ShieldAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
+import { getStoredUser } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { createDeploymentPlan } from '../utils/deploymentPlan';
-import { createCanvasDeployment, getDeployment, type DeploymentRecord } from '../utils/deploymentApi';
+import { createCanvasDeployment, forceDestroyDeployment, getDeployment, type DeploymentRecord } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
+import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import type { ValidationIssue } from '../utils/validate';
+import { validateServiceAccess } from '../utils/accessControl';
 
-type DeploymentStatus = 'idle' | 'running' | 'success' | 'error';
+type DeploymentStatus = 'idle' | 'running' | 'success' | 'error' | 'destroyed';
 type RunnerLog = DeploymentRecord['logs'][number];
+const STUCK_DEPLOYMENT_THRESHOLD_MS = 5 * 60 * 1000;
+const FORCE_DESTROY_ELIGIBLE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying'];
 
 type DeploymentModalProps = {
   nodes: AwsNode[];
@@ -20,6 +25,7 @@ type DeploymentModalProps = {
 };
 
 function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: DeploymentModalProps) {
+  const user = getStoredUser();
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus>('idle');
   const [currentIssues, setCurrentIssues] = useState(issues);
   const [accounts, setAccounts] = useState<AwsAccountRecord[]>([]);
@@ -28,10 +34,21 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   const [requestError, setRequestError] = useState('');
   const [queuedDeployment, setQueuedDeployment] = useState<DeploymentRecord | null>(null);
   const [showDeploymentSuccess, setShowDeploymentSuccess] = useState(false);
+  const [isConfirmingForceDestroy, setIsConfirmingForceDestroy] = useState(false);
+  const [isForceDestroying, setIsForceDestroying] = useState(false);
+  const [forceDestroyError, setForceDestroyError] = useState('');
+  const elapsedRunningMs = queuedDeployment?.startedAt ? Math.max(0, Date.now() - new Date(queuedDeployment.startedAt).getTime()) : 0;
+  const isTakingUnusuallyLong =
+    deploymentStatus === 'running' && Boolean(queuedDeployment) && FORCE_DESTROY_ELIGIBLE_STATUSES.includes(queuedDeployment!.status) && elapsedRunningMs >= STUCK_DEPLOYMENT_THRESHOLD_MS;
   const terraform = useMemo(() => exportTerraform(nodes, edges), [edges, nodes]);
   const terraformIssues = useMemo(() => validateGeneratedTerraform(terraform), [terraform]);
-  const effectiveIssues = useMemo(() => [...currentIssues, ...terraformIssues], [currentIssues, terraformIssues]);
+  const accessIssues = useMemo(() => validateServiceAccess(nodes, user), [nodes, user]);
+  const effectiveIssues = useMemo(() => [...currentIssues, ...terraformIssues, ...accessIssues], [accessIssues, currentIssues, terraformIssues]);
   const plan = useMemo(() => createDeploymentPlan(nodes, edges, effectiveIssues), [effectiveIssues, edges, nodes]);
+  const resourceBundle = useMemo(
+    () => buildDeploymentResourceBundle(nodes, edges, effectiveIssues, queuedDeployment?.outputs),
+    [effectiveIssues, edges, nodes, queuedDeployment?.outputs],
+  );
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
   const canDeploy = plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
@@ -81,7 +98,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   }, []);
 
   useEffect(() => {
-    if (!queuedDeployment?._id || !['queued', 'deploying'].includes(queuedDeployment.status)) return;
+    if (!queuedDeployment?._id || !['queued', 'deploying', 'destroying'].includes(queuedDeployment.status)) return;
 
     const timer = window.setInterval(() => {
       getDeployment(queuedDeployment._id)
@@ -92,6 +109,9 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
             setDeploymentStatus('error');
             setRequestError(deployment.logs[deployment.logs.length - 1]?.message ?? 'Deployment failed.');
           }
+          if (deployment.status === 'destroyed' || deployment.status === 'cancelled') {
+            setDeploymentStatus('destroyed');
+          }
         })
         .catch((error: unknown) => {
           setDeploymentStatus('error');
@@ -101,6 +121,21 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
 
     return () => window.clearInterval(timer);
   }, [queuedDeployment?._id, queuedDeployment?.status]);
+
+  async function confirmForceDestroy() {
+    if (!queuedDeployment?._id) return;
+    setIsForceDestroying(true);
+    setForceDestroyError('');
+    try {
+      const updated = await forceDestroyDeployment(queuedDeployment._id);
+      setQueuedDeployment(updated);
+      setIsConfirmingForceDestroy(false);
+    } catch (error) {
+      setForceDestroyError(error instanceof Error ? error.message : 'Unable to force destroy this deployment.');
+    } finally {
+      setIsForceDestroying(false);
+    }
+  }
 
   useEffect(() => {
     if (deploymentStatus === 'success') setShowDeploymentSuccess(true);
@@ -115,17 +150,30 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   }
 
   function downloadPlan() {
-    const content = JSON.stringify({ plan, terraform, nodes, edges, validationIssues: effectiveIssues }, null, 2);
-    const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'deployment-plan.json';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadJsonFile('deployment-plan.json', { plan, terraform, nodes, edges, validationIssues: effectiveIssues, resourceInfo: resourceBundle });
+  }
+
+  function downloadResourceInfo() {
+    downloadJsonFile('deployment-resource-info.json', resourceBundle);
+  }
+
+  function goToResourceInfoPage() {
+    if (!queuedDeployment) return;
+    window.location.href = `/dashboard?view=resource-info&deployment=${encodeURIComponent(queuedDeployment._id)}`;
   }
 
   async function deployToAws() {
     if (!canDeploy || !selectedAccount || isAlreadyDeployed) return;
+
+    const latestIssues = onValidate();
+    const latestTerraformIssues = validateGeneratedTerraform(exportTerraform(nodes, edges));
+    const latestAccessIssues = validateServiceAccess(nodes, user);
+    const latestEffectiveIssues = [...latestIssues, ...latestTerraformIssues, ...latestAccessIssues];
+    setCurrentIssues(latestIssues);
+    if (latestEffectiveIssues.some((issue) => issue.severity === 'error')) {
+      setRequestError('Deployment blocked. Fix all required resource fields and validation errors, then retry.');
+      return;
+    }
 
     setDeploymentStatus('running');
     setRequestError('');
@@ -182,6 +230,35 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
         </div>
       </section>
 
+      {isTakingUnusuallyLong && (
+        <div className="deployment-stuck-warning">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>This deployment has been running for {formatElapsedMinutes(elapsedRunningMs)}.</strong>
+            <p>
+              If it looks stuck, force destroy will clean up any AWS resources already created for it instead of leaving orphaned, still-billing infrastructure behind.
+            </p>
+          </div>
+          {isConfirmingForceDestroy ? (
+            <div className="deployment-stuck-warning__confirm">
+              <span>Force destroy now?</span>
+              <button className="text-button" disabled={isForceDestroying} onClick={() => setIsConfirmingForceDestroy(false)} type="button">
+                Cancel
+              </button>
+              <button className="deployment-force-destroy-button" disabled={isForceDestroying} onClick={() => void confirmForceDestroy()} type="button">
+                {isForceDestroying ? 'Forcing...' : 'Yes, force destroy'}
+              </button>
+            </div>
+          ) : (
+            <button className="deployment-force-destroy-button" onClick={() => setIsConfirmingForceDestroy(true)} type="button">
+              <AlertTriangle size={14} />
+              Force destroy
+            </button>
+          )}
+          {forceDestroyError && <p className="deployment-stuck-warning__error">{forceDestroyError}</p>}
+        </div>
+      )}
+
       <div className="deployment-page__actions">
         <button className="text-button" onClick={rerunValidation}>
           Re-run validation
@@ -193,6 +270,14 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
         <button className="text-button" onClick={downloadPlan}>
           <Download size={16} />
           Download Plan
+        </button>
+        <button className="text-button" onClick={downloadResourceInfo}>
+          <Download size={16} />
+          Download Resource Info
+        </button>
+        <button className="text-button" disabled={!queuedDeployment} onClick={goToResourceInfoPage}>
+          <Eye size={16} />
+          View Resource Info
         </button>
         <button className="deployment-primary" disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed} onClick={deployToAws}>
           <Rocket size={16} />
@@ -277,6 +362,14 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
           </span>
           <h2 id="deployment-success-title">Your resource has been deployed</h2>
           <p>AWS deployment completed successfully. The created resource should now be visible in the target AWS account.</p>
+          <button className="text-button" type="button" onClick={goToResourceInfoPage}>
+            <Eye size={16} />
+            View resource info
+          </button>
+          <button className="text-button" type="button" onClick={downloadResourceInfo}>
+            <Download size={16} />
+            Download one-time resource info
+          </button>
           <button className="deployment-primary" type="button" onClick={() => setShowDeploymentSuccess(false)}>
             Continue
           </button>
@@ -285,6 +378,13 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
     )}
     </>
   );
+}
+
+function formatElapsedMinutes(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 function deploymentLogLevel(log: RunnerLog): 'error' | 'warning' | 'info' {

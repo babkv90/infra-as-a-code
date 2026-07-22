@@ -1,3 +1,5 @@
+import { IAMClient, ListRolesCommand } from '@aws-sdk/client-iam';
+import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { z } from 'zod';
 import { awsRegions } from '../constants/awsRegions.js';
 import { AwsAccount } from '../models/AwsAccount.js';
@@ -6,6 +8,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { getMockAwsInsights } from '../utils/awsInsightsMock.js';
 import { syncAwsAccountData } from '../services/awsLiveSync.js';
+import { assumeAwsRole, makeEnvCredentials } from '../services/awsRoleCredentials.js';
 
 export const createAwsAccountSchema = z.object({
   body: z.object({
@@ -19,6 +22,19 @@ export const createAwsAccountSchema = z.object({
 
 export const listAwsRegions = asyncHandler(async (_req, res) => {
   res.json({ success: true, data: awsRegions });
+});
+
+// Lets the "Connect AWS account" UI show a correct, ready-to-paste trust policy for a new IAM role
+// without hardcoding infraflow's own AWS identity — it's whatever this deployment's backend
+// credentials actually resolve to, discovered live via STS instead of guessed/hand-typed.
+export const getDeployerIdentity = asyncHandler(async (_req, res) => {
+  try {
+    const sts = new STSClient({ region: 'us-east-1', credentials: makeEnvCredentials() });
+    const identity = await sts.send(new GetCallerIdentityCommand({}));
+    res.json({ success: true, data: { arn: identity.Arn, accountId: identity.Account } });
+  } catch (error) {
+    throw new ApiError(502, `Could not resolve infraflow's AWS identity: ${error.message}`);
+  }
 });
 
 export const listAwsAccounts = asyncHandler(async (req, res) => {
@@ -108,6 +124,31 @@ export const syncAwsAccount = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'aws.sync', 'AwsAccount', account._id);
   res.json({ success: true, data: account });
+});
+
+// Lets the diagram builder offer a dropdown of the account's actual existing IAM roles, so a
+// resource (Lambda, EC2, EKS, CodePipeline) can attach to a role that already exists in AWS instead
+// of always having Terraform create a brand-new one — useful when the deploy credential doesn't
+// have (or you don't want to grant it) full iam:CreateRole/TagRole permissions.
+export const listAccountIamRoles = asyncHandler(async (req, res) => {
+  const account = await AwsAccount.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!account) throw new ApiError(404, 'AWS account not found');
+
+  try {
+    const credentials = await assumeAwsRole(account);
+    const iam = new IAMClient({ region: 'us-east-1', credentials });
+    const roles = [];
+    let marker;
+    do {
+      const page = await iam.send(new ListRolesCommand({ Marker: marker, MaxItems: 200 }));
+      roles.push(...(page.Roles ?? []).map((role) => ({ arn: role.Arn, roleName: role.RoleName, createDate: role.CreateDate })));
+      marker = page.IsTruncated ? page.Marker : undefined;
+    } while (marker);
+
+    res.json({ success: true, data: roles.sort((a, b) => a.roleName.localeCompare(b.roleName)) });
+  } catch (error) {
+    throw new ApiError(502, `Could not list IAM roles: ${addAwsConnectionHint(error.message)}`);
+  }
 });
 
 export const disconnectAwsAccount = asyncHandler(async (req, res) => {

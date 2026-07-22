@@ -2,10 +2,13 @@ import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { awsServices, categories } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
+import type { AuthUser } from '../auth/authClient';
+import { isServiceAllowedForUser, serviceAccessTierForUser } from '../utils/accessControl';
 
-function Sidebar({ isCollapsed = false, onToggleCollapsed }: { isCollapsed?: boolean; onToggleCollapsed?: () => void }) {
+function Sidebar({ isCollapsed = false, onToggleCollapsed, user }: { isCollapsed?: boolean; onToggleCollapsed?: () => void; user?: AuthUser | null }) {
   const [query, setQuery] = useState('');
   const nodes = useDiagramStore((state) => state.nodes);
+  const accessTier = serviceAccessTierForUser(user);
 
   const counts = useMemo(() => {
     const tally = new Map<string, number>();
@@ -49,21 +52,30 @@ function Sidebar({ isCollapsed = false, onToggleCollapsed }: { isCollapsed?: boo
           return (
             <section key={category} className="service-group">
               <div className="service-group__title">{category}</div>
-              {services.map((service) => (
-                <div
-                  key={service.id}
-                  className="service-item"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData('application/aws-service', service.id);
-                    event.dataTransfer.effectAllowed = 'move';
-                  }}
-                >
-                  <span className="service-item__icon" style={{ backgroundColor: service.color }} />
-                  <span className="truncate">{service.name}</span>
-                  {!!counts.get(service.id) && <span className="service-item__badge">{counts.get(service.id)}</span>}
-                </div>
-              ))}
+              {services.map((service) => {
+                const isAllowed = isServiceAllowedForUser(service.id, user);
+                return (
+                  <div
+                    key={service.id}
+                    className={`service-item ${isAllowed ? '' : 'service-item--locked'}`}
+                    draggable={isAllowed}
+                    title={isAllowed ? service.name : `${service.name} is locked for ${accessTier}`}
+                    onDragStart={(event) => {
+                      if (!isAllowed) {
+                        event.preventDefault();
+                        return;
+                      }
+                      event.dataTransfer.setData('application/aws-service', service.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                  >
+                    <span className="service-item__icon" style={{ backgroundColor: service.color }} />
+                    <span className="truncate">{service.name}</span>
+                    {!isAllowed && <span className="service-item__lock">Locked</span>}
+                    {!!counts.get(service.id) && <span className="service-item__badge">{counts.get(service.id)}</span>}
+                  </div>
+                );
+              })}
             </section>
           );
         })}

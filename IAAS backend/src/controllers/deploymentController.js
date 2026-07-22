@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { AwsAccount } from '../models/AwsAccount.js';
 import { Deployment } from '../models/Deployment.js';
 import { Diagram } from '../models/Diagram.js';
+import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
+import { assertDiagramServiceAccess } from '../utils/accessControl.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
@@ -35,6 +37,8 @@ export const listDeployments = asyncHandler(async (req, res) => {
 export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
   const diagram = await Diagram.findOne({ _id: req.params.diagramId, workspace: req.user.workspace });
   if (!diagram) throw new ApiError(404, 'Diagram not found');
+  const workspace = await Workspace.findById(req.user.workspace);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram.nodes });
 
   let awsAccount;
   if (req.validated.body.awsAccountId) {
@@ -72,6 +76,8 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
   if (!awsAccount) throw new ApiError(404, 'Connected AWS account not found');
 
   const diagramName = req.validated.body.name ?? `Canvas deployment ${new Date().toISOString().slice(0, 10)}`;
+  const workspace = await Workspace.findById(req.user.workspace);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: req.validated.body.nodes });
   const diagram = await Diagram.create({
     workspace: req.user.workspace,
     createdBy: req.user._id,
@@ -126,6 +132,9 @@ export const queueDeployment = asyncHandler(async (req, res) => {
   if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
     throw new ApiError(409, 'Deployment has blocking validation errors');
   }
+  const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
+  const workspace = await Workspace.findById(req.user.workspace);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });
 
   deployment.status = 'queued';
   deployment.logs.push({ message: 'Deployment queued. Wire AWS/Terraform runner to execute apply.', level: 'info' });
@@ -142,6 +151,9 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
     throw new ApiError(409, 'Deployment has blocking validation errors');
   }
+  const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
+  const workspace = await Workspace.findById(req.user.workspace);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });
   if (deployment.status === 'deploying') {
     return res.json({ success: true, data: deployment });
   }
@@ -178,6 +190,28 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
   void runTerraformDestroy(deployment._id);
+  await deployment.populate('diagram', 'name activeRegion nodes edges');
+  res.json({ success: true, data: deployment });
+});
+
+export const forceDestroyDeployment = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (['destroyed', 'cancelled'].includes(deployment.status)) {
+    throw new ApiError(409, 'This deployment has already been destroyed or cancelled.');
+  }
+
+  const previousStatus = deployment.status;
+  deployment.status = 'destroying';
+  deployment.logs.push({
+    message: `Force destroy requested by ${req.user.email}. This bypasses the normal status guard to clean up resources from a deployment that appears stuck (was "${previousStatus}").`,
+    level: 'warning',
+  });
+  await deployment.save();
+
+  await auditLog(req, 'deployment.force_destroy', 'Deployment', deployment._id, { previousStatus });
+  void runTerraformDestroy(deployment._id, { force: true });
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });

@@ -15,8 +15,9 @@ export type PortType = 'input' | 'output';
 export type AwsField = {
   key: string;
   label: string;
-  type: 'text' | 'select' | 'number';
+  type: 'text' | 'select' | 'number' | 'json' | 'iam-role';
   options?: string[];
+  required?: boolean;
 };
 
 export type AwsService = {

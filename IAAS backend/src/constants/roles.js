@@ -1,4 +1,5 @@
 export const roles = Object.freeze({
+  SUPER_ADMIN: 'superadmin',
   OWNER: 'owner',
   ADMIN: 'admin',
   ARCHITECT: 'architect',
@@ -7,6 +8,7 @@ export const roles = Object.freeze({
 });
 
 export const roleRank = Object.freeze({
+  [roles.SUPER_ADMIN]: 6,
   [roles.OWNER]: 5,
   [roles.ADMIN]: 4,
   [roles.ARCHITECT]: 3,

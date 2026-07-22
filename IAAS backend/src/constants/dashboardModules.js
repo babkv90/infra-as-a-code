@@ -45,6 +45,13 @@ export const dashboardModules = Object.freeze([
     permissions: ['deployments:read', 'deployments:create', 'deployments:queue', 'deployments:apply'],
   },
   {
+    id: 'app-pipeline',
+    label: 'Application Pipeline',
+    description: 'Generate GitHub push-based CI/CD for applications deployed onto created infrastructure.',
+    minimumRole: roles.VIEWER,
+    permissions: ['pipelines:read', 'pipelines:create'],
+  },
+  {
     id: 'security',
     label: 'Security Review',
     description: 'Review IAM, encryption, public exposure, and audit findings.',
@@ -64,6 +71,13 @@ export const dashboardModules = Object.freeze([
     description: 'Create AWS account connections and manage workspace cloud access.',
     minimumRole: roles.ADMIN,
     permissions: ['aws:accounts:read', 'aws:accounts:create', 'aws:accounts:sync'],
+  },
+  {
+    id: 'super-admin',
+    label: 'Super Admin',
+    description: 'Manage all users, credits, roles, and platform activity.',
+    minimumRole: roles.SUPER_ADMIN,
+    permissions: ['superadmin:read', 'superadmin:users:update', 'superadmin:credits:grant'],
   },
 ]);
 

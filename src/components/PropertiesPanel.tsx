@@ -1,10 +1,12 @@
-import { AlertTriangle, FileCode2, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Download, FileCode2, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import type React from 'react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { listAccountIamRoles, listAwsAccounts, type AwsAccountRecord, type IamRoleSummary } from '../dashboard/awsApi';
 import { awsServices, serviceById } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdgeData, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
 import { exportTerraform } from '../utils/exportTerraform';
+import { downloadJsonFile, getResourceRequirementReport } from '../utils/resourceRequirements';
 
 const connectionTypes: EdgeConnectionType[] = ['data', 'event', 'security', 'monitoring'];
 const bindingTargetKinds: NodeBindingTargetKind[] = ['env', 'property', 'iam', 'connection'];
@@ -14,6 +16,15 @@ type PopupPosition = { left: number; top: number; side: 'left' | 'right'; arrowT
 function PropertiesPanel() {
   const [terraform, setTerraform] = useState('');
   const [review, setReview] = useState('');
+  const [jsonFieldEditor, setJsonFieldEditor] = useState<{ key: string; label: string } | null>(null);
+  const [jsonFieldDraft, setJsonFieldDraft] = useState('');
+  const [iamRolePicker, setIamRolePicker] = useState<{ key: string; label: string } | null>(null);
+  const [iamRoleAccounts, setIamRoleAccounts] = useState<AwsAccountRecord[]>([]);
+  const [selectedIamRoleAccountId, setSelectedIamRoleAccountId] = useState('');
+  const [iamRoleOptions, setIamRoleOptions] = useState<IamRoleSummary[]>([]);
+  const [isLoadingIamRoles, setIsLoadingIamRoles] = useState(false);
+  const [iamRolePickerError, setIamRolePickerError] = useState('');
+  const [customIamRoleArn, setCustomIamRoleArn] = useState('');
   const [popupPosition, setPopupPosition] = useState<PopupPosition>();
   const [bindingTargetPath, setBindingTargetPath] = useState('DB_PASSWORD');
   const [bindingTargetKind, setBindingTargetKind] = useState<NodeBindingTargetKind>('env');
@@ -27,6 +38,7 @@ function PropertiesPanel() {
   const selectedNode = nodes.find((node) => node.id === inspectorNodeId);
   const selectedEdge = edges.find((edge) => edge.id === inspectorEdgeId);
   const service = selectedNode?.data.serviceId ? serviceById[selectedNode.data.serviceId] : undefined;
+  const resourceReport = selectedNode?.data.serviceId ? getResourceRequirementReport(selectedNode) : undefined;
   const bindingSourceNodes = useMemo(
     () => nodes.filter((node) => node.type !== 'groupBox' && node.id !== selectedNode?.id && ['secrets', 'iam', 'kms'].includes(node.data.serviceId ?? '')),
     [nodes, selectedNode?.id],
@@ -70,6 +82,71 @@ function PropertiesPanel() {
       sensitive: bindingSensitive,
     });
     setBindingTargetPath('');
+  }
+
+  function downloadSelectedResourceInfo() {
+    if (!resourceReport) return;
+    downloadJsonFile(`${resourceReport.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-resource-info.json`, resourceReport);
+  }
+
+  function openJsonFieldEditor(key: string, label: string) {
+    if (!selectedNode) return;
+    const currentValue = String(selectedNode.data.config[key] ?? '');
+    setJsonFieldDraft(currentValue);
+    setJsonFieldEditor({ key, label });
+  }
+
+  function saveJsonFieldEditor() {
+    if (!selectedNode || !jsonFieldEditor) return;
+    updateNodeConfig(selectedNode.id, jsonFieldEditor.key, jsonFieldDraft);
+    setJsonFieldEditor(null);
+  }
+
+  async function openIamRolePicker(key: string, label: string) {
+    if (!selectedNode) return;
+    setCustomIamRoleArn(String(selectedNode.data.config[key] ?? ''));
+    setIamRolePicker({ key, label });
+    setIamRolePickerError('');
+    setIamRoleOptions([]);
+
+    if (iamRoleAccounts.length) {
+      void loadIamRolesForAccount(selectedIamRoleAccountId || iamRoleAccounts[0]._id);
+      return;
+    }
+
+    try {
+      const accounts = (await listAwsAccounts()).filter((account) => account.status === 'connected');
+      setIamRoleAccounts(accounts);
+      if (accounts.length) {
+        setSelectedIamRoleAccountId(accounts[0]._id);
+        void loadIamRolesForAccount(accounts[0]._id);
+      } else {
+        setIamRolePickerError('No connected AWS account yet. Connect one from Settings, or paste a role ARN directly below.');
+      }
+    } catch (error) {
+      setIamRolePickerError(error instanceof Error ? error.message : 'Unable to load connected AWS accounts.');
+    }
+  }
+
+  async function loadIamRolesForAccount(accountId: string) {
+    setSelectedIamRoleAccountId(accountId);
+    setIsLoadingIamRoles(true);
+    setIamRolePickerError('');
+    try {
+      const roles = await listAccountIamRoles(accountId);
+      setIamRoleOptions(roles);
+    } catch (error) {
+      setIamRoleOptions([]);
+      setIamRolePickerError(error instanceof Error ? error.message : 'Unable to load IAM roles for this account.');
+    } finally {
+      setIsLoadingIamRoles(false);
+    }
+  }
+
+  function applyIamRole(arn: string) {
+    if (!selectedNode || !iamRolePicker) return;
+    updateNodeConfig(selectedNode.id, iamRolePicker.key, arn);
+    setIamRolePicker(null);
   }
 
   useLayoutEffect(() => {
@@ -166,8 +243,12 @@ function PropertiesPanel() {
             <input value={selectedNode.data.label} onChange={(event) => updateNodeData(selectedNode.id, { label: event.target.value })} />
           </Field>
 
-          {(service?.fields ?? awsServices[0].fields).map((field) => (
-            <Field label={field.label} key={field.key}>
+          {(service?.fields ?? awsServices[0].fields).map((field) => {
+            const isRequired = resourceReport?.validKeys.find((item) => item.key === field.key)?.required ?? Boolean(field.required);
+            const isMissing = isRequired && !String(selectedNode.data.config[field.key] ?? '').trim();
+
+            return (
+            <Field label={field.label} key={field.key} required={isRequired} error={isMissing ? 'Required before deployment' : undefined}>
               {field.type === 'select' ? (
                 <select
                   value={String(selectedNode.data.config[field.key] ?? '')}
@@ -180,6 +261,20 @@ function PropertiesPanel() {
                     </option>
                   ))}
                 </select>
+              ) : field.type === 'json' ? (
+                <button className="json-field-trigger" type="button" onClick={() => openJsonFieldEditor(field.key, field.label)}>
+                  <span className="json-field-trigger__preview">
+                    {String(selectedNode.data.config[field.key] ?? '').trim() || 'Click to paste JSON...'}
+                  </span>
+                  <FileCode2 size={14} />
+                </button>
+              ) : field.type === 'iam-role' ? (
+                <button className="json-field-trigger" type="button" onClick={() => void openIamRolePicker(field.key, field.label)}>
+                  <span className="json-field-trigger__preview">
+                    {String(selectedNode.data.config[field.key] ?? '').trim() || 'Click to pick an existing IAM role...'}
+                  </span>
+                  <KeyRound size={14} />
+                </button>
               ) : (
                 <input
                   type={field.type}
@@ -190,7 +285,8 @@ function PropertiesPanel() {
                 />
               )}
             </Field>
-          ))}
+            );
+          })}
 
           <Field label="ARN">
             <input value={selectedNode.data.arn} onChange={(event) => updateNodeData(selectedNode.id, { arn: event.target.value })} />
@@ -205,6 +301,38 @@ function PropertiesPanel() {
               <AlertTriangle size={16} />
               {selectedNode.data.warning}
             </div>
+          )}
+
+          {resourceReport && (
+            <section className="resource-info-section">
+              <div className="connection-list__title">
+                <ShieldCheck size={13} />
+                Resource handoff
+              </div>
+              {resourceReport.missingRequiredKeys.length > 0 && (
+                <div className="resource-info-alert">
+                  Missing required keys: {resourceReport.missingRequiredKeys.map((key) => resourceReport.validKeys.find((item) => item.key === key)?.label ?? key).join(', ')}
+                </div>
+              )}
+              <div className="resource-info-grid">
+                <div>
+                  <strong>Valid keys</strong>
+                  <span>{resourceReport.validKeys.map((item) => `${item.key}${item.required ? '*' : ''}`).join(', ')}</span>
+                </div>
+                <div>
+                  <strong>Returned outputs</strong>
+                  <span>{resourceReport.expectedOutputs.join(', ')}</span>
+                </div>
+                <div>
+                  <strong>Connectivity</strong>
+                  <span>{resourceReport.connectivity.join(' ')}</span>
+                </div>
+              </div>
+              <button className="text-button resource-info-download" type="button" onClick={downloadSelectedResourceInfo}>
+                <Download size={15} />
+                Download resource info
+              </button>
+            </section>
           )}
 
           <ConnectionList title="Inbound" items={connections.inbound.map((edge) => `${nodeName(nodes, edge.source)} - ${edge.data?.label || 'connection'}`)} />
@@ -371,15 +499,44 @@ function PropertiesPanel() {
 
       {!!terraform && <Modal title="Terraform HCL" value={terraform} onClose={() => setTerraform('')} />}
       {!!review && <Modal title="Security Review" value={review} onClose={() => setReview('')} />}
+      {jsonFieldEditor && (
+        <JsonFieldModal
+          title={jsonFieldEditor.label}
+          value={jsonFieldDraft}
+          onChange={setJsonFieldDraft}
+          onSave={saveJsonFieldEditor}
+          onClose={() => setJsonFieldEditor(null)}
+        />
+      )}
+      {iamRolePicker && (
+        <IamRolePickerModal
+          title={iamRolePicker.label}
+          accounts={iamRoleAccounts}
+          selectedAccountId={selectedIamRoleAccountId}
+          onSelectAccount={(id) => void loadIamRolesForAccount(id)}
+          roles={iamRoleOptions}
+          isLoading={isLoadingIamRoles}
+          error={iamRolePickerError}
+          customArn={customIamRoleArn}
+          onCustomArnChange={setCustomIamRoleArn}
+          onPickRole={applyIamRole}
+          onUseCustomArn={() => applyIamRole(customIamRoleArn)}
+          onClose={() => setIamRolePicker(null)}
+        />
+      )}
     </aside>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, required, error }: { label: string; children: React.ReactNode; required?: boolean; error?: string }) {
   return (
-    <label className="field">
-      <span>{label}</span>
+    <label className={`field ${error ? 'field--error' : ''}`}>
+      <span>
+        {label}
+        {required && <em>Required</em>}
+      </span>
       {children}
+      {error && <small>{error}</small>}
     </label>
   );
 }
@@ -404,6 +561,163 @@ function Modal({ title, value, onClose }: { title: string; value: string; onClos
           </button>
         </div>
         <pre>{value}</pre>
+      </div>
+    </div>
+  );
+}
+
+function JsonFieldModal({
+  title,
+  value,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const trimmed = value.trim();
+  const looksLikeExpression = /^(\$\{|data\.|aws_|var\.|local\.|module\.|jsonencode\()/.test(trimmed);
+  let jsonError: string | undefined;
+  if (trimmed && !looksLikeExpression) {
+    try {
+      JSON.parse(trimmed);
+    } catch (error) {
+      jsonError = error instanceof Error ? error.message : 'Invalid JSON';
+    }
+  }
+
+  function formatJson() {
+    try {
+      onChange(JSON.stringify(JSON.parse(value), null, 2));
+    } catch {
+      // Leave as-is if it isn't parseable JSON (e.g. a raw Terraform expression).
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal json-field-modal">
+        <div className="modal__header">
+          <h3>{title}</h3>
+          <button className="icon-button" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <textarea
+          className="json-field-modal__textarea"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={'{\n  "Version": "2012-10-17",\n  "Statement": [ ... ]\n}'}
+          spellCheck={false}
+          autoFocus
+        />
+        {jsonError ? (
+          <div className="json-field-modal__error">Not valid JSON: {jsonError}. You can still save — this is also fine if it's a Terraform expression.</div>
+        ) : (
+          <div className="json-field-modal__hint">Paste raw JSON, or a Terraform expression (e.g. jsonencode({'{...}'}), data.aws_iam_policy_document.x.json).</div>
+        )}
+        <div className="json-field-modal__actions">
+          <button className="text-button" type="button" onClick={formatJson}>
+            Format JSON
+          </button>
+          <div className="json-field-modal__actions-right">
+            <button className="text-button" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="text-button json-field-modal__save" type="button" onClick={onSave}>
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IamRolePickerModal({
+  title,
+  accounts,
+  selectedAccountId,
+  onSelectAccount,
+  roles,
+  isLoading,
+  error,
+  customArn,
+  onCustomArnChange,
+  onPickRole,
+  onUseCustomArn,
+  onClose,
+}: {
+  title: string;
+  accounts: AwsAccountRecord[];
+  selectedAccountId: string;
+  onSelectAccount: (accountId: string) => void;
+  roles: IamRoleSummary[];
+  isLoading: boolean;
+  error: string;
+  customArn: string;
+  onCustomArnChange: (value: string) => void;
+  onPickRole: (arn: string) => void;
+  onUseCustomArn: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal json-field-modal iam-role-picker-modal">
+        <div className="modal__header">
+          <h3>{title}</h3>
+          <button className="icon-button" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {accounts.length > 1 && (
+          <label className="iam-role-picker-modal__account">
+            <span>AWS account</span>
+            <select value={selectedAccountId} onChange={(event) => onSelectAccount(event.target.value)}>
+              {accounts.map((account) => (
+                <option value={account._id} key={account._id}>
+                  {account.name} - {account.accountId}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <div className="iam-role-picker-modal__list">
+          {isLoading ? (
+            <div className="muted">Loading IAM roles from AWS...</div>
+          ) : error ? (
+            <div className="json-field-modal__error">{error}</div>
+          ) : roles.length ? (
+            roles.map((role) => (
+              <button className="iam-role-picker-modal__option" key={role.arn} type="button" onClick={() => onPickRole(role.arn)}>
+                <strong>{role.roleName}</strong>
+                <span>{role.arn}</span>
+              </button>
+            ))
+          ) : (
+            <div className="muted">No IAM roles found in this account.</div>
+          )}
+        </div>
+
+        <div className="iam-role-picker-modal__custom">
+          <span>Or paste a role ARN directly</span>
+          <div>
+            <input
+              value={customArn}
+              onChange={(event) => onCustomArnChange(event.target.value)}
+              placeholder="arn:aws:iam::123456789012:role/my-existing-role"
+            />
+            <button className="text-button json-field-modal__save" type="button" disabled={!customArn.trim()} onClick={onUseCustomArn}>
+              Use
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

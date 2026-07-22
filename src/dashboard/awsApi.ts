@@ -66,6 +66,16 @@ export async function getAwsInsights() {
   return apiRequest<AwsInsights>('/aws/insights');
 }
 
+export async function getDeployerIdentity() {
+  return apiRequest<{ arn: string; accountId: string }>('/aws/deployer-identity');
+}
+
+export type IamRoleSummary = { arn: string; roleName: string; createDate?: string };
+
+export async function listAccountIamRoles(accountId: string) {
+  return apiRequest<IamRoleSummary[]>(`/aws/accounts/${accountId}/iam-roles`);
+}
+
 async function apiRequest<T>(path: string, init: RequestInit = {}) {
   const token = getStoredToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {

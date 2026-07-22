@@ -4,12 +4,14 @@ import { validateStoredSession } from './auth/authClient';
 import DashboardShell from './dashboard/DashboardShell';
 import LandingPage from './landing/LandingPage';
 import ReferenceDocsPage from './reference/ReferenceDocsPage';
+import GithubSettingsPage from './settings/GithubSettingsPage';
 import { getNextTheme, isThemeMode, type ThemeMode } from './theme';
 
 function App() {
   const path = window.location.pathname;
-  const [isDashboardAllowed, setIsDashboardAllowed] = useState(path !== '/dashboard');
-  const [isValidatingDashboard, setIsValidatingDashboard] = useState(path === '/dashboard');
+  const requiresAuth = path === '/dashboard' || path === '/settings' || path === '/profile';
+  const [isProtectedRouteAllowed, setIsProtectedRouteAllowed] = useState(!requiresAuth);
+  const [isValidatingProtectedRoute, setIsValidatingProtectedRoute] = useState(requiresAuth);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = window.localStorage.getItem('infra-theme');
     return isThemeMode(saved) ? saved : 'dark';
@@ -20,12 +22,12 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (path !== '/dashboard') return;
+    if (!requiresAuth) return;
 
     let isCurrent = true;
 
-    async function validateDashboardAccess() {
-      setIsValidatingDashboard(true);
+    async function validateProtectedAccess() {
+      setIsValidatingProtectedRoute(true);
 
       try {
         const user = await validateStoredSession();
@@ -37,22 +39,22 @@ function App() {
           return;
         }
 
-        setIsDashboardAllowed(true);
+        setIsProtectedRouteAllowed(true);
       } catch {
         if (isCurrent) {
           window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         }
       } finally {
-        if (isCurrent) setIsValidatingDashboard(false);
+        if (isCurrent) setIsValidatingProtectedRoute(false);
       }
     }
 
-    void validateDashboardAccess();
+    void validateProtectedAccess();
 
     return () => {
       isCurrent = false;
     };
-  }, [path]);
+  }, [path, requiresAuth]);
 
   const toggleTheme = () => setTheme(getNextTheme);
 
@@ -60,7 +62,7 @@ function App() {
 
   if (path === '/dashboard') {
     page =
-      isValidatingDashboard || !isDashboardAllowed ? (
+      isValidatingProtectedRoute || !isProtectedRouteAllowed ? (
         <main className="route-guard-page">
           <div>
             <span className="dash-eyebrow">Validating session</span>
@@ -69,6 +71,20 @@ function App() {
         </main>
       ) : (
         <DashboardShell theme={theme} onToggleTheme={toggleTheme} />
+      );
+  }
+
+  if (path === '/settings' || path === '/profile') {
+    page =
+      isValidatingProtectedRoute || !isProtectedRouteAllowed ? (
+        <main className="route-guard-page">
+          <div>
+            <span className="dash-eyebrow">Validating session</span>
+            <h1>Checking settings access...</h1>
+          </div>
+        </main>
+      ) : (
+        <GithubSettingsPage theme={theme} onToggleTheme={toggleTheme} />
       );
   }
 

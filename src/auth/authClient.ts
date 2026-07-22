@@ -8,6 +8,16 @@ export type AuthUser = {
   email: string;
   role: string;
   workspace?: string;
+  workspaceName?: string;
+  workspacePlan?: string;
+  accessPlan?: string;
+  demoCredits?: number;
+  creditRequest?: {
+    status?: string;
+    requestedCredits?: number;
+    reason?: string;
+    note?: string;
+  };
   status: string;
 };
 
@@ -27,6 +37,11 @@ type ForgotPasswordResponse = {
     resetToken?: string;
     expiresAt?: string;
   };
+};
+
+type ResetPasswordResponse = {
+  success: boolean;
+  message?: string;
 };
 
 type MeResponse = {
@@ -69,6 +84,25 @@ export async function forgotPassword(payload: Pick<LoginPayload, 'email'>) {
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message ?? 'Could not request password reset. Please try again.');
+  }
+
+  return result;
+}
+
+export async function resetPassword(payload: { token: string; password: string }) {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+
+  const result = (await response.json().catch(() => null)) as ResetPasswordResponse | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.message ?? 'Could not reset password. Please request a new reset token.');
   }
 
   return result;
@@ -142,9 +176,12 @@ export async function validateStoredSession() {
 }
 
 async function authRequest(path: string, payload: LoginPayload | RegisterPayload) {
+
+  
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
+      
       'Content-Type': 'application/json',
     },
     credentials: 'include',
@@ -156,6 +193,7 @@ async function authRequest(path: string, payload: LoginPayload | RegisterPayload
   if (!response.ok || !result?.success || !result.data?.accessToken) {
     throw new Error(result?.message ?? 'Authentication failed. Please try again.');
   }
+
 
   storeAuthSession(result.data.accessToken, result.data.user);
   return result.data;

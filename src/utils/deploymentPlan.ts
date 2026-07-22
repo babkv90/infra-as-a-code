@@ -28,9 +28,10 @@ export function createDeploymentPlan(nodes: AwsNode[], edges: AwsEdge[], issues:
     warnings,
     blockers,
     steps: [
-      { label: 'Validate diagram rules', status: blockers ? 'blocked' : warnings ? 'warning' : 'ready' },
+      { label: 'Validate required resource fields', status: blockers ? 'blocked' : 'ready' },
+      { label: 'Validate diagram rules and security', status: blockers ? 'blocked' : warnings ? 'warning' : 'ready' },
       { label: 'Generate Terraform resources', status: resources.length ? 'ready' : 'blocked' },
-      { label: 'Create deployment artifact', status: resources.length ? 'ready' : 'blocked' },
+      { label: 'Create deployment and resource info artifacts', status: resources.length ? 'ready' : 'blocked' },
       { label: 'Run plan approval checks', status: warnings ? 'warning' : 'ready' },
       { label: 'Deploy to AWS account', status: blockers || !resources.length ? 'blocked' : 'ready' },
     ],

@@ -1,4 +1,5 @@
 import type { AwsEdge, AwsNode } from '../types';
+import { validateResourceRequirements } from './resourceRequirements';
 
 export type ValidationIssue = {
   nodeId?: string;
@@ -8,7 +9,7 @@ export type ValidationIssue = {
 };
 
 export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
+  const issues: ValidationIssue[] = [...validateResourceRequirements(nodes, edges)];
   const serviceIds = new Set(nodes.map((node) => node.data.serviceId));
   const connectedPairs = edges.map((edge) => [nodes.find((node) => node.id === edge.source), nodes.find((node) => node.id === edge.target)] as const);
 
@@ -26,7 +27,12 @@ export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationI
       issues.push({ nodeId: node.id, severity: 'warning', message: 'Lambda has no visible IAM Role connection.' });
     }
 
-    if (node.data.serviceId === 's3' && !serviceIds.has('kms')) {
+    if (
+      node.data.serviceId === 's3' &&
+      !serviceIds.has('kms') &&
+      !String(node.data.config?.website_index_document ?? '').trim() &&
+      node.data.config?.public_read !== 'true'
+    ) {
       issues.push({ nodeId: node.id, severity: 'warning', message: 'Consider adding KMS encryption for S3.' });
     }
 

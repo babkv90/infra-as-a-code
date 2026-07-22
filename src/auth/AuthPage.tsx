@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import AppLogo from '../components/AppLogo';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
-import { forgotPassword, login, register } from './authClient';
+import { forgotPassword, login, register, resetPassword } from './authClient';
 
 type AuthMode = 'login' | 'register';
 
@@ -18,7 +18,10 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
   const [forgotPasswordToken, setForgotPasswordToken] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
   const [isRequestingReset, setIsRequestingReset] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,6 +37,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   }, [email, isRegister, name, password]);
 
   const canRequestPasswordReset = !isRegister && email.trim().length > 0 && !isRequestingReset;
+  const canResetPassword = !isRegister && resetToken.trim().length >= 32 && resetNewPassword.length >= 8 && !isResettingPassword;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,11 +77,35 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
     try {
       const result = await forgotPassword({ email: email.trim() });
       setForgotPasswordMessage(result.message ?? 'If an account exists for this email, password reset instructions will be sent.');
-      setForgotPasswordToken(result.data?.resetToken ?? '');
+      const token = result.data?.resetToken ?? '';
+      setForgotPasswordToken(token);
+      setResetToken(token);
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : 'Could not request password reset. Please try again.');
     } finally {
       setIsRequestingReset(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!canResetPassword) return;
+
+    setError('');
+    setForgotPasswordMessage('');
+    setIsResettingPassword(true);
+
+    try {
+      const result = await resetPassword({ token: resetToken.trim(), password: resetNewPassword });
+      setForgotPasswordMessage(result.message ?? 'Password has been reset. Please log in with your new password.');
+      setPassword(resetNewPassword);
+      setResetToken('');
+      setForgotPasswordToken('');
+      setResetNewPassword('');
+      setShowForgotPassword(false);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Could not reset password. Please request a new token.');
+    } finally {
+      setIsResettingPassword(false);
     }
   }
 
@@ -182,17 +210,19 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                   setShowForgotPassword((value) => !value);
                   setForgotPasswordMessage('');
                   setForgotPasswordToken('');
+                  setResetToken('');
+                  setResetNewPassword('');
                 }}
                 type="button"
               >
-                Forgot password?
+                Reset password
               </button>
 
               {showForgotPassword && (
                 <div className="auth-forgot-panel">
-                  <p>Enter your email above and request a reset token.</p>
+                  <p>Enter your email above, request a reset token, then set a new password.</p>
                   <button className="auth-secondary-submit" disabled={!canRequestPasswordReset} onClick={handleForgotPassword} type="button">
-                    {isRequestingReset ? 'Sending...' : 'Send reset link'}
+                    {isRequestingReset ? 'Sending...' : 'Get reset token'}
                     <Mail size={16} />
                   </button>
                   {forgotPasswordMessage && <div className="auth-success">{forgotPasswordMessage}</div>}
@@ -202,6 +232,37 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                       <code>{forgotPasswordToken}</code>
                     </div>
                   )}
+                  <div className="auth-reset-form">
+                    <label className="auth-field">
+                      <span>Reset token</span>
+                      <div>
+                        <LockKeyhole size={17} />
+                        <input
+                          value={resetToken}
+                          onChange={(event) => setResetToken(event.target.value)}
+                          placeholder="Paste reset token"
+                          autoComplete="one-time-code"
+                        />
+                      </div>
+                    </label>
+                    <label className="auth-field">
+                      <span>New password</span>
+                      <div>
+                        <LockKeyhole size={17} />
+                        <input
+                          value={resetNewPassword}
+                          onChange={(event) => setResetNewPassword(event.target.value)}
+                          placeholder="Minimum 8 characters"
+                          autoComplete="new-password"
+                          type="password"
+                        />
+                      </div>
+                    </label>
+                    <button className="auth-secondary-submit" disabled={!canResetPassword} onClick={handleResetPassword} type="button">
+                      {isResettingPassword ? 'Resetting...' : 'Set new password'}
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
