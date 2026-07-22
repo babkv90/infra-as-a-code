@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a60b6dff52184d1a86851e8",
+  "pipelineName": "Production application pipeline",
+  "environment": "development",
+  "target": "s3-cloudfront",
+  "requestedAt": "2026-07-22T12:26:11.140Z",
+  "source": "infraflow"
+}
