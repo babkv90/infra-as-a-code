@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a5f8e66575d6d53245935d2",
+  "pipelineName": "Production app raw",
+  "environment": "development",
+  "target": "s3-cloudfront",
+  "requestedAt": "2026-07-21T15:21:31.986Z",
+  "source": "infraflow"
+}

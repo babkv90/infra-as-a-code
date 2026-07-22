@@ -1,0 +1,97 @@
+name: "Production app production CI/CD"
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  DEPLOY_ENVIRONMENT: production
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: current-visual-infrastructure-deployment-app
+  ECS_CLUSTER: infraflow-cluster
+  ECS_SERVICE: react-app-service
+  S3_BUCKET: infraflow-static-20260721133904266200000001
+  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+  LAMBDA_FUNCTION: replace-with-lambda-function
+  K8S_NAMESPACE: default
+
+jobs:
+  deploy:
+    name: Build, scan, and deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: contains('react-app', 'react') || contains('react-app', 'node') || contains('react-app', 'static') || contains('react-app', 'serverless') || contains('react-app', 'kubernetes')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Setup Python
+        if: contains('react-app', 'python')
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Java
+        if: contains('react-app', 'java')
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: |
+          if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
+            echo "No npm test script found; skipping test step."
+            exit 0
+          fi
+          npm test -- --watch=false
+
+
+      - name: Build application
+        run: npm run build
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy static build to S3
+        run: |
+          if [ -d dist ]; then
+            BUILD_DIR=dist
+          elif [ -d build ]; then
+            BUILD_DIR=build
+          else
+            echo "No static build output found. Expected dist/ for Vite or build/ for Create React App."
+            exit 1
+          fi
+          aws s3 sync "$BUILD_DIR/" s3://${{ env.S3_BUCKET }} --delete
+
+      - name: Invalidate CloudFront cache
+        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"

@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a5f5005782f8a9375abea0c",
+  "pipelineName": "reactApp new",
+  "environment": "development",
+  "target": "s3-cloudfront",
+  "requestedAt": "2026-07-21T10:55:16.963Z",
+  "source": "infraflow"
+}
