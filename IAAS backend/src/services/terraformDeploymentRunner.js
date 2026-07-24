@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,7 +12,7 @@ import { createNotification } from './notificationService.js';
 
 const runningDeployments = new Set();
 
-export async function runTerraformDeployment(deploymentId) {
+export async function runTerraformDeployment(deploymentId, { isUpdate = false } = {}) {
   const id = String(deploymentId);
   if (runningDeployments.has(id)) return;
   runningDeployments.add(id);
@@ -22,24 +22,24 @@ export async function runTerraformDeployment(deploymentId) {
     if (!deployment) return;
 
     if (!env.TERRAFORM_APPLY_ENABLED) {
-      await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS deployments.');
+      await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS deployments.', isUpdate ? 'update' : 'deploy');
       return;
     }
 
     if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
-      await failDeployment(deployment, 'Deployment has blocking validation errors.');
+      await failDeployment(deployment, 'Deployment has blocking validation errors.', isUpdate ? 'update' : 'deploy');
       return;
     }
 
     const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
     if (!account) {
-      await failDeployment(deployment, 'AWS account not found for deployment.');
+      await failDeployment(deployment, 'AWS account not found for deployment.', isUpdate ? 'update' : 'deploy');
       return;
     }
 
     deployment.status = 'deploying';
     deployment.startedAt = new Date();
-    deployment.logs.push({ message: 'Starting Terraform deployment runner.', level: 'info' });
+    deployment.logs.push({ message: isUpdate ? 'Starting Terraform update runner.' : 'Starting Terraform deployment runner.', level: 'info' });
     await deployment.save();
 
     const credentials = await assumeAwsRole(account);
@@ -60,6 +60,7 @@ export async function runTerraformDeployment(deploymentId) {
       AWS_REGION: account.defaultRegion,
       AWS_DEFAULT_REGION: account.defaultRegion,
       TF_IN_AUTOMATION: 'true',
+      TF_PLUGIN_CACHE_DIR: await getPluginCacheDir(),
     };
 
     await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
@@ -69,15 +70,22 @@ export async function runTerraformDeployment(deploymentId) {
 
     deployment.status = 'deployed';
     deployment.finishedAt = new Date();
-    deployment.logs.push({ message: 'Terraform apply completed. AWS resources should now be visible in the target account console.', level: 'info' });
+    deployment.logs.push({
+      message: isUpdate
+        ? 'Terraform update completed. Only the changed resources were touched; everything else was left as-is.'
+        : 'Terraform apply completed. AWS resources should now be visible in the target account console.',
+      level: 'info',
+    });
     await deployment.save();
 
     await createNotification({
       workspace: deployment.workspace,
       type: 'deployment',
       status: 'success',
-      title: `Deployment "${deployment.name}" succeeded`,
-      message: `${deployment.resourceCount} resource${deployment.resourceCount === 1 ? '' : 's'} applied to AWS.`,
+      title: isUpdate ? `Update to "${deployment.name}" succeeded` : `Deployment "${deployment.name}" succeeded`,
+      message: isUpdate
+        ? `Infrastructure updated to match the edited diagram (${deployment.resourceCount} resource${deployment.resourceCount === 1 ? '' : 's'}).`
+        : `${deployment.resourceCount} resource${deployment.resourceCount === 1 ? '' : 's'} applied to AWS.`,
       resourceType: 'Deployment',
       resourceId: deployment._id,
       resourceName: deployment.name,
@@ -85,15 +93,31 @@ export async function runTerraformDeployment(deploymentId) {
   } catch (error) {
     const deployment = await Deployment.findById(id);
     if (deployment) {
-      await failDeployment(deployment, error.message ?? 'Terraform deployment failed.');
+      await failDeployment(deployment, error.message ?? 'Terraform deployment failed.', isUpdate ? 'update' : 'deploy');
 
-      if (deployment.terraformWorkDir && (await hasTerraformState(deployment.terraformWorkDir))) {
+      // Auto-destroy-on-failure only makes sense for a first-time create: there's nothing working
+      // yet to protect. For an update to already-running infrastructure, a failed apply must NOT
+      // trigger a full teardown — that would destroy resources that were working fine before this
+      // update was attempted. Leave it in `failed` status and let the user decide what to do next.
+      const createdRealState = deployment.terraformWorkDir && (await hasTerraformState(deployment.terraformWorkDir));
+      if (!isUpdate && createdRealState) {
         deployment.logs.push({
           message: 'Automatically destroying any AWS resources created before this failure, to avoid leaving orphaned infrastructure behind.',
           level: 'warning',
         });
         await deployment.save();
         await runTerraformDestroy(id, { force: true, auto: true });
+      } else if (isUpdate) {
+        deployment.logs.push({
+          message: 'This update failed. Nothing was automatically destroyed since infrastructure from before this update may still be running — check Terraform state and the AWS console before retrying.',
+          level: 'warning',
+        });
+        await deployment.save();
+      } else if (deployment.terraformWorkDir) {
+        // Failed before creating any real AWS resource, so runTerraformDestroy never runs for this
+        // one — clean up the downloaded provider binaries directly, since they'd otherwise sit
+        // there unused forever.
+        await removeProviderCache(deployment.terraformWorkDir);
       }
     }
   } finally {
@@ -168,6 +192,7 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
       AWS_REGION: account.defaultRegion,
       AWS_DEFAULT_REGION: account.defaultRegion,
       TF_IN_AUTOMATION: 'true',
+      TF_PLUGIN_CACHE_DIR: await getPluginCacheDir(),
     };
 
     await emptyS3BucketsFromTerraformState(deployment, workDir, credentials, account.defaultRegion);
@@ -183,6 +208,11 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
       level: 'info',
     });
     await deployment.save();
+
+    // A destroyed deployment will never run `apply` again, so its downloaded provider binaries
+    // (600MB+ per deployment) serve no further purpose. Reclaim the disk space; terraform.tfstate
+    // and main.tf are left in place since they're tiny and useful for audit history.
+    await removeProviderCache(workDir);
 
     await createNotification({
       workspace: deployment.workspace,
@@ -217,6 +247,25 @@ async function getOrCreateWorkDir(deployment, deploymentId) {
   const workDir = path.join(baseDir, deploymentId);
   await mkdir(workDir, { recursive: true });
   return workDir;
+}
+
+// Every deployment gets its own work directory (so each has its own state), but without a shared
+// plugin cache, Terraform re-downloads the full AWS provider binary (600MB+) into every single one
+// of them. Pointing TF_PLUGIN_CACHE_DIR at one shared directory means every run after the first
+// just hardlinks to the already-downloaded copy instead of re-fetching it.
+async function getPluginCacheDir() {
+  const baseDir = env.TERRAFORM_WORK_DIR || path.join(tmpdir(), 'infraflow-deployments');
+  const cacheDir = path.join(baseDir, '.plugin-cache');
+  await mkdir(cacheDir, { recursive: true });
+  return cacheDir;
+}
+
+async function removeProviderCache(workDir) {
+  try {
+    await rm(path.join(workDir, '.terraform'), { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup — a failure here shouldn't affect the destroy result the user sees.
+  }
 }
 
 async function pathExists(targetPath) {
@@ -413,7 +462,9 @@ async function failDeployment(deployment, message, phase = 'deploy', { auto = fa
         ? auto
           ? `Automatic cleanup failed for "${deployment.name}" - resources may still exist in AWS`
           : `Destroy failed for "${deployment.name}"`
-        : `Deployment "${deployment.name}" failed`,
+        : phase === 'update'
+          ? `Update failed for "${deployment.name}" - previous infrastructure was left untouched`
+          : `Deployment "${deployment.name}" failed`,
     message: auto ? `Automatic cleanup after the failed deployment did not finish: ${finalMessage.slice(0, 220)}` : finalMessage.slice(0, 300),
     errorLog: finalMessage,
     resourceType: 'Deployment',

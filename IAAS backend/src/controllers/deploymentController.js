@@ -29,6 +29,14 @@ export const createCanvasDeploymentSchema = z.object({
   }),
 });
 
+export const updateCanvasDeploymentSchema = z.object({
+  body: z.object({
+    activeRegion: z.string().min(2).optional(),
+    nodes: z.array(z.any()).default([]),
+    edges: z.array(z.any()).default([]),
+  }),
+});
+
 export const listDeployments = asyncHandler(async (req, res) => {
   const deployments = await Deployment.find({ workspace: req.user.workspace }).sort({ createdAt: -1 }).populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployments });
@@ -164,6 +172,65 @@ export const applyDeployment = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
   void runTerraformDeployment(deployment._id);
+  res.json({ success: true, data: deployment });
+});
+
+// Updates an already-deployed (or previously-failed) deployment's underlying diagram and re-applies
+// only the differences via Terraform, instead of creating a brand-new deployment from scratch. This
+// relies on the runner reusing the same per-deployment work directory/state (see
+// terraformDeploymentRunner.js) so a normal `terraform plan`/`apply` diff runs against what's
+// actually already in AWS.
+export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (['queued', 'deploying', 'destroying'].includes(deployment.status)) {
+    throw new ApiError(409, 'This deployment is already running. Wait for it to finish before updating it.');
+  }
+  if (!['deployed', 'failed'].includes(deployment.status)) {
+    throw new ApiError(409, 'Only deployed (or previously failed) infrastructure can be updated.');
+  }
+  if (!deployment.diagram) throw new ApiError(409, 'Deployment has no linked diagram to update.');
+
+  const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
+  if (!diagram) throw new ApiError(404, 'Underlying diagram not found');
+
+  const workspace = await Workspace.findById(req.user.workspace);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: req.validated.body.nodes });
+
+  diagram.nodes = req.validated.body.nodes;
+  diagram.edges = req.validated.body.edges;
+  if (req.validated.body.activeRegion) diagram.activeRegion = req.validated.body.activeRegion;
+  diagram.updatedBy = req.user._id;
+  await diagram.save();
+
+  const plan = buildDeploymentPlan(diagram);
+  const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
+
+  deployment.resourceCount = plan.resourceCount;
+  deployment.connectionCount = plan.connectionCount;
+  deployment.plan = plan.plan;
+  deployment.terraform = plan.terraform;
+  deployment.validationIssues = plan.validationIssues;
+
+  if (hasBlockers) {
+    deployment.logs.push({ message: 'Update rejected: the edited diagram has blocking validation errors.', level: 'error' });
+    await deployment.save();
+    await deployment.populate('diagram', 'name activeRegion nodes edges');
+    throw new ApiError(409, 'Updated diagram has blocking validation errors. Fix them before updating the deployment.');
+  }
+
+  deployment.status = 'queued';
+  deployment.logs.push({
+    message: 'Infrastructure update requested from an edited diagram. Terraform will compute and apply only the differences against what is already deployed.',
+    level: 'info',
+  });
+  await deployment.save();
+
+  await auditLog(req, 'deployment.update', 'Deployment', deployment._id, { diagram: diagram._id });
+  void runTerraformDeployment(deployment._id, { isUpdate: true });
+
+  await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });
 

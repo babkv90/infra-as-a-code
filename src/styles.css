@@ -1237,6 +1237,12 @@ textarea {
   border-bottom: 1px solid rgba(148, 163, 184, 0.24);
 }
 
+.modal__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .modal__header h3 {
   margin: 0;
   font-size: 15px;
@@ -1490,6 +1496,16 @@ textarea {
   margin: 3px 0 0;
   color: #fff;
   font-size: 18px;
+}
+
+.deployment-update-banner {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fde68a;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .deployment-summary {

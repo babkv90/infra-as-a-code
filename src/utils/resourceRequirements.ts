@@ -221,7 +221,7 @@ export function getResourceRequirementReport(node: AwsNode, nodes: AwsNode[] = [
     validKeys: fields.map((field) => ({
       key: field.key,
       label: field.label,
-      required: required.has(field.key),
+      required: required.has(field.key) && !isResolvableViaConnection(node, nodes, edges, field.key),
       value: node.data.config?.[field.key] ?? '',
     })),
     missingRequiredKeys,

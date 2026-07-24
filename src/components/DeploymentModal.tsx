@@ -4,7 +4,7 @@ import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { createDeploymentPlan } from '../utils/deploymentPlan';
-import { createCanvasDeployment, forceDestroyDeployment, getDeployment, type DeploymentRecord } from '../utils/deploymentApi';
+import { createCanvasDeployment, forceDestroyDeployment, getDeployment, updateDeployment, type DeploymentRecord } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
@@ -22,10 +22,12 @@ type DeploymentModalProps = {
   issues: ValidationIssue[];
   onClose: () => void;
   onValidate: () => ValidationIssue[];
+  updateDeploymentId?: string;
 };
 
-function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: DeploymentModalProps) {
+function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDeploymentId }: DeploymentModalProps) {
   const user = getStoredUser();
+  const isUpdateMode = Boolean(updateDeploymentId);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus>('idle');
   const [currentIssues, setCurrentIssues] = useState(issues);
   const [accounts, setAccounts] = useState<AwsAccountRecord[]>([]);
@@ -52,7 +54,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
   const canDeploy = plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
-  const isAlreadyDeployed = deploymentStatus === 'success' || queuedDeployment?.status === 'deployed';
+  const isAlreadyDeployed = !isUpdateMode && (deploymentStatus === 'success' || queuedDeployment?.status === 'deployed');
   const runnerLogs = useMemo(() => {
     const logs = queuedDeployment?.logs ?? [];
     const statusLog: RunnerLog[] = queuedDeployment
@@ -81,8 +83,10 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
       .then((data) => {
         if (!isMounted) return;
         setAccounts(data);
-        const firstConnected = data.find((account) => account.status === 'connected');
-        setSelectedAccountId(firstConnected?._id ?? '');
+        if (!isUpdateMode) {
+          const firstConnected = data.find((account) => account.status === 'connected');
+          setSelectedAccountId(firstConnected?._id ?? '');
+        }
       })
       .catch((error: unknown) => {
         if (!isMounted) return;
@@ -96,6 +100,26 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!updateDeploymentId) return;
+    let isMounted = true;
+
+    getDeployment(updateDeploymentId)
+      .then((deployment) => {
+        if (!isMounted) return;
+        setQueuedDeployment(deployment);
+        if (deployment.awsAccount) setSelectedAccountId(deployment.awsAccount);
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return;
+        setRequestError(error instanceof Error ? error.message : 'Could not load the deployment to update.');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [updateDeploymentId]);
 
   useEffect(() => {
     if (!queuedDeployment?._id || !['queued', 'deploying', 'destroying'].includes(queuedDeployment.status)) return;
@@ -163,7 +187,11 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
   }
 
   async function deployToAws() {
-    if (!canDeploy || !selectedAccount || isAlreadyDeployed) return;
+    if (isUpdateMode) {
+      if (!updateDeploymentId || plan.resourceCount === 0 || plan.blockers > 0 || deploymentStatus === 'running') return;
+    } else if (!canDeploy || !selectedAccount || isAlreadyDeployed) {
+      return;
+    }
 
     const latestIssues = onValidate();
     const latestTerraformIssues = validateGeneratedTerraform(exportTerraform(nodes, edges));
@@ -171,29 +199,35 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
     const latestEffectiveIssues = [...latestIssues, ...latestTerraformIssues, ...latestAccessIssues];
     setCurrentIssues(latestIssues);
     if (latestEffectiveIssues.some((issue) => issue.severity === 'error')) {
-      setRequestError('Deployment blocked. Fix all required resource fields and validation errors, then retry.');
+      setRequestError(isUpdateMode ? 'Update blocked. Fix all required resource fields and validation errors, then retry.' : 'Deployment blocked. Fix all required resource fields and validation errors, then retry.');
       return;
     }
 
     setDeploymentStatus('running');
     setRequestError('');
-    setQueuedDeployment(null);
+    if (!isUpdateMode) setQueuedDeployment(null);
     setShowDeploymentSuccess(false);
 
     try {
-      const deployment = await createCanvasDeployment({
-        name: plan.name,
-        awsAccountId: selectedAccount._id,
-        activeRegion: plan.regions[0] ?? selectedAccount.defaultRegion,
-        nodes,
-        edges,
-        autoApply: true,
-      });
+      const deployment = isUpdateMode
+        ? await updateDeployment(updateDeploymentId as string, {
+            activeRegion: plan.regions[0],
+            nodes,
+            edges,
+          })
+        : await createCanvasDeployment({
+            name: plan.name,
+            awsAccountId: (selectedAccount as AwsAccountRecord)._id,
+            activeRegion: plan.regions[0] ?? (selectedAccount as AwsAccountRecord).defaultRegion,
+            nodes,
+            edges,
+            autoApply: true,
+          });
       setQueuedDeployment(deployment);
       setDeploymentStatus(['deployed'].includes(deployment.status) ? 'success' : 'running');
     } catch (error) {
       setDeploymentStatus('error');
-      setRequestError(error instanceof Error ? error.message : 'Deployment request failed.');
+      setRequestError(error instanceof Error ? error.message : isUpdateMode ? 'Update request failed.' : 'Deployment request failed.');
     }
   }
 
@@ -202,14 +236,20 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
     <section className="deployment-page">
       <header className="deployment-modal__header">
         <div>
-          <span>Deploy drawn infrastructure</span>
-          <h3>{plan.name}</h3>
+          <span>{isUpdateMode ? 'Update deployed infrastructure' : 'Deploy drawn infrastructure'}</span>
+          <h3>{queuedDeployment?.name ?? plan.name}</h3>
         </div>
         <button className="text-button" onClick={onClose}>
           <ArrowLeft size={16} />
           Back to builder
         </button>
       </header>
+      {isUpdateMode && (
+        <div className="deployment-update-banner">
+          Editing an already-deployed infrastructure. Deploying now will run Terraform against the resources already in AWS and apply only
+          the differences from your edits — it will not recreate everything from scratch.
+        </div>
+      )}
 
       <section className="deployment-summary">
         <div>
@@ -281,7 +321,17 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
         </button>
         <button className="deployment-primary" disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed} onClick={deployToAws}>
           <Rocket size={16} />
-          {deploymentStatus === 'running' ? 'Deploying...' : deploymentStatus === 'success' ? 'Deployed' : 'Deploy to AWS'}
+          {deploymentStatus === 'running'
+            ? isUpdateMode
+              ? 'Updating...'
+              : 'Deploying...'
+            : deploymentStatus === 'success'
+              ? isUpdateMode
+                ? 'Updated'
+                : 'Deployed'
+              : isUpdateMode
+                ? 'Update Infrastructure'
+                : 'Deploy to AWS'}
         </button>
       </div>
 
@@ -312,7 +362,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
             <select
               value={selectedAccountId}
               onChange={(event) => setSelectedAccountId(event.target.value)}
-              disabled={isLoadingAccounts || deploymentStatus === 'running'}
+              disabled={isLoadingAccounts || deploymentStatus === 'running' || isUpdateMode}
             >
               <option value="">{isLoadingAccounts ? 'Loading accounts...' : 'Select AWS account'}</option>
               {connectedAccounts.map((account) => (
@@ -322,7 +372,8 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate }: Deployme
               ))}
             </select>
           </label>
-          {!isLoadingAccounts && connectedAccounts.length === 0 && (
+          {isUpdateMode && <p className="deployment-note">The AWS account is fixed to whichever account this infrastructure was originally deployed to.</p>}
+          {!isUpdateMode && !isLoadingAccounts && connectedAccounts.length === 0 && (
             <p className="deployment-note">Connect an AWS account from the dashboard before deploying infrastructure.</p>
           )}
           </section>

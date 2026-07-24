@@ -162,6 +162,7 @@ export async function validateStoredSession() {
       Authorization: `Bearer ${token}`,
     },
     credentials: 'include',
+    
   });
 
   const result = (await response.json().catch(() => null)) as MeResponse | null;
@@ -181,7 +182,7 @@ async function authRequest(path: string, payload: LoginPayload | RegisterPayload
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
-      
+
       'Content-Type': 'application/json',
     },
     credentials: 'include',

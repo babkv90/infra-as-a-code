@@ -29,6 +29,7 @@ export type DeploymentRecord = {
   };
   terraform: string;
   terraformWorkDir?: string;
+  awsAccount?: string;
   outputs?: Record<string, unknown>;
   validationIssues: Array<{ severity: string; message: string; nodeId?: string; edgeId?: string }>;
   logs: Array<{ message: string; level: string; at?: string }>;
@@ -56,6 +57,19 @@ export async function createCanvasDeployment(payload: CreateCanvasDeploymentPayl
 
 export async function getDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}`);
+}
+
+export type UpdateCanvasDeploymentPayload = {
+  activeRegion?: string;
+  nodes: AwsNode[];
+  edges: AwsEdge[];
+};
+
+export async function updateDeployment(id: string, payload: UpdateCanvasDeploymentPayload) {
+  return apiRequest<DeploymentRecord>(`/deployments/${id}/update`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function listDeployments() {

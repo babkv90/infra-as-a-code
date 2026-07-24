@@ -25,6 +25,7 @@ import {
   Moon,
   Network,
   Paperclip,
+  PencilLine,
   Play,
   Plus,
   RefreshCw,
@@ -143,7 +144,7 @@ import {
   type NodeLabMode,
   type NodeRuntimeSnapshot,
 } from './nodeLabApi';
-import { destroyDeployment, forceDestroyDeployment, listDeployments, type DeploymentRecord } from '../utils/deploymentApi';
+import { destroyDeployment, forceDestroyDeployment, getDeployment, listDeployments, type DeploymentRecord } from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseAiAgent, canUseApplicationPipelines, serviceAccessTierForUser } from '../utils/accessControl';
@@ -289,6 +290,18 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   useEffect(() => {
     void refreshAwsData();
   }, []);
+
+  useEffect(() => {
+    if (!awsDataMessage) return;
+    const timer = window.setTimeout(() => setAwsDataMessage(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [awsDataMessage]);
+
+  useEffect(() => {
+    if (!awsDataError) return;
+    const timer = window.setTimeout(() => setAwsDataError(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [awsDataError]);
 
   useEffect(() => {
     void refreshNotifications();
@@ -637,6 +650,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(false);
   const [isDeploymentPageOpen, setIsDeploymentPageOpen] = useState(false);
+  const [updateDeploymentId, setUpdateDeploymentId] = useState<string>();
   const [demoDiagrams, setDemoDiagrams] = useState<SavedDiagram[]>([]);
   const [savedDiagrams, setSavedDiagrams] = useState<SavedDiagram[]>([]);
   const [currentDiagramId, setCurrentDiagramId] = useState<string>();
@@ -694,6 +708,27 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   useEffect(() => {
     void refreshEnterpriseDemoDiagram();
     void refreshSavedDiagrams();
+  }, []);
+
+  useEffect(() => {
+    const targetDeploymentId = new URLSearchParams(window.location.search).get('updateDeployment');
+    if (!targetDeploymentId) return;
+
+    window.history.replaceState(null, '', '/dashboard?view=builder');
+
+    getDeployment(targetDeploymentId)
+      .then((deployment) => {
+        importDiagram({ nodes: deployment.diagram?.nodes ?? [], edges: deployment.diagram?.edges ?? [] });
+        setCurrentDiagramId(deployment.diagram?._id);
+        setCurrentDiagramName(deployment.diagram?.name ?? deployment.name);
+        setUpdateDeploymentId(deployment._id);
+        setIsDeploymentPageOpen(true);
+        fitFullDiagram();
+      })
+      .catch((error) => {
+        setDirectoryMessage(error instanceof Error ? error.message : 'Unable to load that deployment for updating.');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function refreshEnterpriseDemoDiagram() {
@@ -836,7 +871,17 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   if (isDeploymentPageOpen) {
     return (
       <div className="dash-page dash-page--builder dash-page--deployment">
-        <DeploymentModal nodes={nodes} edges={edges} issues={issues} onValidate={validate} onClose={() => setIsDeploymentPageOpen(false)} />
+        <DeploymentModal
+          nodes={nodes}
+          edges={edges}
+          issues={issues}
+          onValidate={validate}
+          updateDeploymentId={updateDeploymentId}
+          onClose={() => {
+            setIsDeploymentPageOpen(false);
+            setUpdateDeploymentId(undefined);
+          }}
+        />
       </div>
     );
   }
@@ -1347,6 +1392,18 @@ function DeploymentsPage({
                             <button className="dash-secondary-action" disabled={isLoadingDeployments} onClick={() => void refreshDeployments()} type="button">
                               <RefreshCw size={15} />
                               Refresh
+                            </button>
+                            <button
+                              className="dash-secondary-action"
+                              disabled={!['deployed', 'failed'].includes(deployment.status)}
+                              onClick={() => {
+                                window.location.href = `/dashboard?view=builder&updateDeployment=${encodeURIComponent(deployment._id)}`;
+                              }}
+                              title="Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                              type="button"
+                            >
+                              <PencilLine size={15} />
+                              Update
                             </button>
                             {FORCE_DESTROY_STATUSES.includes(deployment.status) ? (
                               <button

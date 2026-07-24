@@ -69,6 +69,8 @@ export const deployRolePermissionsPolicy = {
         'iam:AttachRolePolicy',
         'iam:DetachRolePolicy',
         'iam:ListAttachedRolePolicies',
+        'iam:ListInstanceProfilesForRole',
+        'iam:RemoveRoleFromInstanceProfile',
         'iam:PassRole',
       ],
       Resource: 'arn:aws:iam::*:role/infraflow-*',

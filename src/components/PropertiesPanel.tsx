@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, FileCode2, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Copy, Download, FileCode2, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import type React from 'react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listAccountIamRoles, listAwsAccounts, type AwsAccountRecord, type IamRoleSummary } from '../dashboard/awsApi';
@@ -38,7 +38,7 @@ function PropertiesPanel() {
   const selectedNode = nodes.find((node) => node.id === inspectorNodeId);
   const selectedEdge = edges.find((edge) => edge.id === inspectorEdgeId);
   const service = selectedNode?.data.serviceId ? serviceById[selectedNode.data.serviceId] : undefined;
-  const resourceReport = selectedNode?.data.serviceId ? getResourceRequirementReport(selectedNode) : undefined;
+  const resourceReport = selectedNode?.data.serviceId ? getResourceRequirementReport(selectedNode, nodes, edges) : undefined;
   const bindingSourceNodes = useMemo(
     () => nodes.filter((node) => node.type !== 'groupBox' && node.id !== selectedNode?.id && ['secrets', 'iam', 'kms'].includes(node.data.serviceId ?? '')),
     [nodes, selectedNode?.id],
@@ -551,14 +551,28 @@ function ConnectionList({ title, items }: { title: string; items: string[] }) {
 }
 
 function Modal({ title, value, onClose }: { title: string; value: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    void navigator.clipboard?.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
   return (
     <div className="modal-backdrop">
       <div className="modal">
         <div className="modal__header">
           <h3>{title}</h3>
-          <button className="icon-button" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="modal__header-actions">
+            <button className="text-button" onClick={copy} type="button">
+              <Copy size={14} />
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            <button className="icon-button" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         <pre>{value}</pre>
       </div>
