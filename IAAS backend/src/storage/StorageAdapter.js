@@ -39,6 +39,17 @@ export class StorageAdapter {
   }
 
   /**
+   * Lists file names (not full keys) directly under `prefix` — used for sweeping orphaned
+   * artifacts (e.g. lambda-zips/) rather than any hot path, so adapters can implement this however
+   * is natural for them (readdir locally, ListObjectsV2 in S3).
+   * @param {string} prefix
+   * @returns {Promise<string[]>}
+   */
+  async listFiles(prefix) {
+    throw new Error('StorageAdapter.listFiles not implemented');
+  }
+
+  /**
    * Local scratch directory the Terraform CLI executes in for this deployment. Always a real path
    * on local disk, in every mode — see the class comment above.
    * @param {string} deploymentId

@@ -128,6 +128,12 @@ async function roleExists(iam, roleName) {
   }
 }
 
+// Best-effort only: this exists purely to decide whether to add one optional kms:GenerateDataKey
+// permission statement (see buildOidcPermissionsPolicy). It must never throw — provisionOidcDeployRole
+// awaits this before it ever touches IAM, so a rejection here (e.g. NoSuchBucket, because the target
+// infrastructure was destroyed or hasn't been deployed yet) would abort role/trust-policy provisioning
+// entirely, leaving AWS_DEPLOY_ROLE_ARN stale and turning "target bucket doesn't exist yet" into a much
+// more confusing "Configure AWS credentials with OIDC" failure in GitHub Actions.
 async function resolveBucketKmsKeyArn(s3, bucketName) {
   try {
     const result = await s3.send(new GetBucketEncryptionCommand({ Bucket: bucketName }));
@@ -136,9 +142,8 @@ async function resolveBucketKmsKeyArn(s3, bucketName) {
       return rule.KMSMasterKeyID;
     }
     return null;
-  } catch (error) {
-    if (error?.name === 'ServerSideEncryptionConfigurationNotFoundError') return null;
-    throw error;
+  } catch {
+    return null;
   }
 }
 

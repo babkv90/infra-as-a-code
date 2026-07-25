@@ -9,6 +9,18 @@ import { canUseApplicationPipelines } from '../utils/accessControl.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { createNotification } from '../services/notificationService.js';
+import {
+  dispatchGithubWorkflow,
+  encodeURIComponentPath,
+  githubApiHeaders,
+  githubDeploymentErrorMessage,
+  githubSyncErrorMessage,
+  githubWorkflowRunJobs,
+  isGithubIntegrationPermissionError,
+  latestGithubWorkflowRun,
+  syncFilesToGithub,
+  waitForLatestWorkflowRun,
+} from '../services/githubActionsClient.js';
 import { setGithubActionsSecret } from '../services/githubSecretsService.js';
 import { buildOidcPermissionsPolicy, buildOidcTrustPolicy, provisionOidcDeployRole } from '../services/pipelineOidcRoleService.js';
 import { githubTokenForUser } from './githubController.js';
@@ -92,6 +104,7 @@ export const createApplicationPipeline = asyncHandler(async (req, res) => {
   if (req.validated.body.deploymentId && !deployment) throw new ApiError(404, 'Deployment target not found');
 
   const target = inferPipelineTarget(req.validated.body.appType, deployment, req.validated.body.target ?? {});
+  assertTargetResolved(target, deployment);
   const commands = defaultCommandsForApp(req.validated.body.appType, req.validated.body.commands ?? {});
   const generatedFiles = generatePipelineFiles({
     name: req.validated.body.name,
@@ -277,7 +290,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       repo: repository.repo,
       workflowId,
       branch: repository.branch,
-      environment: pipeline.environment,
+      inputs: { environment: pipeline.environment },
     });
   } catch (error) {
     if (!isGithubIntegrationPermissionError(error)) throw error;
@@ -466,6 +479,32 @@ function inferPipelineTarget(appType, deployment, overrides) {
   return { ...base, type: 'ecs' };
 }
 
+// inferPipelineTarget falls back to literal "replace-with-..." placeholders when it can't find a real
+// bucket/function on the linked deployment (e.g. the deployment is a Lambda+API backend but this
+// pipeline needs an S3+CloudFront frontend). Left unchecked, that silently creates a pipeline that
+// looks fine until deploy time — the actual failure only ever surfaces as a deep, unrelated-looking
+// error inside a GitHub Actions run (a stale/wrong AWS_DEPLOY_ROLE_ARN failing OIDC, or S3 PutObject
+// against a bucket that was never real). Fail here instead, with a message that names the mismatch.
+function assertTargetResolved(target, deployment) {
+  if (target.type === 's3-cloudfront' && target.bucketName === 'replace-with-s3-bucket') {
+    throw new ApiError(
+      409,
+      deployment
+        ? `"${deployment.name}" doesn't have an S3 bucket in its outputs, so this pipeline has nothing to deploy the frontend build to. Link a deployment that includes an S3 + CloudFront frontend, or set target.bucketName explicitly.`
+        : 'This app type deploys to S3 + CloudFront. Link a deployment that includes an S3 bucket, or set target.bucketName explicitly.',
+    );
+  }
+
+  if (target.type === 'lambda' && target.lambdaFunctionName === 'replace-with-lambda-function') {
+    throw new ApiError(
+      409,
+      deployment
+        ? `"${deployment.name}" doesn't have a Lambda function in its outputs, so this pipeline has nothing to deploy code to. Link a deployment that includes a Lambda function, or set target.lambdaFunctionName explicitly.`
+        : 'This app type deploys to Lambda. Link a deployment that includes a Lambda function, or set target.lambdaFunctionName explicitly.',
+    );
+  }
+}
+
 function defaultCommandsForApp(appType, overrides) {
   const defaults = {
     'react-app': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm run preview -- --host 0.0.0.0' },
@@ -534,6 +573,22 @@ function generatePipelineFiles({ name, appType, environment, repository, command
 function parseGithubOwnerRepo(url) {
   const match = String(url || '').match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i);
   return match ? { owner: match[1], repo: match[2] } : { owner: 'OWNER', repo: 'REPO' };
+}
+
+// deployApplicationPipeline/getApplicationPipelineDeploymentStatus both let the caller override which
+// repo/branch to act against (pipelineDeploySchema's body, or raw query params for the GET) instead of
+// always using the pipeline's saved repository.url — unlike parseGithubOwnerRepo above, this must
+// return empty strings (not 'OWNER'/'REPO' placeholders) when nothing resolves, so the
+// `!repository.owner || !repository.repo` checks at both call sites still correctly block an
+// unconfigured pipeline instead of silently proceeding with placeholder values.
+function resolvePipelineRepository(pipeline, source = {}) {
+  const branch = source?.branch || pipeline.repository?.branch || 'main';
+  if (source?.owner && source?.repo) {
+    return { owner: source.owner, repo: source.repo, branch };
+  }
+
+  const match = String(pipeline.repository?.url || '').match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i);
+  return { owner: match?.[1] ?? '', repo: match?.[2] ?? '', branch };
 }
 
 function githubWorkflow({ name, appType, environment, branch, commands, target }) {
@@ -896,93 +951,6 @@ function workflowPathFor(environment) {
   return `.github/workflows/infraflow-${environment}-deploy.yml`;
 }
 
-async function syncFilesToGithub({ token, owner, repo, branch, message, files }) {
-  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const headers = {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
-  };
-  const synced = [];
-
-  for (const file of sortWorkflowFilesLast(files)) {
-    const path = file.path.replace(/^\/+/, '');
-    const existingResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}?ref=${encodeURIComponent(branch)}`, { headers });
-    const existing = existingResponse.ok ? await existingResponse.json() : undefined;
-    if (!existingResponse.ok && existingResponse.status !== 404) {
-      const text = await existingResponse.text();
-      throw new ApiError(existingResponse.status, `GitHub read failed for ${path}: ${text}`);
-    }
-
-    const updateResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({
-        message: `${message}: ${path}`,
-        branch,
-        content: Buffer.from(file.content, 'utf8').toString('base64'),
-        ...(existing?.sha ? { sha: existing.sha } : {}),
-      }),
-    });
-
-    const result = await updateResponse.json().catch(async () => ({ message: await updateResponse.text() }));
-    if (!updateResponse.ok) {
-      throw new ApiError(updateResponse.status, githubSyncErrorMessage(path, result?.message));
-    }
-    synced.push({ path, commitSha: result?.commit?.sha ?? '' });
-  }
-
-  return {
-    files: synced,
-    commitSha: synced[synced.length - 1]?.commitSha ?? '',
-  };
-}
-
-function sortWorkflowFilesLast(files) {
-  return [...files].sort((a, b) => {
-    const aWorkflow = String(a.path ?? '').replace(/^\/+/, '').startsWith('.github/workflows/');
-    const bWorkflow = String(b.path ?? '').replace(/^\/+/, '').startsWith('.github/workflows/');
-    return Number(aWorkflow) - Number(bWorkflow);
-  });
-}
-
-function resolvePipelineRepository(pipeline, source = {}) {
-  const parsed = parseGithubRepositoryUrl(pipeline.repository?.url);
-  return {
-    owner: String(source.owner ?? parsed.owner ?? '').trim(),
-    repo: String(source.repo ?? parsed.repo ?? '').trim(),
-    branch: String(source.branch ?? pipeline.repository?.branch ?? 'main').trim() || 'main',
-  };
-}
-
-function parseGithubRepositoryUrl(url = '') {
-  const match = String(url).match(/github\.com[:/]([^/\s]+)\/([^/\s#?]+?)(?:\.git)?(?:[/?#].*)?$/i);
-  return {
-    owner: match?.[1] ?? '',
-    repo: match?.[2] ?? '',
-  };
-}
-
-async function dispatchGithubWorkflow({ token, owner, repo, workflowId, branch, environment }) {
-  const response = await fetch(
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowId)}/dispatches`,
-    {
-      method: 'POST',
-      headers: githubApiHeaders(token),
-      body: JSON.stringify({
-        ref: branch,
-        inputs: { environment },
-      }),
-    },
-  );
-
-  if (response.status === 204) return;
-
-  const result = await response.json().catch(async () => ({ message: await response.text() }));
-  throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
-}
-
 async function createDeploymentTriggerCommit({ token, owner, repo, branch, pipeline }) {
   const triggerPath = `.infraflow/deploy-triggers/${pipeline._id}.json`;
   const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
@@ -1024,132 +992,6 @@ async function createDeploymentTriggerCommit({ token, owner, repo, branch, pipel
     path: triggerPath,
     commitSha: result?.commit?.sha ?? '',
   };
-}
-
-async function waitForLatestWorkflowRun({ token, owner, repo, workflowId, branch, createdAfter }) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    if (attempt > 0) await sleep(1400);
-    const run = await latestGithubWorkflowRun({ token, owner, repo, workflowId, branch, createdAfter });
-    if (run) return run;
-  }
-  return null;
-}
-
-async function latestGithubWorkflowRun({ token, owner, repo, workflowId, branch, createdAfter }) {
-  const params = new URLSearchParams({
-    branch,
-    per_page: '5',
-  });
-  const response = await fetch(
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowId)}/runs?${params.toString()}`,
-    { headers: githubApiHeaders(token) },
-  );
-  const result = await response.json().catch(async () => ({ message: await response.text() }));
-  if (!response.ok) throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read workflow runs.'));
-
-  const runs = result.workflow_runs ?? [];
-  const run = createdAfter
-    ? runs.find((item) => new Date(item.created_at).getTime() >= new Date(createdAfter).getTime() - 3000)
-    : runs[0];
-  return run ? normalizeGithubWorkflowRun(run) : null;
-}
-
-async function githubWorkflowRunJobs({ token, owner, repo, runId }) {
-  const response = await fetch(
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${encodeURIComponent(runId)}/jobs?per_page=20`,
-    { headers: githubApiHeaders(token) },
-  );
-  const result = await response.json().catch(async () => ({ message: await response.text() }));
-  if (!response.ok) throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read workflow jobs.'));
-  return (result.jobs ?? []).map((job) => ({
-    id: job.id,
-    name: job.name,
-    status: job.status,
-    conclusion: job.conclusion,
-    startedAt: job.started_at,
-    completedAt: job.completed_at,
-    htmlUrl: job.html_url,
-    steps: (job.steps ?? []).map((step) => ({
-      name: step.name,
-      status: step.status,
-      conclusion: step.conclusion,
-      number: step.number,
-      startedAt: step.started_at,
-      completedAt: step.completed_at,
-    })),
-  }));
-}
-
-function normalizeGithubWorkflowRun(run) {
-  return {
-    id: run.id,
-    name: run.name,
-    runNumber: run.run_number,
-    event: run.event,
-    status: run.status,
-    conclusion: run.conclusion,
-    branch: run.head_branch,
-    commitSha: run.head_sha,
-    htmlUrl: run.html_url,
-    createdAt: run.created_at,
-    updatedAt: run.updated_at,
-    runStartedAt: run.run_started_at,
-  };
-}
-
-function githubApiHeaders(token) {
-  return {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
-  };
-}
-
-function githubDeploymentErrorMessage(message) {
-  const text = String(message || 'GitHub deployment request failed.');
-  if (/workflow does not have 'workflow_dispatch'/i.test(text)) {
-    return `${text} Regenerate and sync the pipeline so the workflow includes workflow_dispatch.`;
-  }
-  if (/not found/i.test(text)) {
-    return `${text} Confirm the generated workflow file has been synced to the selected repository and branch.`;
-  }
-  if (/resource not accessible by integration/i.test(text)) {
-    return `${text} The connected GitHub app/token needs Actions read access and Contents/Workflow write access for this repository.`;
-  }
-  return text;
-}
-
-function isGithubIntegrationPermissionError(error) {
-  const message = String(error?.message ?? '');
-  return error?.statusCode === 403 && /resource not accessible by integration/i.test(message);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function githubSyncErrorMessage(path, message = 'Unknown error') {
-  const text = String(message || 'Unknown error');
-  if (path.startsWith('.github/workflows/') && /resource not accessible by integration/i.test(text)) {
-    return `GitHub sync failed for ${path}: ${text}. GitHub blocks workflow file writes unless the connected app/token has workflow access. If this is a GitHub App, enable Repository permissions > Contents: Read and write and Workflows: Read and write in the GitHub App settings, reinstall or reauthorize it for this repository, then sync again. If this is an OAuth app, reconnect GitHub and approve the workflow scope.`;
-  }
-
-  if (/resource not accessible by integration/i.test(text)) {
-    return `GitHub sync failed for ${path}: ${text}. The selected GitHub account can see the repository, but the connected GitHub App/token cannot write repository contents. Enable Repository permissions > Contents: Read and write in the GitHub App settings, reinstall or reauthorize the app for this repository, then sync again.`;
-  }
-
-  if (/protected branch/i.test(text)) {
-    return `GitHub sync failed for ${path}: ${text}. Choose an unprotected branch or allow this GitHub account to push to the selected protected branch.`;
-  }
-
-  return `GitHub sync failed for ${path}: ${text}`;
-}
-
-function encodeURIComponentPath(path) {
-  return path.split('/').map(encodeURIComponent).join('/');
 }
 
 function firstConfig(nodes, keys) {

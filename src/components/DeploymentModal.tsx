@@ -4,6 +4,7 @@ import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { createDeploymentPlan } from '../utils/deploymentPlan';
+import { useDeploymentMonitorStore } from '../store/deploymentMonitorStore';
 import { createCanvasDeployment, forceDestroyDeployment, getDeployment, updateDeployment, type DeploymentRecord } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
@@ -28,6 +29,7 @@ type DeploymentModalProps = {
 function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDeploymentId }: DeploymentModalProps) {
   const user = getStoredUser();
   const isUpdateMode = Boolean(updateDeploymentId);
+  const watchDeployment = useDeploymentMonitorStore((state) => state.watchDeployment);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus>('idle');
   const [currentIssues, setCurrentIssues] = useState(issues);
   const [accounts, setAccounts] = useState<AwsAccountRecord[]>([]);
@@ -110,6 +112,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
         if (!isMounted) return;
         setQueuedDeployment(deployment);
         if (deployment.awsAccount) setSelectedAccountId(deployment.awsAccount);
+        if (['queued', 'deploying'].includes(deployment.status)) watchDeployment(deployment._id);
       })
       .catch((error: unknown) => {
         if (!isMounted) return;
@@ -225,6 +228,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           });
       setQueuedDeployment(deployment);
       setDeploymentStatus(['deployed'].includes(deployment.status) ? 'success' : 'running');
+      if (['queued', 'deploying'].includes(deployment.status)) watchDeployment(deployment._id);
     } catch (error) {
       setDeploymentStatus('error');
       setRequestError(error instanceof Error ? error.message : isUpdateMode ? 'Update request failed.' : 'Deployment request failed.');

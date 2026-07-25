@@ -1,10 +1,15 @@
-export function validateDiagram(nodes = [], edges = []) {
+export function validateDiagram(nodes = [], edges = [], region) {
   const issues = [];
   const serviceIds = new Set(nodes.map((node) => node?.data?.serviceId).filter(Boolean));
   const serviceNodes = nodes.filter((node) => node?.type === 'awsService' && node?.data?.serviceId);
+  const nodeIds = new Set(nodes.map((node) => node?.id));
 
   if (!serviceNodes.length) {
     issues.push({ severity: 'error', message: 'Diagram must contain at least one AWS service node.' });
+  }
+
+  if (hasValue(region) && !isValidAwsRegion(region)) {
+    issues.push({ severity: 'error', message: `"${region}" is not a valid AWS region (expected a shape like "us-east-1" or "ap-south-1").` });
   }
 
   for (const node of serviceNodes) {
@@ -27,14 +32,14 @@ export function validateDiagram(nodes = [], edges = []) {
           message: `${node.data?.label ?? node.data?.serviceName ?? serviceId} has placeholder value for "${key}". Replace it with a real AWS value before deployment.`,
         });
       }
-    }
 
-    if (serviceId === 'lambda' && !serviceIds.has('iam') && !isResolvableViaNewRole(node, 'role_arn')) {
-      issues.push({
-        severity: 'warning',
-        nodeId: node.id,
-        message: 'Lambda should be connected to an IAM Role before deployment.',
-      });
+      if (key.endsWith('_arn') && hasValue(value) && !looksLikeTerraformExpression(value) && !isValidArn(value)) {
+        issues.push({
+          severity: 'error',
+          nodeId: node.id,
+          message: `${node.data?.label ?? node.data?.serviceName ?? serviceId} field "${key}" doesn't look like a valid ARN (expected a shape like "arn:aws:service:region:account-id:resource").`,
+        });
+      }
     }
 
     if (serviceId === 'rds') {
@@ -60,6 +65,8 @@ export function validateDiagram(nodes = [], edges = []) {
   for (const edge of edges) {
     if (!edge.source || !edge.target) {
       issues.push({ severity: 'error', edgeId: edge.id, message: 'Connection is missing source or target.' });
+    } else if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      issues.push({ severity: 'error', edgeId: edge.id, message: 'Connection references a node that no longer exists in the diagram.' });
     }
   }
 
@@ -184,6 +191,27 @@ function isResolvableViaConnection(node, nodes, edges, key) {
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+// Shape check only — deliberately not an exhaustive region/partition enum, since AWS adds regions
+// over time and a stale hardcoded list would start rejecting real ones. Matches us-east-1,
+// ap-south-1, us-gov-west-1, cn-north-1, etc.
+function isValidAwsRegion(value) {
+  return /^[a-z]{2}(-gov)?-[a-z]+-\d$/.test(String(value).trim());
+}
+
+function isValidArn(value) {
+  return /^arn:(aws|aws-cn|aws-us-gov):[a-zA-Z0-9-]+:[a-z0-9-]*:\d{0,12}:.+$/.test(String(value).trim());
+}
+
+// A field resolved from a diagram connection (or a raw Terraform reference someone typed directly)
+// is a Terraform expression, not a literal value — ARN-shape checking only makes sense against a
+// literal string the user actually typed. Mirrors terraformGenerator.js's own
+// looksLikeTerraformExpression so "what the generator will treat as an expression" and "what this
+// validator skips" stay in sync.
+function looksLikeTerraformExpression(value) {
+  const trimmed = String(value).trim();
+  return /^\${.+}$/.test(trimmed) || /^(data\.|aws_|var\.|local\.|module\.)/.test(trimmed);
 }
 
 function hasCloudFrontAlias(node, nodes, edges) {

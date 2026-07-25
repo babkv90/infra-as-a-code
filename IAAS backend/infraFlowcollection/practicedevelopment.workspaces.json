@@ -1,0 +1,189 @@
+[{
+  "_id": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "name": "Super Admin Workspace",
+  "owner": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T11:54:39.773Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:49.851Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7152e190f2c66a6a17fc"
+  },
+  "name": "Demo Basic DevOps Workspace",
+  "owner": {
+    "$oid": "6a5e7151e190f2c66a6a17fa"
+  },
+  "plan": "demo",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:50.130Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:50.130Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7152e190f2c66a6a1803"
+  },
+  "name": "Free Basic DevOps Workspace",
+  "owner": {
+    "$oid": "6a5e7152e190f2c66a6a1801"
+  },
+  "plan": "free",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:50.403Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:50.403Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7152e190f2c66a6a180a"
+  },
+  "name": "Pro Intermediate DevOps Workspace",
+  "owner": {
+    "$oid": "6a5e7152e190f2c66a6a1808"
+  },
+  "plan": "pro",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:50.675Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:50.675Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7152e190f2c66a6a1811"
+  },
+  "name": "Enterprise Viewer Workspace",
+  "owner": {
+    "$oid": "6a5e7152e190f2c66a6a180f"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:50.944Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:50.944Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7153e190f2c66a6a1818"
+  },
+  "name": "Enterprise DevOps Workspace",
+  "owner": {
+    "$oid": "6a5e7152e190f2c66a6a1816"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:51.214Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:51.214Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7153e190f2c66a6a181f"
+  },
+  "name": "Enterprise Architect Workspace",
+  "owner": {
+    "$oid": "6a5e7153e190f2c66a6a181d"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:51.491Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:51.491Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7153e190f2c66a6a1826"
+  },
+  "name": "Enterprise Admin Workspace",
+  "owner": {
+    "$oid": "6a5e7153e190f2c66a6a1824"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:51.762Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:51.762Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a5e7154e190f2c66a6a182d"
+  },
+  "name": "Enterprise Owner Workspace",
+  "owner": {
+    "$oid": "6a5e7153e190f2c66a6a182b"
+  },
+  "plan": "enterprise",
+  "settings": {
+    "defaultRegion": "ap-south-1",
+    "deploymentMode": "manual-approval"
+  },
+  "createdAt": {
+    "$date": "2026-07-20T19:04:52.037Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T19:04:52.037Z"
+  },
+  "__v": 0
+}]

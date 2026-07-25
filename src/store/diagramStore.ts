@@ -421,7 +421,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     });
   },
   validate: () => {
-    const issues = validateDiagram(get().nodes, get().edges);
+    const issues = validateDiagram(get().nodes, get().edges, get().activeRegion);
     set((state) => ({
       issues,
       nodes: state.nodes.map((node) => ({

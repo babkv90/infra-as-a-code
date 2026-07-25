@@ -1,0 +1,27 @@
+[{
+  "_id": {
+    "$oid": "6a64c7bb0f95eeb5d51ce097"
+  },
+  "userId": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "__v": 0,
+  "accessTokenEncrypted": "v1:4TaI2KXKaNlNwc8G:rJ0jfeqRlObbSuaPZhV4xQ:eTwbt5WyVYRdEcApyQ7rIcx0bS-h3xwdzRGR9UYm0UYVyHRT-5-zbg",
+  "avatarUrl": "https://avatars.githubusercontent.com/u/17990873?v=4",
+  "connectedAt": {
+    "$date": "2026-07-25T14:27:07.058Z"
+  },
+  "createdAt": {
+    "$date": "2026-07-25T14:27:07.061Z"
+  },
+  "githubId": "17990873",
+  "githubName": "Abinash Kumar",
+  "githubUsername": "babkv90",
+  "scopes": [],
+  "updatedAt": {
+    "$date": "2026-07-25T18:15:06.753Z"
+  },
+  "lastUsedAt": {
+    "$date": "2026-07-25T18:15:06.752Z"
+  }
+}]

@@ -61,7 +61,7 @@ export const deleteDiagram = asyncHandler(async (req, res) => {
 
 export const validateDiagramById = asyncHandler(async (req, res) => {
   const diagram = await findWorkspaceDiagram(req);
-  const issues = validateDiagram(diagram.nodes, diagram.edges);
+  const issues = validateDiagram(diagram.nodes, diagram.edges, diagram.activeRegion);
   diagram.validationIssues = issues;
   diagram.lastValidatedAt = new Date();
   await diagram.save();
