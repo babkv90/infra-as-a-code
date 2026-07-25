@@ -1,7 +1,7 @@
-import { getStoredToken } from '../auth/authClient';
+import { apiFormRequest, apiRequest as sharedApiRequest } from './apiClient';
 import type { AwsEdge, AwsNode } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+const apiRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Deployment request failed');
 
 export type DeploymentRecord = {
   _id: string;
@@ -55,6 +55,17 @@ export async function createCanvasDeployment(payload: CreateCanvasDeploymentPayl
   });
 }
 
+export type LambdaZipUploadResult = { uploadId: string; fileName: string; sizeBytes: number };
+
+// Uploads the actual zip bytes to the backend so the Terraform runner can copy them into a
+// deployment's work directory before `apply` runs — a plain filename typed/picked in the browser
+// can never resolve there, since Terraform executes on the backend server, not the user's machine.
+export async function uploadLambdaZip(file: File) {
+  const form = new FormData();
+  form.set('zip', file);
+  return apiFormRequest<LambdaZipUploadResult>('/deployments/lambda-zip', form, 'Zip upload failed');
+}
+
 export async function getDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}`);
 }
@@ -86,25 +97,4 @@ export async function destroyDeployment(id: string) {
 
 export async function forceDestroyDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}/force-destroy`, { method: 'POST' });
-}
-
-async function apiRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  const result = await response.json().catch(() => null);
-
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Deployment request failed');
-  }
-
-  return result.data as T;
 }

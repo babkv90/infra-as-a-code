@@ -191,15 +191,22 @@ ${keyNameLine}${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2Secur
       ];
     }
     case 'lambda': {
+      // A diagram-connected IAM node means the user wired up a dedicated execution role on the
+      // canvas — that should always win over a stale/previously-picked role_arn string (e.g. the
+      // connected AWS account's own deploy role, picked once via the "existing role" browser).
       const iamNode = connectedServiceNode(node, allNodes, edges, 'iam');
-      const roleRef = configString(config, 'role_arn') ||
-        (iamNode ? `aws_iam_role.${sanitizeName(iamNode.data.label || iamNode.data.serviceName)}.arn` : '');
+      const connectedRoleRef = iamNode ? `aws_iam_role.${sanitizeName(iamNode.data.label || iamNode.data.serviceName)}.arn` : '';
+      const { roleRef, extraBlocks } = connectedRoleRef
+        ? { roleRef: connectedRoleRef, extraBlocks: [] as string[] }
+        : lambdaExecutionRoleFromField(config, awsName);
+      const { filenameValue, sourceCodeHash } = lambdaDeploymentPackageFromField(config);
       return [
+        ...extraBlocks,
         `resource "aws_lambda_function" "${name}" {
   function_name    = ${formatValue(configString(config, 'function_name') || awsName)}
   role             = ${formatMaybeExpression(roleRef)}
-  filename         = ${formatValue(configString(config, 'filename'))}
-  source_code_hash = ${formatMaybeExpression(configString(config, 'source_code_hash'))}
+  filename         = ${formatValue(filenameValue)}
+  source_code_hash = ${formatMaybeExpression(sourceCodeHash)}
   handler          = ${formatValue(configString(config, 'handler'))}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
@@ -885,6 +892,69 @@ function optionalExpressionLine(key: string, value: unknown): string {
 
 function configString(config: Record<string, string | number>, key: string): string {
   return String(config[key] ?? '').trim();
+}
+
+// Supports creating a brand-new IAM execution role directly from the "Execution role ARN" field
+// (PropertiesPanel's IAM role picker "Create new role" mode) instead of only accepting an existing
+// ARN or a canvas-connected IAM node. Mirrors the trust policy + basic-execution attachment the
+// 'iam' node case generates for a lambda-connected role, so a role created this way behaves the
+// same as one wired up on the canvas.
+function lambdaExecutionRoleFromField(
+  config: Record<string, string | number>,
+  uniqueName: string,
+): { roleRef: string; extraBlocks: string[] } {
+  const source = configString(config, 'role_arn_source');
+  const trustPolicy = `jsonencode({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]})`;
+
+  if (source === 'new_json') {
+    const roleName = configString(config, 'role_arn_new_name') || `${uniqueName}-role`;
+    const roleResourceName = sanitizeName(roleName);
+    const policyJson = configString(config, 'role_arn_new_json');
+    const blocks = [
+      `resource "aws_iam_role" "${roleResourceName}" {
+  name               = ${formatValue(roleName)}
+  assume_role_policy = ${trustPolicy}
+}`,
+      `resource "aws_iam_role_policy_attachment" "${roleResourceName}_lambda_basic_execution" {
+  role       = aws_iam_role.${roleResourceName}.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}`,
+    ];
+    if (policyJson.trim()) {
+      blocks.push(`resource "aws_iam_role_policy" "${roleResourceName}_inline" {
+  name   = "${roleResourceName}_inline"
+  role   = aws_iam_role.${roleResourceName}.id
+  policy = ${formatJsonOrExpression(policyJson)}
+}`);
+    }
+    return { roleRef: `aws_iam_role.${roleResourceName}.arn`, extraBlocks: blocks };
+  }
+
+  if (source === 'new_terraform') {
+    const rawBlock = configString(config, 'role_arn_new_terraform').trim();
+    const roleRef = configString(config, 'role_arn_new_terraform_ref') || configString(config, 'role_arn');
+    return { roleRef, extraBlocks: rawBlock ? [rawBlock] : [] };
+  }
+
+  return { roleRef: configString(config, 'role_arn'), extraBlocks: [] };
+}
+
+// A zip picked via PropertiesPanel's FilePathField gets uploaded to the backend, and its
+// server-generated id is stored in config.filename_upload_id. The real deploy runner
+// (terraformDeploymentRunner.js) copies that file into the Terraform work directory as
+// "<uploadId>.zip" before `apply` runs, so that has to be the exact filename referenced here too —
+// this keeps the browser's Terraform preview/download consistent with what a real deploy produces.
+// A manually typed filename (no upload) passes through unchanged.
+function lambdaDeploymentPackageFromField(config: Record<string, string | number>): { filenameValue: string; sourceCodeHash: string } {
+  const uploadId = configString(config, 'filename_upload_id');
+  if (!uploadId) {
+    return { filenameValue: configString(config, 'filename'), sourceCodeHash: configString(config, 'source_code_hash') };
+  }
+
+  const filenameValue = `${uploadId}.zip`;
+  const explicitHash = configString(config, 'source_code_hash');
+  const sourceCodeHash = explicitHash || `filebase64sha256(${formatValue(filenameValue)})`;
+  return { filenameValue, sourceCodeHash };
 }
 
 function ec2AmiExpression(config: Record<string, string | number>): string {

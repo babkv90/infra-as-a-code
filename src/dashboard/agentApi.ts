@@ -1,6 +1,11 @@
-import { getStoredToken } from '../auth/authClient';
+import { apiRequest as sharedApiRequest } from '../utils/apiClient';
 
-const API_BASE_URL = import.meta.env.VITE_AGENT_API_BASE_URL ?? 'http://127.0.0.1:4001/api/v1';
+// The AI agent chat endpoints (/agent/conversations/...) are served by the same main backend as
+// every other API — the Express app mounts `apiRouter.use('/agent', agentRouter)` alongside
+// /deployments, /tickets, etc., and that router itself proxies to a separate RAG service
+// (RAG_API_URL) server-side. There is no separate frontend-facing agent service, so this uses the
+// same shared client/base-URL as everything else instead of a bespoke env var.
+const agentRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Agent request failed');
 
 export type AgentMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -40,25 +45,4 @@ export async function sendAgentMessage(conversationId: string, message: string) 
     method: 'POST',
     body: JSON.stringify({ message }),
   });
-}
-
-async function agentRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  const result = await response.json().catch(() => null);
-
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Agent request failed');
-  }
-
-  return result.data as T;
 }

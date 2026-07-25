@@ -1,6 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+import { API_BASE_URL, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
 export type GithubConnection = {
   connected: boolean;
@@ -59,28 +57,24 @@ export async function listGithubBranches(owner: string, repo: string) {
   return githubRequest<GithubBranch[]>(`/github/branches?${params.toString()}`);
 }
 
+// GitHub connection status/repo/branch data changes outside this app (via GitHub itself), so GET
+// requests are cache-busted and forced to bypass the browser's HTTP cache — every other API
+// client module is fine relying on normal fetch caching, this one specifically isn't.
 async function githubRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
   const method = init.method ?? 'GET';
   const requestPath = method === 'GET' ? withCacheBust(path) : path;
-  const response = await fetch(`${API_BASE_URL}${requestPath}`, {
-    ...init,
-    cache: 'no-store',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
+  return sharedApiRequest<T>(
+    requestPath,
+    {
+      ...init,
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+        ...init.headers,
+      },
     },
-  });
-
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'GitHub request failed');
-  }
-
-  return result.data as T;
+    'GitHub request failed',
+  );
 }
 
 function withCacheBust(path: string) {

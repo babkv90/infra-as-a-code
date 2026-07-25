@@ -1,10 +1,16 @@
 import { getStoredToken } from '../auth/authClient';
+import { API_BASE_URL, apiFormRequest, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+const ticketRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Ticket request failed');
+const ticketFormRequest = <T,>(path: string, form: FormData) => apiFormRequest<T>(path, form, 'Ticket request failed');
 
 export type TicketCategory = 'bug' | 'feature-request' | 'billing' | 'deployment-issue' | 'account' | 'other';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+// Mirrors MAX_FILE_SIZE_BYTES in IAAS backend/src/middleware/ticketUpload.js — kept here so the
+// UI can reject an oversized attachment before upload instead of only after a backend 400.
+export const TICKET_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export type TicketUser = {
   id: string;
@@ -123,43 +129,4 @@ export async function fetchTicketAttachmentBlobUrl(attachment: TicketAttachment)
   if (!response.ok) throw new Error('Unable to load attachment');
   const blob = await response.blob();
   return URL.createObjectURL(blob);
-}
-
-async function ticketRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Ticket request failed');
-  }
-
-  return result.data as T;
-}
-
-async function ticketFormRequest<T>(path: string, form: FormData) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: form,
-  });
-
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Ticket request failed');
-  }
-
-  return result.data as T;
 }

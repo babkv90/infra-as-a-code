@@ -1,10 +1,11 @@
-import { AlertTriangle, Copy, Download, FileCode2, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Copy, Download, FileCode2, FolderOpen, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import type React from 'react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listAccountIamRoles, listAwsAccounts, type AwsAccountRecord, type IamRoleSummary } from '../dashboard/awsApi';
 import { awsServices, serviceById } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdgeData, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
+import { uploadLambdaZip } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { downloadJsonFile, getResourceRequirementReport } from '../utils/resourceRequirements';
 
@@ -146,6 +147,19 @@ function PropertiesPanel() {
   function applyIamRole(arn: string) {
     if (!selectedNode || !iamRolePicker) return;
     updateNodeConfig(selectedNode.id, iamRolePicker.key, arn);
+    updateNodeConfig(selectedNode.id, `${iamRolePicker.key}_source`, '');
+    setIamRolePicker(null);
+  }
+
+  function applyNewIamRole(payload: { mode: 'new_json' | 'new_terraform'; name: string; policyJson: string; terraform: string; terraformRef: string }) {
+    if (!selectedNode || !iamRolePicker) return;
+    const key = iamRolePicker.key;
+    updateNodeConfig(selectedNode.id, key, '');
+    updateNodeConfig(selectedNode.id, `${key}_source`, payload.mode);
+    updateNodeConfig(selectedNode.id, `${key}_new_name`, payload.name);
+    updateNodeConfig(selectedNode.id, `${key}_new_json`, payload.policyJson);
+    updateNodeConfig(selectedNode.id, `${key}_new_terraform`, payload.terraform);
+    updateNodeConfig(selectedNode.id, `${key}_new_terraform_ref`, payload.terraformRef);
     setIamRolePicker(null);
   }
 
@@ -270,11 +284,22 @@ function PropertiesPanel() {
                 </button>
               ) : field.type === 'iam-role' ? (
                 <button className="json-field-trigger" type="button" onClick={() => void openIamRolePicker(field.key, field.label)}>
-                  <span className="json-field-trigger__preview">
-                    {String(selectedNode.data.config[field.key] ?? '').trim() || 'Click to pick an existing IAM role...'}
-                  </span>
+                  <span className="json-field-trigger__preview">{iamRoleFieldPreview(selectedNode.data.config, field.key)}</span>
                   <KeyRound size={14} />
                 </button>
+              ) : field.type === 'file-path' ? (
+                <FilePathField
+                  value={String(selectedNode.data.config[field.key] ?? '')}
+                  uploadId={String(selectedNode.data.config[`${field.key}_upload_id`] ?? '')}
+                  onChange={(value) => {
+                    updateNodeConfig(selectedNode.id, field.key, value);
+                    updateNodeConfig(selectedNode.id, `${field.key}_upload_id`, '');
+                  }}
+                  onUploaded={(uploadId, fileName) => {
+                    updateNodeConfig(selectedNode.id, field.key, fileName);
+                    updateNodeConfig(selectedNode.id, `${field.key}_upload_id`, uploadId);
+                  }}
+                />
               ) : (
                 <input
                   type={field.type}
@@ -508,7 +533,7 @@ function PropertiesPanel() {
           onClose={() => setJsonFieldEditor(null)}
         />
       )}
-      {iamRolePicker && (
+      {iamRolePicker && selectedNode && (
         <IamRolePickerModal
           title={iamRolePicker.label}
           accounts={iamRoleAccounts}
@@ -521,10 +546,86 @@ function PropertiesPanel() {
           onCustomArnChange={setCustomIamRoleArn}
           onPickRole={applyIamRole}
           onUseCustomArn={() => applyIamRole(customIamRoleArn)}
+          fieldKey={iamRolePicker.key}
+          config={selectedNode.data.config}
+          onCreateNewRole={applyNewIamRole}
           onClose={() => setIamRolePicker(null)}
         />
       )}
     </aside>
+  );
+}
+
+// Browsers never expose a selected file's real filesystem path — only its bytes and its name.
+// Terraform runs on the backend server, not the browser, so a locally typed/picked path can never
+// resolve there. Picking a file here uploads its actual bytes to the backend (uploadLambdaZip) and
+// tracks the returned upload id alongside the display name; terraformGenerator.js references that
+// upload id (not the raw filename) when generating the deployment's Terraform. Typing a path
+// manually is still allowed, but clears the upload id — the value then has to already exist
+// wherever `terraform apply` runs, exactly like before this field could upload anything.
+function FilePathField({
+  value,
+  uploadId,
+  onChange,
+  onUploaded,
+}: {
+  value: string;
+  uploadId: string;
+  onChange: (value: string) => void;
+  onUploaded: (uploadId: string, fileName: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  async function handleFileSelected(file: File) {
+    setIsUploading(true);
+    setUploadError('');
+    try {
+      const result = await uploadLambdaZip(file);
+      onUploaded(result.uploadId, result.fileName);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed.');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="file-path-field">
+      <div className="file-path-field__row">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Browse to upload a .zip, or type a path already on the deploy server"
+        />
+        <button
+          className="icon-button"
+          type="button"
+          title="Upload a .zip file"
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <FolderOpen size={14} />
+        </button>
+        <input
+          ref={fileInputRef}
+          className="file-path-field__native-input"
+          type="file"
+          accept=".zip"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) void handleFileSelected(file);
+          }}
+        />
+      </div>
+      {isUploading && <small className="file-path-field__status">Uploading {value || 'zip'}...</small>}
+      {!isUploading && !uploadError && uploadId && (
+        <small className="file-path-field__status file-path-field__status--ok">Uploaded — will be deployed as this Lambda's code.</small>
+      )}
+      {uploadError && <small className="file-path-field__status file-path-field__status--error">{uploadError}</small>}
+    </div>
   );
 }
 
@@ -652,6 +753,8 @@ function JsonFieldModal({
   );
 }
 
+type NewIamRolePayload = { mode: 'new_json' | 'new_terraform'; name: string; policyJson: string; terraform: string; terraformRef: string };
+
 function IamRolePickerModal({
   title,
   accounts,
@@ -664,6 +767,9 @@ function IamRolePickerModal({
   onCustomArnChange,
   onPickRole,
   onUseCustomArn,
+  fieldKey,
+  config,
+  onCreateNewRole,
   onClose,
 }: {
   title: string;
@@ -677,8 +783,31 @@ function IamRolePickerModal({
   onCustomArnChange: (value: string) => void;
   onPickRole: (arn: string) => void;
   onUseCustomArn: () => void;
+  fieldKey: string;
+  config: Record<string, string | number>;
+  onCreateNewRole: (payload: NewIamRolePayload) => void;
   onClose: () => void;
 }) {
+  const initialSource = String(config[`${fieldKey}_source`] ?? '');
+  const [tab, setTab] = useState<'existing' | 'new'>(initialSource.startsWith('new') ? 'new' : 'existing');
+  const [newRoleMode, setNewRoleMode] = useState<'new_json' | 'new_terraform'>(initialSource === 'new_terraform' ? 'new_terraform' : 'new_json');
+  const [newRoleName, setNewRoleName] = useState(() => String(config[`${fieldKey}_new_name`] ?? ''));
+  const [newRolePolicyJson, setNewRolePolicyJson] = useState(() => String(config[`${fieldKey}_new_json`] ?? ''));
+  const [newRoleTerraform, setNewRoleTerraform] = useState(() => String(config[`${fieldKey}_new_terraform`] ?? ''));
+  const [newRoleTerraformRef, setNewRoleTerraformRef] = useState(() => String(config[`${fieldKey}_new_terraform_ref`] ?? ''));
+
+  const canSubmitNewRole = newRoleMode === 'new_json' ? Boolean(newRoleName.trim()) : Boolean(newRoleTerraform.trim() && newRoleTerraformRef.trim());
+
+  function submitNewRole() {
+    onCreateNewRole({
+      mode: newRoleMode,
+      name: newRoleName,
+      policyJson: newRolePolicyJson,
+      terraform: newRoleTerraform,
+      terraformRef: newRoleTerraformRef,
+    });
+  }
+
   return (
     <div className="modal-backdrop">
       <div className="modal json-field-modal iam-role-picker-modal">
@@ -689,52 +818,149 @@ function IamRolePickerModal({
           </button>
         </div>
 
-        {accounts.length > 1 && (
-          <label className="iam-role-picker-modal__account">
-            <span>AWS account</span>
-            <select value={selectedAccountId} onChange={(event) => onSelectAccount(event.target.value)}>
-              {accounts.map((account) => (
-                <option value={account._id} key={account._id}>
-                  {account.name} - {account.accountId}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <div className="iam-role-picker-modal__tabs">
+          <button
+            type="button"
+            className={`iam-role-picker-modal__tab ${tab === 'existing' ? 'iam-role-picker-modal__tab--active' : ''}`}
+            onClick={() => setTab('existing')}
+          >
+            Use existing role
+          </button>
+          <button
+            type="button"
+            className={`iam-role-picker-modal__tab ${tab === 'new' ? 'iam-role-picker-modal__tab--active' : ''}`}
+            onClick={() => setTab('new')}
+          >
+            Create new role
+          </button>
+        </div>
 
-        <div className="iam-role-picker-modal__list">
-          {isLoading ? (
-            <div className="muted">Loading IAM roles from AWS...</div>
-          ) : error ? (
-            <div className="json-field-modal__error">{error}</div>
-          ) : roles.length ? (
-            roles.map((role) => (
-              <button className="iam-role-picker-modal__option" key={role.arn} type="button" onClick={() => onPickRole(role.arn)}>
-                <strong>{role.roleName}</strong>
-                <span>{role.arn}</span>
+        {tab === 'existing' ? (
+          <>
+            {accounts.length > 1 && (
+              <label className="iam-role-picker-modal__account">
+                <span>AWS account</span>
+                <select value={selectedAccountId} onChange={(event) => onSelectAccount(event.target.value)}>
+                  {accounts.map((account) => (
+                    <option value={account._id} key={account._id}>
+                      {account.name} - {account.accountId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <div className="iam-role-picker-modal__list">
+              {isLoading ? (
+                <div className="muted">Loading IAM roles from AWS...</div>
+              ) : error ? (
+                <div className="json-field-modal__error">{error}</div>
+              ) : roles.length ? (
+                roles.map((role) => (
+                  <button className="iam-role-picker-modal__option" key={role.arn} type="button" onClick={() => onPickRole(role.arn)}>
+                    <strong>{role.roleName}</strong>
+                    <span>{role.arn}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="muted">No IAM roles found in this account.</div>
+              )}
+            </div>
+
+            <div className="iam-role-picker-modal__custom">
+              <span>Or paste a role ARN directly</span>
+              <div>
+                <input
+                  value={customArn}
+                  onChange={(event) => onCustomArnChange(event.target.value)}
+                  placeholder="arn:aws:iam::123456789012:role/my-existing-role"
+                />
+                <button className="text-button json-field-modal__save" type="button" disabled={!customArn.trim()} onClick={onUseCustomArn}>
+                  Use
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="iam-role-picker-modal__new-role">
+            <p>Generates a dedicated IAM role in the Terraform plan when this resource is deployed, instead of pointing at an existing role.</p>
+
+            <div className="iam-role-picker-modal__tabs">
+              <button
+                type="button"
+                className={`iam-role-picker-modal__tab ${newRoleMode === 'new_json' ? 'iam-role-picker-modal__tab--active' : ''}`}
+                onClick={() => setNewRoleMode('new_json')}
+              >
+                JSON policy
               </button>
-            ))
-          ) : (
-            <div className="muted">No IAM roles found in this account.</div>
-          )}
-        </div>
+              <button
+                type="button"
+                className={`iam-role-picker-modal__tab ${newRoleMode === 'new_terraform' ? 'iam-role-picker-modal__tab--active' : ''}`}
+                onClick={() => setNewRoleMode('new_terraform')}
+              >
+                Terraform snippet
+              </button>
+            </div>
 
-        <div className="iam-role-picker-modal__custom">
-          <span>Or paste a role ARN directly</span>
-          <div>
-            <input
-              value={customArn}
-              onChange={(event) => onCustomArnChange(event.target.value)}
-              placeholder="arn:aws:iam::123456789012:role/my-existing-role"
-            />
-            <button className="text-button json-field-modal__save" type="button" disabled={!customArn.trim()} onClick={onUseCustomArn}>
-              Use
-            </button>
+            {newRoleMode === 'new_json' ? (
+              <>
+                <label className="iam-role-picker-modal__field">
+                  <span>Role name</span>
+                  <input value={newRoleName} onChange={(event) => setNewRoleName(event.target.value)} placeholder="my-function-role" />
+                </label>
+                <label className="iam-role-picker-modal__field">
+                  <span>Inline policy JSON (optional — the AWSLambdaBasicExecutionRole managed policy is always attached)</span>
+                  <textarea
+                    value={newRolePolicyJson}
+                    onChange={(event) => setNewRolePolicyJson(event.target.value)}
+                    placeholder={'{\n  "Version": "2012-10-17",\n  "Statement": [...]\n}'}
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="iam-role-picker-modal__field">
+                  <span>Terraform snippet (pasted as-is into the generated plan)</span>
+                  <textarea
+                    value={newRoleTerraform}
+                    onChange={(event) => setNewRoleTerraform(event.target.value)}
+                    placeholder={'resource "aws_iam_role" "my_role" {\n  name               = "my-role"\n  assume_role_policy = ...\n}'}
+                  />
+                </label>
+                <label className="iam-role-picker-modal__field">
+                  <span>Role reference (used as the Lambda's role = ...)</span>
+                  <input
+                    value={newRoleTerraformRef}
+                    onChange={(event) => setNewRoleTerraformRef(event.target.value)}
+                    placeholder="aws_iam_role.my_role.arn"
+                  />
+                </label>
+              </>
+            )}
+
+            <div className="iam-role-picker-modal__new-role-actions">
+              <button className="text-button json-field-modal__save" type="button" disabled={!canSubmitNewRole} onClick={submitNewRole}>
+                Create role at deployment
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
+}
+
+function iamRoleFieldPreview(config: Record<string, string | number>, key: string): string {
+  const source = String(config[`${key}_source`] ?? '');
+  if (source === 'new_json') {
+    const roleName = String(config[`${key}_new_name`] ?? '').trim();
+    return `New role from JSON policy (created at deploy)${roleName ? `: ${roleName}` : ''}`;
+  }
+  if (source === 'new_terraform') {
+    const ref = String(config[`${key}_new_terraform_ref`] ?? '').trim();
+    return `New role from Terraform (created at deploy)${ref ? `: ${ref}` : ''}`;
+  }
+  return String(config[key] ?? '').trim() || 'Click to pick an existing IAM role...';
 }
 
 function nodeName(nodes: Array<{ id: string; data: { label: string } }>, id: string): string {

@@ -10,7 +10,7 @@ export function validateDiagram(nodes = [], edges = []) {
   for (const node of serviceNodes) {
     const serviceId = node.data.serviceId;
     for (const key of requiredKeysForNode(node, serviceNodes, edges)) {
-      if (!hasValue(node.data?.config?.[key]) && !isResolvableViaConnection(node, serviceNodes, edges, key)) {
+      if (!hasValue(node.data?.config?.[key]) && !isResolvableViaConnection(node, serviceNodes, edges, key) && !isResolvableViaNewRole(node, key)) {
         issues.push({
           severity: 'error',
           nodeId: node.id,
@@ -29,7 +29,7 @@ export function validateDiagram(nodes = [], edges = []) {
       }
     }
 
-    if (serviceId === 'lambda' && !serviceIds.has('iam')) {
+    if (serviceId === 'lambda' && !serviceIds.has('iam') && !isResolvableViaNewRole(node, 'role_arn')) {
       issues.push({
         severity: 'warning',
         nodeId: node.id,
@@ -157,6 +157,17 @@ function requiredKeysForNode(node, nodes = [], edges = []) {
   }
 
   return Array.from(new Set(keys));
+}
+
+// An iam-role field (e.g. lambda's role_arn) can also be satisfied by the PropertiesPanel's
+// "Create new role" mode, which generates a fresh aws_iam_role in the Terraform plan instead of
+// pointing at an existing ARN — see IamRolePickerModal / lambdaExecutionRoleFromField.
+function isResolvableViaNewRole(node, key) {
+  const config = node.data?.config ?? {};
+  const source = config[`${key}_source`];
+  if (source === 'new_json') return hasValue(config[`${key}_new_name`]);
+  if (source === 'new_terraform') return hasValue(config[`${key}_new_terraform`]) && hasValue(config[`${key}_new_terraform_ref`]);
+  return false;
 }
 
 function isResolvableViaConnection(node, nodes, edges, key) {

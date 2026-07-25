@@ -8,7 +8,13 @@ import { ApiError } from '../utils/ApiError.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const TICKET_UPLOAD_ROOT = path.resolve(__dirname, '../../uploads/tickets');
-mkdirSync(TICKET_UPLOAD_ROOT, { recursive: true });
+try {
+  mkdirSync(TICKET_UPLOAD_ROOT, { recursive: true });
+} catch {
+  // Read-only filesystem (e.g. this module loaded inside an AWS Lambda deployment package) —
+  // ticket attachment uploads won't work in that environment, but the whole process shouldn't
+  // crash on cold start just because this one directory couldn't be created.
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/png',

@@ -7,26 +7,20 @@ import {
   AlertTriangle,
   BadgeDollarSign,
   Bell,
-  BrainCircuit,
   CheckCircle2,
   CloudCog,
   Copy,
-  Cpu,
   Database,
   ExternalLink,
   Eye,
   FilePlus2,
   GitBranch,
   Github,
-  LifeBuoy,
   LogOut,
   Maximize2,
   Minimize2,
   Moon,
-  Network,
-  Paperclip,
   PencilLine,
-  Play,
   Plus,
   RefreshCw,
   Rocket,
@@ -36,11 +30,8 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
-  TerminalSquare,
   Trash2,
   Upload,
-  UserCheck,
-  Users,
   Workflow,
   X,
 } from 'lucide-react';
@@ -57,12 +48,11 @@ import { getStoredUser, logout } from '../auth/authClient';
 import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDemoSource';
 import { useDiagramStore } from '../store/diagramStore';
 import { normalizeTerraformFiles } from '../utils/importDiagram';
+import { EmptyState, Panel } from './components/DashPrimitives';
 import { createSavedDiagram, deleteSavedDiagram, listSavedDiagrams, updateSavedDiagram, type SavedDiagram } from './diagramApi';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 import {
   activeDiagrams,
-  agentActions,
-  awsConnectionSteps,
   awsOverviewCharts,
   connectedAccount,
   costRecommendations,
@@ -73,31 +63,21 @@ import {
   deploymentPipeline,
   resourceInventory,
   securityFindings,
-  terraformCode,
-  terraformFiles,
   type DashboardPage,
 } from './dashboardData';
+import { TerraformPage } from './pages/TerraformPage';
 import {
-  connectAwsAccount,
-  disconnectAwsAccount,
   getAwsInsights,
-  getDeployerIdentity,
   listAwsAccounts,
   listAwsRegions,
   syncAwsAccount,
   type AwsAccountRecord,
   type AwsInsights,
 } from './awsApi';
-import { buildDeployRoleTrustPolicy, deployRolePermissionsPolicy } from './deployRolePolicy';
-import { createAgentConversation, sendAgentMessage, type AgentConversation } from './agentApi';
-import {
-  getSuperAdminOverview,
-  grantSuperAdminCredits,
-  requestDemoCredits,
-  updateSuperAdminUserRole,
-  type SuperAdminOverview,
-  type SuperAdminUser,
-} from './superAdminApi';
+import { AgentPage } from './pages/AgentPage';
+import { ConnectAwsPage } from './pages/ConnectAwsPage';
+import { SuperAdminPage } from './pages/SuperAdminPage';
+import { requestDemoCredits } from './superAdminApi';
 import {
   createApplicationPipeline,
   deployApplicationPipeline,
@@ -109,23 +89,7 @@ import {
   type ApplicationPipelineRecord,
 } from './applicationPipelineApi';
 import { listNotifications, markAllNotificationsRead, type NotificationRecord } from './notificationApi';
-import {
-  TICKET_CATEGORIES,
-  TICKET_PRIORITIES,
-  TICKET_STATUSES,
-  addTicketComment,
-  createTicket,
-  fetchTicketAttachmentBlobUrl,
-  getTicket,
-  listTickets,
-  updateTicketStatus,
-  type TicketAttachment,
-  type TicketCategory,
-  type TicketDetail,
-  type TicketPriority,
-  type TicketStatus,
-  type TicketSummary,
-} from './ticketApi';
+import { SupportPage } from './pages/SupportPage';
 import {
   disconnectGithub,
   getGithubStatus,
@@ -136,37 +100,13 @@ import {
   type GithubConnection,
   type GithubRepository,
 } from '../github/githubApi';
-import {
-  getNodeRuntimeSnapshot,
-  runNodeConceptDemo,
-  type NodeConceptRun,
-  type NodeLabIntensity,
-  type NodeLabMode,
-  type NodeRuntimeSnapshot,
-} from './nodeLabApi';
 import { destroyDeployment, forceDestroyDeployment, getDeployment, listDeployments, type DeploymentRecord } from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseAiAgent, canUseApplicationPipelines, serviceAccessTierForUser } from '../utils/accessControl';
 
-const NODE_LAB_MODES: Array<{ mode: NodeLabMode; label: string; description: string }> = [
-  {
-    mode: 'worker-thread',
-    label: 'Worker thread',
-    description: 'Runs CPU-heavy JavaScript away from the main request path.',
-  },
-  {
-    mode: 'child-process',
-    label: 'Child process',
-    description: 'Starts isolated Node work with its own process ID.',
-  },
-  {
-    mode: 'cluster',
-    label: 'Cluster',
-    description: 'Splits work across multiple short-lived process workers.',
-  },
-];
-
+// Still used by KpiGrid and ResourceTable's own detail popups even though the Runtime Lab page
+// that originally introduced this type/component was removed — see RuntimeLabDetailModal below.
 type RuntimeLabDetail = {
   title: string;
   subtitle: string;
@@ -195,6 +135,7 @@ function templateDiagramId(templateId: string) {
 
 function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [activePage, setActivePage] = useState<DashboardPage>(getInitialDashboardPage);
+  const { showScrollHint } = useScrollHint([activePage]);
   const [awsAccounts, setAwsAccounts] = useState<AwsAccountRecord[]>([]);
   const [awsInsights, setAwsInsights] = useState<AwsInsights | undefined>();
   const [awsRegions, setAwsRegions] = useState<string[]>(['ap-south-1']);
@@ -219,15 +160,27 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const activeAwsAccount = awsAccounts.find((account) => account.status === 'connected') ?? awsAccounts[0];
   const accountStatusClass = activeAwsAccount?.status ?? 'offline';
 
+  // pushState (not replaceState) so each dashboard-view switch becomes a real browser history
+  // entry — otherwise the back button skips over every view change and exits the dashboard
+  // entirely. The matching popstate listener below is what makes the back/forward buttons
+  // actually update activePage instead of just changing the URL underneath a stale page.
   function goToDashboardPage(page: DashboardPage) {
     setActivePage(page);
-    window.history.replaceState(null, '', getDashboardUrl(page));
+    window.history.pushState(null, '', getDashboardUrl(page));
   }
 
   function goToResourceInfo(deploymentId: string) {
     setActivePage('resource-info');
-    window.history.replaceState(null, '', `/dashboard?view=resource-info&deployment=${encodeURIComponent(deploymentId)}`);
+    window.history.pushState(null, '', `/dashboard?view=resource-info&deployment=${encodeURIComponent(deploymentId)}`);
   }
+
+  useEffect(() => {
+    function handlePopState() {
+      setActivePage(getInitialDashboardPage());
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   async function handleLogout() {
     await logout();
@@ -339,7 +292,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
       <section className="dash-main">
         <header className="dash-topbar">
           <div>
-            <span className="dash-eyebrow">Post-login dashboard</span>
+        
             <h1>{activeItem?.label ?? 'Dashboard'}</h1>
           </div>
           <div className="dash-top-actions">
@@ -417,6 +370,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             isSyncingAws,
           }, theme, onToggleTheme, goToResourceInfo)}
         </div>
+        {showScrollHint && <ScrollHintIcon />}
       </section>
     </div>
   );
@@ -461,8 +415,6 @@ function renderPage(
       return <ApplicationPipelinePage />;
     case 'security':
       return <SecurityPage insights={awsContext.awsInsights} />;
-    case 'runtime-lab':
-      return <RuntimeLabPage />;
     case 'connect-aws':
       return <ConnectAwsPage accounts={awsContext.awsAccounts} regions={awsContext.awsRegions} onAwsChanged={awsContext.onAwsChanged} />;
     case 'support':
@@ -660,7 +612,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState('');
   const [creditMessage, setCreditMessage] = useState('');
-  const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved } = useDiagramStore();
+  const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved, isDirty } = useDiagramStore();
   const user = getStoredUser();
   const canWriteDiagrams = canRoleWriteDiagrams(user?.role);
   const canDeleteDiagrams = canRoleDeleteDiagrams(user?.role);
@@ -695,6 +647,19 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   useEffect(() => {
     setDark(theme === 'dark');
   }, [setDark, theme]);
+
+  // The diagram store has no persist middleware (see diagramStore.ts) — a refresh or closed tab
+  // silently discards everything since the last save, including the full undo history. This is
+  // the only guard against that; it only fires while there's an actual unsaved change (isDirty).
+  useEffect(() => {
+    function warnBeforeUnload(event: BeforeUnloadEvent) {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [isDirty]);
 
   useEffect(() => {
     const syncNativeFullscreen = () => {
@@ -1022,177 +987,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       )}
     </div>
   );
-}
-
-function TerraformPage() {
-  return (
-    <div className="dash-page">
-      <div className="dash-inline-actions">
-        <button className="dash-secondary-action">
-          <Copy size={16} />
-          Copy Code
-        </button>
-        <button className="dash-primary-action">
-          <Github size={16} />
-          Push to GitHub
-        </button>
-      </div>
-      <div className="dash-two-col dash-two-col--wide" style={{ minHeight: 'calc(100vh - 180px)' }}>
-        <Panel title="Generated files" action="Regenerate">
-          <div className="dash-file-list">
-            {terraformFiles.length ? (
-              terraformFiles.map((file) => (
-                <div className="dash-file-row" key={file.name}>
-                  <Code2Icon />
-                  <span>{file.name}</span>
-                  <small>{file.lines} lines</small>
-                  <em>{file.status}</em>
-                </div>
-              ))
-            ) : (
-              <EmptyState>No Terraform files generated yet.</EmptyState>
-            )}
-          </div>
-        </Panel>
-        <Panel title="Terraform preview" action="Export .zip">
-          <pre className="dash-code-preview">{terraformCode}</pre>
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function AgentPage() {
-  const user = getStoredUser();
-  const [conversation, setConversation] = useState<AgentConversation | null>(null);
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [conversation?.messages.length, isSending]);
-
-  async function submitMessage(message: string) {
-    const cleanMessage = message.trim();
-    if (!cleanMessage || isSending) return;
-
-    setDraft('');
-    setError('');
-    setIsSending(true);
-
-    const optimisticConversation: AgentConversation = conversation ?? {
-      _id: 'pending',
-      title: cleanMessage.slice(0, 72),
-      messages: [],
-    };
-
-    setConversation({
-      ...optimisticConversation,
-      messages: [...optimisticConversation.messages, { role: 'user', content: cleanMessage }],
-    });
-
-    try {
-      const updatedConversation =
-        conversation && conversation._id !== 'pending'
-          ? await sendAgentMessage(conversation._id, cleanMessage)
-          : await createAgentConversation(cleanMessage);
-      setConversation(updatedConversation);
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Unable to send message to the RAG agent.');
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void submitMessage(draft);
-  }
-
-  async function startNewChat() {
-    if (isSending) return;
-    setConversation(null);
-    setDraft('');
-    setError('');
-  }
-
-  if (!canUseAiAgent(user)) {
-    return (
-      <div className="dash-page dash-page--agent">
-        <Panel title="AWS Well-Architected RAG agent" action="Paid plan">
-          <EmptyState>AI support is available for Pro, Enterprise, and Super admin accounts.</EmptyState>
-        </Panel>
-      </div>
-    );
-  }
-
-  return (
-    <div className="dash-page dash-page--agent">
-      <div className="dash-agent-layout">
-        <Panel title="AWS Well-Architected RAG agent" action="Live RAG">
-          <div className="dash-agent-question-suggestions" aria-label="Suggested questions">
-            {agentActions.map((action) => (
-              <button disabled={isSending} key={action} onClick={() => void submitMessage(action)} type="button">
-                <Sparkles size={15} />
-                {action}
-              </button>
-            ))}
-            <button disabled={isSending} onClick={() => void startNewChat()} type="button">
-              <FilePlus2 size={15} />
-              New chat
-            </button>
-          </div>
-          <div className="dash-chat">
-            {conversation?.messages.length ? (
-              conversation.messages.map((message, index) => (
-                <div className={`dash-chat-bubble dash-chat-bubble--${message.role === 'assistant' ? 'agent' : message.role}`} key={`${message.role}-${index}-${message.createdAt ?? message.content}`}>
-                  <p>{message.content}</p>
-                  {message.role === 'assistant' && message.metadata?.contexts?.length ? (
-                    <div className="dash-chat-sources">
-                      {message.metadata.contexts.slice(0, 3).map((context, sourceIndex) => (
-                        <span key={context.id}>
-                          Source {sourceIndex + 1}: {formatAgentSource(context.metadata)} - score {context.score.toFixed(2)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <EmptyState>Ask the AWS Well-Architected RAG agent a question.</EmptyState>
-            )}
-            {isSending && (
-              <div className="dash-chat-bubble dash-chat-bubble--agent">
-                <p>Retrieving AWS Well-Architected context...</p>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-          {error && <div className="dash-form-error">{error}</div>}
-          <form className="dash-chat-input" onSubmit={handleSubmit}>
-            <input
-              disabled={isSending}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Ask about reliability, security, cost, operations, or Well-Architected best practices..."
-              value={draft}
-            />
-            <button disabled={isSending || !draft.trim()} type="submit">
-              <ArrowRight size={16} />
-            </button>
-          </form>
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function formatAgentSource(metadata?: Record<string, unknown>) {
-  const pages = Array.isArray(metadata?.pages) ? metadata.pages.join('-') : undefined;
-  const source = typeof metadata?.source === 'string' ? metadata.source.split(/[\\/]/).pop() : 'wellarchitected-framework.pdf';
-
-  return pages ? `${source}, pages ${pages}` : source;
 }
 
 function DeploymentsPage({
@@ -2830,787 +2624,6 @@ function getEditorLanguage(pathName = '') {
   return 'text';
 }
 
-const TICKET_FILTER_TABS: Array<{ value: TicketStatus | 'all'; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'open', label: 'Open' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'resolved', label: 'Resolved' },
-  { value: 'closed', label: 'Closed' },
-];
-
-function SupportPage() {
-  const currentUser = getStoredUser();
-  const isSuperAdmin = currentUser?.role === 'superadmin';
-
-  const [tickets, setTickets] = useState<TicketSummary[]>([]);
-  const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
-  const [isLoadingList, setIsLoadingList] = useState(false);
-  const [selectedTicketId, setSelectedTicketId] = useState<string>();
-  const [selectedTicket, setSelectedTicket] = useState<TicketDetail>();
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
-  const [newSubject, setNewSubject] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newCategory, setNewCategory] = useState<TicketCategory>('other');
-  const [newPriority, setNewPriority] = useState<TicketPriority>('medium');
-  const [newFiles, setNewFiles] = useState<File[]>([]);
-  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
-
-  const [replyMessage, setReplyMessage] = useState('');
-  const [replyFiles, setReplyFiles] = useState<File[]>([]);
-  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
-  const [isChangingStatus, setIsChangingStatus] = useState(false);
-
-  async function refreshTickets(status: TicketStatus | 'all' = statusFilter) {
-    setIsLoadingList(true);
-    try {
-      const result = await listTickets(status);
-      setTickets(result);
-    } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : 'Unable to load tickets.');
-    } finally {
-      setIsLoadingList(false);
-    }
-  }
-
-  useEffect(() => {
-    void refreshTickets(statusFilter);
-  }, [statusFilter]);
-
-  async function openTicket(id: string) {
-    setSelectedTicketId(id);
-    setIsLoadingDetail(true);
-    setError('');
-    try {
-      const detail = await getTicket(id);
-      setSelectedTicket(detail);
-    } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : 'Unable to load this ticket.');
-    } finally {
-      setIsLoadingDetail(false);
-    }
-  }
-
-  async function submitNewTicket() {
-    if (!newSubject.trim() || !newDescription.trim()) {
-      setError('Subject and description are required.');
-      return;
-    }
-    setIsSubmittingTicket(true);
-    setError('');
-    try {
-      const ticket = await createTicket({
-        subject: newSubject.trim(),
-        description: newDescription.trim(),
-        category: newCategory,
-        priority: newPriority,
-        files: newFiles,
-      });
-      setIsNewTicketOpen(false);
-      setNewSubject('');
-      setNewDescription('');
-      setNewCategory('other');
-      setNewPriority('medium');
-      setNewFiles([]);
-      setMessage(`Ticket ${ticket.ticketNumber} submitted. Our team will follow up here.`);
-      await refreshTickets();
-      await openTicket(ticket._id);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Unable to submit ticket.');
-    } finally {
-      setIsSubmittingTicket(false);
-    }
-  }
-
-  async function submitReply(eventArg: React.FormEvent) {
-    eventArg.preventDefault();
-    if (!selectedTicketId || !replyMessage.trim()) return;
-    setIsSubmittingReply(true);
-    setError('');
-    try {
-      const detail = await addTicketComment(selectedTicketId, { message: replyMessage.trim(), files: replyFiles });
-      setSelectedTicket(detail);
-      setReplyMessage('');
-      setReplyFiles([]);
-      await refreshTickets();
-    } catch (replyError) {
-      setError(replyError instanceof Error ? replyError.message : 'Unable to send reply.');
-    } finally {
-      setIsSubmittingReply(false);
-    }
-  }
-
-  async function changeStatus(nextStatus: TicketStatus) {
-    if (!selectedTicketId || !selectedTicket || nextStatus === selectedTicket.status) return;
-    setIsChangingStatus(true);
-    setError('');
-    try {
-      const detail = await updateTicketStatus(selectedTicketId, nextStatus);
-      setSelectedTicket(detail);
-      await refreshTickets();
-    } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : 'Unable to update ticket status.');
-    } finally {
-      setIsChangingStatus(false);
-    }
-  }
-
-  async function openAttachment(attachment: TicketAttachment) {
-    try {
-      const url = await fetchTicketAttachmentBlobUrl(attachment);
-      window.open(url, '_blank', 'noopener');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (attachmentError) {
-      setError(attachmentError instanceof Error ? attachmentError.message : 'Unable to open attachment.');
-    }
-  }
-
-  return (
-    <div className="dash-page dash-page--support">
-      <div className="dash-page-head-group">
-        <header className="pipeline-console-header">
-          <div>
-            <span className="dash-eyebrow">Feedback & support</span>
-            <h2>{isSuperAdmin ? 'Support inbox' : 'Support tickets'}</h2>
-          </div>
-          <div className="pipeline-header-badges">
-            <span className="pipeline-badge">{tickets.filter((ticket) => ticket.status === 'open').length} open</span>
-            <button className="pipeline-icon-action" disabled={isLoadingList} onClick={() => void refreshTickets()} title="Refresh" type="button">
-              <RefreshCw size={15} />
-            </button>
-            <button className="pipeline-primary-compact" onClick={() => setIsNewTicketOpen(true)} type="button">
-              <Plus size={14} />
-              New ticket
-            </button>
-          </div>
-        </header>
-
-        {(message || error) && <div className={`pipeline-notice ${error ? 'pipeline-notice--error' : 'pipeline-notice--success'}`}>{error || message}</div>}
-      </div>
-
-      <div className="ticket-console-grid">
-        <aside className="ticket-list-panel">
-          <div className="ticket-filter-tabs">
-            {TICKET_FILTER_TABS.map((tab) => (
-              <button className={statusFilter === tab.value ? 'active' : ''} key={tab.value} onClick={() => setStatusFilter(tab.value)} type="button">
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          {tickets.length ? (
-            <ul className="ticket-list">
-              {tickets.map((ticket) => (
-                <li
-                  className={`ticket-list-item ${selectedTicketId === ticket._id ? 'active' : ''}`}
-                  key={ticket._id}
-                  onClick={() => void openTicket(ticket._id)}
-                >
-                  <div className="ticket-list-item-top">
-                    <span className={`ticket-status-pill ticket-status-pill--${ticket.status}`}>{ticketStatusLabel(ticket.status)}</span>
-                    <span className="ticket-number">{ticket.ticketNumber}</span>
-                  </div>
-                  <strong>{ticket.subject}</strong>
-                  <div className="ticket-list-item-meta">
-                    {isSuperAdmin && ticket.createdBy && <span>{ticket.createdBy.name}</span>}
-                    <span className={`ticket-priority ticket-priority--${ticket.priority}`}>{ticket.priority}</span>
-                    <span>{formatTicketDate(ticket.lastActivityAt)}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="pipeline-muted ticket-list-empty">{isLoadingList ? 'Loading tickets...' : 'No tickets yet. Create one to reach the support team.'}</p>
-          )}
-        </aside>
-
-        <section className="ticket-detail-panel">
-          {isLoadingDetail ? (
-            <p className="pipeline-muted">Loading ticket...</p>
-          ) : !selectedTicket ? (
-            <div className="ticket-detail-empty">
-              <LifeBuoyIcon />
-              <p>Select a ticket from the list, or create a new one to reach the support team.</p>
-            </div>
-          ) : (
-            <>
-              <header className="ticket-detail-header">
-                <div>
-                  <span className="ticket-number">{selectedTicket.ticketNumber}</span>
-                  <h3>{selectedTicket.subject}</h3>
-                  <div className="ticket-detail-meta">
-                    <span>{ticketCategoryLabel(selectedTicket.category)}</span>
-                    <span className={`ticket-priority ticket-priority--${selectedTicket.priority}`}>{selectedTicket.priority}</span>
-                    {selectedTicket.createdBy && <span>Opened by {selectedTicket.createdBy.name}</span>}
-                    <span>{formatTicketDate(selectedTicket.createdAt)}</span>
-                  </div>
-                </div>
-                {isSuperAdmin ? (
-                  <select
-                    className="ticket-status-select"
-                    disabled={isChangingStatus}
-                    onChange={(changeEvent) => void changeStatus(changeEvent.target.value as TicketStatus)}
-                    value={selectedTicket.status}
-                  >
-                    {TICKET_STATUSES.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className={`ticket-status-pill ticket-status-pill--${selectedTicket.status}`}>{ticketStatusLabel(selectedTicket.status)}</span>
-                )}
-              </header>
-
-              <div className="ticket-thread">
-                <article className="ticket-message">
-                  <div className="ticket-message-head">
-                    <strong>{selectedTicket.createdBy?.name ?? 'You'}</strong>
-                    <small>{formatTicketDate(selectedTicket.createdAt)}</small>
-                  </div>
-                  <p>{selectedTicket.description}</p>
-                  <TicketAttachmentList attachments={selectedTicket.attachments} onOpen={openAttachment} />
-                </article>
-                {selectedTicket.comments.map((comment) => (
-                  <article className={`ticket-message ${comment.authorRole === 'superadmin' ? 'ticket-message--staff' : ''}`} key={comment._id}>
-                    <div className="ticket-message-head">
-                      <strong>{comment.author?.name ?? 'Unknown'}</strong>
-                      {comment.authorRole === 'superadmin' && <span className="ticket-staff-badge">Support</span>}
-                      <small>{formatTicketDate(comment.createdAt)}</small>
-                    </div>
-                    <p>{comment.message}</p>
-                    <TicketAttachmentList attachments={comment.attachments} onOpen={openAttachment} />
-                  </article>
-                ))}
-              </div>
-
-              <form className="ticket-reply-form" onSubmit={(formEvent) => void submitReply(formEvent)}>
-                <textarea
-                  onChange={(changeEvent) => setReplyMessage(changeEvent.target.value)}
-                  placeholder={isSuperAdmin ? 'Reply to the user...' : 'Write a reply...'}
-                  rows={3}
-                  value={replyMessage}
-                />
-                <div className="ticket-reply-actions">
-                  <label className="ticket-file-picker">
-                    <Paperclip size={14} />
-                    {replyFiles.length ? `${replyFiles.length} file(s) selected` : 'Attach files'}
-                    <input hidden multiple onChange={(fileEvent) => setReplyFiles(Array.from(fileEvent.target.files ?? []))} type="file" />
-                  </label>
-                  <button className="pipeline-primary-compact" disabled={isSubmittingReply || !replyMessage.trim()} type="submit">
-                    {isSubmittingReply ? 'Sending...' : 'Send reply'}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
-        </section>
-      </div>
-
-      {isNewTicketOpen && (
-        <div className="ticket-modal-backdrop" onClick={() => !isSubmittingTicket && setIsNewTicketOpen(false)} role="presentation">
-          <section aria-modal="true" className="ticket-modal" onClick={(clickEvent) => clickEvent.stopPropagation()} role="dialog">
-            <header>
-              <strong>New support ticket</strong>
-              <button className="dash-icon-button" onClick={() => setIsNewTicketOpen(false)} title="Close" type="button">
-                <X size={14} />
-              </button>
-            </header>
-            <div className="ticket-form-grid">
-              <label className="pipeline-field pipeline-field--wide">
-                <span>Subject</span>
-                <input onChange={(changeEvent) => setNewSubject(changeEvent.target.value)} placeholder="Short summary of your issue" value={newSubject} />
-              </label>
-              <label className="pipeline-field">
-                <span>Category</span>
-                <select onChange={(changeEvent) => setNewCategory(changeEvent.target.value as TicketCategory)} value={newCategory}>
-                  {TICKET_CATEGORIES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="pipeline-field">
-                <span>Priority</span>
-                <select onChange={(changeEvent) => setNewPriority(changeEvent.target.value as TicketPriority)} value={newPriority}>
-                  {TICKET_PRIORITIES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="pipeline-field pipeline-field--wide">
-                <span>Description</span>
-                <textarea
-                  onChange={(changeEvent) => setNewDescription(changeEvent.target.value)}
-                  placeholder="Describe what's happening, steps to reproduce, and what you expected. Paste error messages or logs here."
-                  rows={6}
-                  value={newDescription}
-                />
-              </label>
-              <label className="pipeline-field pipeline-field--wide">
-                <span>Attachments (screenshots, logs)</span>
-                <label className="ticket-file-picker ticket-file-picker--block">
-                  <Paperclip size={14} />
-                  {newFiles.length ? `${newFiles.length} file(s) selected` : 'Attach images, .log/.txt files, JSON, PDF, or ZIP (max 10MB each)'}
-                  <input hidden multiple onChange={(fileEvent) => setNewFiles(Array.from(fileEvent.target.files ?? []))} type="file" />
-                </label>
-              </label>
-            </div>
-            <footer>
-              <button className="pipeline-link-button" onClick={() => setIsNewTicketOpen(false)} type="button">
-                Cancel
-              </button>
-              <button className="pipeline-primary-compact" disabled={isSubmittingTicket} onClick={() => void submitNewTicket()} type="button">
-                {isSubmittingTicket ? 'Submitting...' : 'Submit ticket'}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TicketAttachmentList({ attachments, onOpen }: { attachments: TicketAttachment[]; onOpen: (attachment: TicketAttachment) => void }) {
-  if (!attachments.length) return null;
-  return (
-    <div className="ticket-attachment-list">
-      {attachments.map((attachment) => (
-        <button className="ticket-attachment-chip" key={attachment._id} onClick={() => onOpen(attachment)} title={attachment.originalName} type="button">
-          <Paperclip size={12} />
-          <span>{attachment.originalName}</span>
-          <small>{formatFileSize(attachment.size)}</small>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function LifeBuoyIcon() {
-  return <LifeBuoy size={30} />;
-}
-
-function ticketStatusLabel(status: TicketStatus) {
-  return TICKET_STATUSES.find((option) => option.value === status)?.label ?? status;
-}
-
-function ticketCategoryLabel(category: TicketCategory) {
-  return TICKET_CATEGORIES.find((option) => option.value === category)?.label ?? category;
-}
-
-function formatTicketDate(value: string) {
-  return new Date(value).toLocaleString();
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const ADMIN_ROLE_OPTIONS = ['viewer', 'devops', 'architect', 'admin', 'owner', 'superadmin'];
-const ADMIN_STATUS_OPTIONS = ['active', 'invited', 'disabled'];
-
-function SuperAdminPage() {
-  const user = getStoredUser();
-  const [overview, setOverview] = useState<SuperAdminOverview>();
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [credits, setCredits] = useState('5');
-  const [note, setNote] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const users = overview?.users ?? [];
-  const selectedUser = users.find((candidate) => candidate.id === selectedUserId) ?? users[0];
-
-  const filteredUsers = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    return users.filter((candidate) => {
-      if (roleFilter !== 'all' && candidate.role !== roleFilter) return false;
-      if (statusFilter !== 'all' && candidate.status !== statusFilter) return false;
-      if (term && !`${candidate.name} ${candidate.email}`.toLowerCase().includes(term)) return false;
-      return true;
-    });
-  }, [users, searchTerm, roleFilter, statusFilter]);
-
-  const kpis = useMemo(
-    () => ({
-      totalUsers: overview?.totals.users ?? 0,
-      activeUsers: users.filter((candidate) => candidate.status === 'active').length,
-      diagrams: overview?.totals.diagrams ?? 0,
-      deployments: overview?.totals.deployments ?? 0,
-      pendingCredits: overview?.totals.pendingCreditRequests ?? 0,
-      aiEnabled: users.filter((candidate) => candidate.aiEnabled).length,
-    }),
-    [overview, users],
-  );
-
-  async function refreshOverview() {
-    if (user?.role !== 'superadmin') return;
-    setIsLoading(true);
-    try {
-      const data = await getSuperAdminOverview();
-      setOverview(data);
-      setSelectedUserId((current) => current || data.users[0]?.id || '');
-      setError('');
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load super admin overview.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void refreshOverview();
-  }, []);
-
-  if (user?.role !== 'superadmin') {
-    return (
-      <div className="dash-page">
-        <Panel title="Super Admin" action="Restricted">
-          <EmptyState>Only super admins can manage all users, credits, roles, and platform activity.</EmptyState>
-        </Panel>
-      </div>
-    );
-  }
-
-  async function changeRole(target: SuperAdminUser, role: string) {
-    setMessage('');
-    setError('');
-    try {
-      await updateSuperAdminUserRole(target.id, role);
-      await refreshOverview();
-      setMessage(`${target.email} role changed to ${role}.`);
-    } catch (roleError) {
-      setError(roleError instanceof Error ? roleError.message : 'Unable to update role.');
-    }
-  }
-
-  async function grantCredits(target: SuperAdminUser) {
-    const parsedCredits = Number(credits);
-    if (!Number.isInteger(parsedCredits) || parsedCredits < 0) {
-      setError('Credits must be a non-negative whole number.');
-      return;
-    }
-
-    setMessage('');
-    setError('');
-    try {
-      await grantSuperAdminCredits(target.id, parsedCredits, note.trim() || undefined);
-      await refreshOverview();
-      setNote('');
-      setMessage(`${target.email} now has ${parsedCredits} demo credits.`);
-    } catch (creditError) {
-      setError(creditError instanceof Error ? creditError.message : 'Unable to grant credits.');
-    }
-  }
-
-  return (
-    <div className="dash-page dash-page--admin">
-      <div className="dash-page-head-group">
-        <header className="pipeline-console-header">
-          <div>
-            <span className="dash-eyebrow">Platform control</span>
-            <h2>Super Admin</h2>
-          </div>
-          <div className="pipeline-header-badges">
-            <span className="pipeline-badge">{kpis.totalUsers} users</span>
-            {kpis.pendingCredits > 0 && <span className="pipeline-badge pipeline-badge--warning">{kpis.pendingCredits} credit requests</span>}
-            <button className="pipeline-icon-action" disabled={isLoading} onClick={() => void refreshOverview()} title="Refresh" type="button">
-              <RefreshCw size={15} />
-            </button>
-          </div>
-        </header>
-        {message && <div className="pipeline-notice">{message}</div>}
-        {error && <div className="pipeline-notice pipeline-notice--error">{error}</div>}
-      </div>
-
-      <section className="admin-kpi-strip">
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon">
-            <Users size={16} />
-          </span>
-          <div>
-            <span>Total users</span>
-            <strong>{kpis.totalUsers}</strong>
-          </div>
-        </div>
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon admin-kpi-icon--success">
-            <UserCheck size={16} />
-          </span>
-          <div>
-            <span>Active users</span>
-            <strong>{kpis.activeUsers}</strong>
-          </div>
-        </div>
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon">
-            <Workflow size={16} />
-          </span>
-          <div>
-            <span>Diagrams created</span>
-            <strong>{kpis.diagrams}</strong>
-          </div>
-        </div>
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon">
-            <Rocket size={16} />
-          </span>
-          <div>
-            <span>Deployments run</span>
-            <strong>{kpis.deployments}</strong>
-          </div>
-        </div>
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon admin-kpi-icon--warning">
-            <BadgeDollarSign size={16} />
-          </span>
-          <div>
-            <span>Pending credit requests</span>
-            <strong>{kpis.pendingCredits}</strong>
-          </div>
-        </div>
-        <div className="admin-kpi-card">
-          <span className="admin-kpi-icon admin-kpi-icon--accent">
-            <BrainCircuit size={16} />
-          </span>
-          <div>
-            <span>AI-enabled users</span>
-            <strong>{kpis.aiEnabled}</strong>
-          </div>
-        </div>
-      </section>
-
-      <div className="admin-console-grid">
-        <section className="admin-users-panel">
-          <header>
-            <div className="admin-users-panel-title">
-              <strong>All users and access</strong>
-              <span>
-                {filteredUsers.length} of {users.length} shown
-              </span>
-            </div>
-            <div className="admin-users-filters">
-              <label className="admin-search">
-                <Search size={14} />
-                <input onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search name or email" value={searchTerm} />
-              </label>
-              <select onChange={(event) => setRoleFilter(event.target.value)} value={roleFilter}>
-                <option value="all">All roles</option>
-                {ADMIN_ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-              <select onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
-                <option value="all">All status</option>
-                {ADMIN_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </header>
-          <div className="admin-table-wrap">
-            <table className="admin-users-table">
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Workspace</th>
-                  <th>Credits</th>
-                  <th>Activity</th>
-                  <th>Access</th>
-                  <th>Last active</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((candidate) => (
-                  <tr className={selectedUser?.id === candidate.id ? 'active' : ''} key={candidate.id} onClick={() => setSelectedUserId(candidate.id)}>
-                    <td>
-                      <strong>{candidate.name}</strong>
-                      <span>{candidate.email}</span>
-                    </td>
-                    <td onClick={(event) => event.stopPropagation()}>
-                      <select onChange={(event) => void changeRole(candidate, event.target.value)} value={candidate.role}>
-                        {ADMIN_ROLE_OPTIONS.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <span className={`admin-status-pill admin-status-pill--${candidate.status}`}>{candidate.status}</span>
-                    </td>
-                    <td>
-                      <strong>{candidate.workspace?.plan ?? 'free'}</strong>
-                      <span>{candidate.workspace?.name ?? 'No workspace'}</span>
-                    </td>
-                    <td>
-                      <strong>{candidate.demoCredits} credits</strong>
-                      {candidate.creditRequest?.status === 'pending' ? (
-                        <span className="admin-pending-tag">{candidate.creditRequest.requestedCredits} requested</span>
-                      ) : (
-                        <span>{candidate.creditRequest?.status ?? 'none'}</span>
-                      )}
-                    </td>
-                    <td>
-                      <strong>{candidate.diagramsCreated} diagrams</strong>
-                      <span>
-                        {candidate.deploymentsCreated} deployed, {candidate.successfulDeployments} live
-                      </span>
-                    </td>
-                    <td>
-                      <strong>{candidate.accessTier}</strong>
-                      <span>
-                        {candidate.allowedServices} services{candidate.aiEnabled ? ', AI' : ''}
-                      </span>
-                    </td>
-                    <td>
-                      <span>{formatAdminDate(candidate.lastActivityAt ?? candidate.lastLoginAt)}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!filteredUsers.length && <EmptyState>No users match these filters.</EmptyState>}
-          </div>
-        </section>
-
-        <aside className="admin-side-col">
-          <section className="admin-detail-panel">
-            {selectedUser ? (
-              <>
-                <header className="admin-detail-header">
-                  <div>
-                    <strong>{selectedUser.name}</strong>
-                    <span>{selectedUser.email}</span>
-                  </div>
-                  <div className="admin-detail-header-pills">
-                    <span className={`admin-status-pill admin-status-pill--${selectedUser.status}`}>{selectedUser.status}</span>
-                    <span className="admin-role-pill">{selectedUser.role}</span>
-                  </div>
-                </header>
-
-                <div className="admin-meta-grid">
-                  <div>
-                    <span>Workspace</span>
-                    <strong>{selectedUser.workspace?.name ?? 'No workspace'}</strong>
-                  </div>
-                  <div>
-                    <span>Plan</span>
-                    <strong>{selectedUser.workspace?.plan ?? 'free'}</strong>
-                  </div>
-                  <div>
-                    <span>Access tier</span>
-                    <strong>{selectedUser.accessTier}</strong>
-                  </div>
-                  <div>
-                    <span>Services / AI</span>
-                    <strong>
-                      {selectedUser.allowedServices} services{selectedUser.aiEnabled ? ', AI on' : ', AI off'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Joined</span>
-                    <strong>{formatAdminDate(selectedUser.createdAt)}</strong>
-                  </div>
-                  <div>
-                    <span>Last login</span>
-                    <strong>{formatAdminDate(selectedUser.lastLoginAt)}</strong>
-                  </div>
-                  <div>
-                    <span>Diagrams / deployments</span>
-                    <strong>
-                      {selectedUser.diagramsCreated} / {selectedUser.deploymentsCreated}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Last action</span>
-                    <strong>{selectedUser.lastAction ?? 'No recent action'}</strong>
-                  </div>
-                </div>
-
-                <div className={`admin-credit-card admin-credit-card--${selectedUser.creditRequest?.status ?? 'none'}`}>
-                  <header>
-                    <strong>Credit request</strong>
-                    <span>{selectedUser.creditRequest?.status ?? 'none'}</span>
-                  </header>
-                  <p>{selectedUser.creditRequest?.reason || 'No request reason submitted.'}</p>
-                  {selectedUser.creditRequest?.note && <p className="admin-credit-note">Admin note: {selectedUser.creditRequest.note}</p>}
-                  <div className="admin-credit-dates">
-                    {selectedUser.creditRequest?.requestedAt && <span>Requested {formatAdminDate(selectedUser.creditRequest.requestedAt)}</span>}
-                    {selectedUser.creditRequest?.reviewedAt && <span>Reviewed {formatAdminDate(selectedUser.creditRequest.reviewedAt)}</span>}
-                  </div>
-                </div>
-
-                <div className="admin-form-row">
-                  <label className="pipeline-field">
-                    <span>Demo credits</span>
-                    <input min={0} onChange={(event) => setCredits(event.target.value)} type="number" value={credits} />
-                  </label>
-                  <label className="pipeline-field pipeline-field--wide">
-                    <span>Admin note</span>
-                    <textarea onChange={(event) => setNote(event.target.value)} placeholder="Optional note for this credit grant" rows={2} value={note} />
-                  </label>
-                </div>
-                <button className="pipeline-primary-compact admin-grant-button" onClick={() => void grantCredits(selectedUser)} type="button">
-                  Grant credits
-                </button>
-              </>
-            ) : (
-              <EmptyState>Select a user to manage role and demo credits.</EmptyState>
-            )}
-          </section>
-
-          <section className="admin-activity-panel">
-            <header>
-              <strong>Recent activity</strong>
-              <span>Audit log</span>
-            </header>
-            <div className="admin-activity-list">
-              {overview?.recentActivities.length ? (
-                overview.recentActivities.map((activity) => (
-                  <div className="admin-activity-item" key={activity.id}>
-                    <div>
-                      <strong>{activity.actor?.email ?? 'System'}</strong>
-                      <span>
-                        {activity.action} on {activity.resourceType}
-                      </span>
-                    </div>
-                    <em>{activity.createdAt ? formatAdminDate(activity.createdAt) : 'Recent'}</em>
-                  </div>
-                ))
-              ) : (
-                <EmptyState>No user activity found.</EmptyState>
-              )}
-            </div>
-          </section>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function formatAdminDate(value?: string) {
-  return value ? new Date(value).toLocaleString() : 'Never';
-}
-
 function DeploymentTableDetails({
   deployment,
   insights,
@@ -4039,206 +3052,6 @@ function CostRecommendationGrid({ insights }: { insights?: AwsInsights }) {
   );
 }
 
-function RuntimeLabPage() {
-  const [snapshot, setSnapshot] = useState<NodeRuntimeSnapshot | null>(null);
-  const [selectedMode, setSelectedMode] = useState<NodeLabMode>('worker-thread');
-  const [intensity, setIntensity] = useState<NodeLabIntensity>('standard');
-  const [run, setRun] = useState<NodeConceptRun | null>(null);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [detail, setDetail] = useState<RuntimeLabDetail | null>(null);
-  const memoryUsagePercent = snapshot
-    ? Math.round(((snapshot.memory.systemTotalMb - snapshot.memory.systemFreeMb) / snapshot.memory.systemTotalMb) * 100)
-    : 0;
-  const heapPercent = snapshot ? Math.round((snapshot.memory.heapUsedMb / Math.max(snapshot.memory.heapTotalMb, 1)) * 100) : 0;
-
-  async function refreshSnapshot() {
-    setError('');
-    setMessage('');
-    setIsLoading(true);
-
-    try {
-      setSnapshot(await getNodeRuntimeSnapshot());
-      setMessage('Runtime snapshot refreshed.');
-    } catch (snapshotError) {
-      setError(snapshotError instanceof Error ? snapshotError.message : 'Unable to load Node runtime snapshot.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleRunDemo() {
-    setError('');
-    setMessage('');
-    setIsLoading(true);
-
-    try {
-      const result = await runNodeConceptDemo(selectedMode, intensity);
-      const nextSnapshot = await getNodeRuntimeSnapshot();
-      setRun(result);
-      setSnapshot(nextSnapshot);
-      setMessage(`${formatConceptLabel(result.concept)} completed in ${result.wallClockMs} ms.`);
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : 'Unable to run Node runtime demo.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void refreshSnapshot();
-  }, []);
-
-  return (
-    <div className="dash-page runtime-lab-page">
-      <section className="dash-page-intro runtime-lab-intro">
-        <div>
-          <span className="dash-eyebrow">Advanced Node.js learning lab</span>
-          <h2>Visualize processes, worker threads, CPU cores, and cluster workers.</h2>
-          <p>
-            Run bounded backend demos from the authenticated dashboard and watch which work stays in the API process,
-            which work moves to another PID, and how worker results return to React.
-          </p>
-        </div>
-        <div className="runtime-lab-actions">
-          <button className="dash-secondary-action" disabled={isLoading} onClick={() => void refreshSnapshot()}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-          <button className="dash-primary-action" disabled={isLoading} onClick={() => void handleRunDemo()}>
-            <Play size={16} />
-            {isLoading ? 'Running...' : 'Run selected demo'}
-          </button>
-        </div>
-      </section>
-
-      {error && <div className="dash-global-error">{error}</div>}
-      {message && <div className="dash-global-success">{message}</div>}
-
-      <section className="runtime-lab-kpis">
-        <button className="dash-kpi-card dash-tone-cyan runtime-lab-click-card" onClick={() => setDetail(getRuntimeMetricDetail('pid', snapshot))} type="button">
-          <Server size={20} />
-          <strong>{snapshot?.process.pid ?? '...'}</strong>
-          <span>API process PID</span>
-          <em>{snapshot ? `${snapshot.process.nodeVersion} - ${snapshot.process.platform}` : 'Loading runtime'}</em>
-        </button>
-        <button className="dash-kpi-card dash-tone-violet runtime-lab-click-card" onClick={() => setDetail(getRuntimeMetricDetail('cpu', snapshot))} type="button">
-          <Cpu size={20} />
-          <strong>{snapshot ? `${snapshot.cpu.availableCores}/${snapshot.cpu.logicalCores}` : '...'}</strong>
-          <span>Available CPU cores</span>
-          <em>Cluster workers are capped for safe demos</em>
-        </button>
-        <button className="dash-kpi-card dash-tone-emerald runtime-lab-click-card" onClick={() => setDetail(getRuntimeMetricDetail('memory', snapshot))} type="button">
-          <Activity size={20} />
-          <strong>{snapshot ? `${memoryUsagePercent}%` : '...'}</strong>
-          <span>System memory used</span>
-          <em>{snapshot ? `${snapshot.memory.rssMb} MB RSS` : 'Loading memory'}</em>
-        </button>
-        <button className="dash-kpi-card dash-tone-amber runtime-lab-click-card" onClick={() => setDetail(getRuntimeMetricDetail('heap', snapshot))} type="button">
-          <TerminalSquare size={20} />
-          <strong>{snapshot ? `${heapPercent}%` : '...'}</strong>
-          <span>Node heap used</span>
-          <em>{snapshot ? `${snapshot.memory.heapUsedMb}/${snapshot.memory.heapTotalMb} MB` : 'Loading heap'}</em>
-        </button>
-      </section>
-
-      <div className="dash-two-col dash-two-col--wide runtime-lab-grid">
-        <Panel title="Runtime controls" action={snapshot ? `Uptime ${snapshot.process.uptimeSeconds}s` : 'Loading'}>
-          <div className="runtime-lab-controls">
-            <div className="runtime-lab-mode-grid">
-              {NODE_LAB_MODES.map((item) => (
-                <button
-                  className={selectedMode === item.mode ? 'active' : ''}
-                  key={item.mode}
-                  onClick={() => {
-                    setSelectedMode(item.mode);
-                    setDetail(getRuntimeModeDetail(item.mode));
-                  }}
-                  type="button"
-                >
-                  {item.mode === 'worker-thread' && <Cpu size={18} />}
-                  {item.mode === 'child-process' && <TerminalSquare size={18} />}
-                  {item.mode === 'cluster' && <Network size={18} />}
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
-                </button>
-              ))}
-            </div>
-
-            <label className="runtime-lab-load">
-              Load intensity
-              <select value={intensity} onChange={(event) => setIntensity(event.target.value as NodeLabIntensity)}>
-                <option value="light">Light</option>
-                <option value="standard">Standard</option>
-                <option value="heavy">Heavy</option>
-              </select>
-            </label>
-          </div>
-        </Panel>
-
-        <Panel title="CPU core view" action={snapshot ? `${snapshot.cpu.cores.length} shown` : 'Loading'}>
-          <div className="runtime-lab-core-grid">
-            {(snapshot?.cpu.cores.slice(0, 12) ?? []).map((core) => (
-              <button className="runtime-lab-core runtime-lab-click-card" key={core.id} onClick={() => setDetail(getRuntimeCoreDetail(core))} type="button">
-                <div>
-                  <strong>Core {core.id}</strong>
-                  <span>{core.speedMhz} MHz</span>
-                </div>
-                <i>
-                  <b style={{ width: `${Math.max(core.activityScore, 8)}%` }} />
-                </i>
-                <em>{core.activityScore}% activity score</em>
-              </button>
-            ))}
-            {!snapshot && <EmptyState>Runtime snapshot is loading.</EmptyState>}
-          </div>
-        </Panel>
-      </div>
-
-      <Panel title="Latest demo result" action={run ? formatConceptLabel(run.concept) : 'Run a demo'}>
-        {run ? (
-          <div className="runtime-lab-result-layout">
-            <button className="runtime-lab-result-summary runtime-lab-click-card" onClick={() => setDetail(getRuntimeRunDetail(run))} type="button">
-              <span>{run.intensity} load</span>
-              <strong>{run.wallClockMs} ms wall time</strong>
-              <p>{run.summary}</p>
-              <div>
-                <small>Primary PID</small>
-                <b>{run.primaryPid}</b>
-              </div>
-              <div>
-                <small>Load average</small>
-                <b>{run.cpu.loadAverage.join(' / ')}</b>
-              </div>
-            </button>
-            <div className="runtime-lab-unit-grid">
-              {run.units.map((unit, index) => (
-                <button
-                  className="runtime-lab-unit-card runtime-lab-click-card"
-                  key={`${unit.role}-${unit.pid}-${unit.workerId ?? unit.threadId ?? index}`}
-                  onClick={() => setDetail(getRuntimeUnitDetail(unit, run))}
-                  type="button"
-                >
-                  <span>{unit.role}</span>
-                  <strong>PID {unit.pid}</strong>
-                  <p>
-                    {unit.workerId ? `Worker ${unit.workerId}` : unit.threadId ? `Thread ${unit.threadId}` : 'Process task'} - {unit.durationMs} ms
-                  </p>
-                  <em>{unit.primes} primes from limit {unit.limit}</em>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <EmptyState>Select a Node.js concept and run the demo to visualize thread, process, and cluster behavior.</EmptyState>
-        )}
-      </Panel>
-      {detail && <RuntimeLabDetailModal detail={detail} onClose={() => setDetail(null)} />}
-    </div>
-  );
-}
-
 function RuntimeLabDetailModal({ detail, onClose }: { detail: RuntimeLabDetail; onClose: () => void }) {
   return (
     <div className="runtime-lab-detail-backdrop" role="presentation" onClick={onClose}>
@@ -4281,180 +3094,6 @@ function RuntimeLabDetailModal({ detail, onClose }: { detail: RuntimeLabDetail; 
   );
 }
 
-function getRuntimeMetricDetail(kind: 'pid' | 'cpu' | 'memory' | 'heap', snapshot: NodeRuntimeSnapshot | null): RuntimeLabDetail {
-  const metricDetails: Record<typeof kind, RuntimeLabDetail> = {
-    pid: {
-      title: `API process PID ${snapshot?.process.pid ?? 'loading'}`,
-      subtitle: 'Main Node.js process',
-      process:
-        'The PID identifies the Express API process serving authenticated dashboard requests. Worker threads share this PID, while child process and cluster demos create separate PIDs. This is the quickest way to see whether work stayed inside the API process or moved outside it.',
-      realTimeExample:
-        'In this IAAS app, login, diagram saving, AWS account listing, and dashboard reads should stay in the API process. Terraform apply, long AWS sync, and heavy graph scoring should move to separate workers so the API stays responsive for other users.',
-      steps: [
-        'React calls GET /api/v1/node-lab/snapshot after the dashboard page opens.',
-        'Express reads process.pid, process uptime, Node version, and platform.',
-        'The dashboard renders the PID so you can compare it with worker result PIDs.',
-      ],
-      codePath: 'src/dashboard/nodeLabApi.ts -> IAAS backend/src/routes/nodeLabRoutes.js -> src/utils/nodeRuntimeLab.js',
-    },
-    cpu: {
-      title: `${snapshot?.cpu.availableCores ?? 'Available'} CPU cores`,
-      subtitle: 'Parallelism capacity',
-      process:
-        'CPU cores represent how much parallel work the host can reasonably run. The demo caps workers to avoid exhausting your machine, but the concept is the same in production: CPU-heavy work must be sized and isolated.',
-      realTimeExample:
-        'When many users validate diagrams or run Terraform plans, workers can be scaled based on queue depth and CPU. On AWS, ECS worker tasks can scale horizontally while the API remains focused on request/response traffic.',
-      steps: [
-        'The backend reads os.availableParallelism() and os.cpus().',
-        'Cluster mode forks a safe number of workers based on available cores.',
-        'The UI displays cores so users understand why parallel jobs need limits.',
-      ],
-      codePath: 'IAAS backend/src/utils/nodeRuntimeLab.js',
-    },
-    memory: {
-      title: `${snapshot ? `${snapshot.memory.rssMb} MB RSS` : 'System memory'}`,
-      subtitle: 'Process and system memory pressure',
-      process:
-        'RSS is the resident memory used by the Node process. System memory used shows overall machine pressure. Rising memory across many requests can indicate large payloads, leaked references, or too much work running inside the API process.',
-      realTimeExample:
-        'Large Terraform exports, deployment logs, imported diagrams, and AWS sync summaries should not grow forever inside memory. For a production IAAS platform, large artifacts should move to S3 and workers should stream logs.',
-      steps: [
-        'The backend reads process.memoryUsage() and os.freemem()/os.totalmem().',
-        'The dashboard calculates a system memory percentage.',
-        'Users compare memory before and after running runtime demos.',
-      ],
-      codePath: 'IAAS backend/src/utils/nodeRuntimeLab.js',
-    },
-    heap: {
-      title: `${snapshot ? `${snapshot.memory.heapUsedMb}/${snapshot.memory.heapTotalMb} MB heap` : 'Node heap'}`,
-      subtitle: 'JavaScript object memory',
-      process:
-        'The Node heap stores JavaScript objects. If graph validation, Terraform parsing, or AI context building creates many objects, heap usage rises. CPU workers and job queues keep these spikes away from ordinary API requests.',
-      realTimeExample:
-        'A user importing a large Terraform module can create thousands of parsed resources. In a scalable version of this app, that import can run in a worker and persist a normalized result instead of blocking the dashboard API.',
-      steps: [
-        'The runtime snapshot reads heapUsed and heapTotal from process.memoryUsage().',
-        'The UI converts these numbers into a heap percentage.',
-        'The number helps explain why CPU and memory-heavy work should be isolated.',
-      ],
-      codePath: 'IAAS backend/src/utils/nodeRuntimeLab.js',
-    },
-  };
-
-  return metricDetails[kind];
-}
-
-function getRuntimeModeDetail(mode: NodeLabMode): RuntimeLabDetail {
-  const details: Record<NodeLabMode, RuntimeLabDetail> = {
-    'worker-thread': {
-      title: 'Worker thread',
-      subtitle: 'CPU-heavy JavaScript inside the same process',
-      process:
-        'A worker thread runs JavaScript on a separate thread while sharing the same Node.js process PID. It is useful for CPU-bound JavaScript such as parsing, graph scoring, encryption, compression, or policy checks. It avoids blocking the event loop but does not isolate memory like a separate process.',
-      realTimeExample:
-        'Use this for infraflow diagram validation: a large architecture graph can be scored for missing IAM boundaries, public networking, and dependency cycles without freezing normal dashboard requests.',
-      steps: [
-        'The dashboard sends POST /api/v1/node-lab/run with mode worker-thread.',
-        'The runtime service spawns nodeConceptLabRunner.js.',
-        'The runner creates a Worker from node:worker_threads.',
-        'The worker counts primes and sends a result message back to the parent process.',
-      ],
-      codePath: 'IAAS backend/src/tools/nodeConceptLabRunner.js -> runWorkerThreadDemo()',
-    },
-    'child-process': {
-      title: 'Child process',
-      subtitle: 'Separate PID and isolated memory',
-      process:
-        'A child process is a separate operating-system process. It has its own PID, stdout, stderr, and memory space. This is the right boundary for external commands, risky work, or tools with independent lifecycle requirements.',
-      realTimeExample:
-        'Use this for Terraform commands. Terraform init, plan, and apply should run outside the API process so CLI failures, logs, and environment variables are isolated and easier to monitor.',
-      steps: [
-        'The dashboard sends mode child-process.',
-        'The runtime service starts a Node process using process.execPath.',
-        'The child performs bounded CPU work and writes JSON to stdout.',
-        'The parent parses stdout and returns the structured result to React.',
-      ],
-      codePath: 'IAAS backend/src/utils/nodeRuntimeLab.js -> runNodeConceptDemo()',
-    },
-    cluster: {
-      title: 'Cluster workers',
-      subtitle: 'Multiple Node worker processes',
-      process:
-        'The cluster module forks multiple Node processes from a primary process. Each worker gets its own PID. It demonstrates process-level parallelism and helps explain how CPU work can be split across cores.',
-      realTimeExample:
-        'Use this pattern conceptually for parallel validation shards: one worker checks IAM risk, another checks networking, another checks cost signals, and another checks Terraform compatibility. In production, ECS tasks plus SQS are usually a better operational model than in-process cluster for background jobs.',
-      steps: [
-        'The dashboard sends mode cluster.',
-        'The runner calculates a safe worker count.',
-        'The primary process forks workers and sends each a prime-count task.',
-        'Each worker returns PID, worker ID, duration, and result size.',
-      ],
-      codePath: 'IAAS backend/src/tools/nodeConceptLabRunner.js -> runClusterDemo()',
-    },
-  };
-
-  return details[mode];
-}
-
-function getRuntimeCoreDetail(core: NodeRuntimeSnapshot['cpu']['cores'][number]): RuntimeLabDetail {
-  return {
-    title: `CPU Core ${core.id}`,
-    subtitle: `${core.speedMhz} MHz logical core`,
-    process:
-      'This core card visualizes one logical CPU core exposed by the host. The activity score is derived from OS CPU time counters and is a teaching signal rather than a live profiler. It helps explain that parallel work competes for finite CPU capacity.',
-    realTimeExample:
-      'If hundreds of users trigger architecture validation at the same time, CPU cores become the bottleneck. A production AWS setup should scale worker tasks and use SQS queue depth, CPU, and latency metrics to decide when to add capacity.',
-    steps: [
-      'Node reads os.cpus() and maps each core to model, speed, and CPU time counters.',
-      'The backend computes activity from non-idle CPU time.',
-      'The dashboard renders the activity bar and lets you inspect what the core represents.',
-    ],
-    codePath: 'IAAS backend/src/utils/nodeRuntimeLab.js -> getNodeRuntimeSnapshot()',
-  };
-}
-
-function getRuntimeRunDetail(run: NodeConceptRun): RuntimeLabDetail {
-  return {
-    title: `${formatConceptLabel(run.concept)} run`,
-    subtitle: `${run.intensity} load completed in ${run.wallClockMs} ms`,
-    process:
-      'This summary shows the full request-to-worker round trip: React sends the selected mode, Express validates it, the runtime service starts the isolated runner, the runner performs CPU work, and JSON comes back to the dashboard.',
-    realTimeExample:
-      'This is the same shape a deployment workflow should use: the dashboard asks for work, the backend validates and starts a safe execution boundary, and the UI displays status and logs without blocking other users.',
-    steps: [
-      'React calls runNodeConceptDemo(mode, intensity).',
-      'Express validates mode and intensity with zod.',
-      'The runtime service starts nodeConceptLabRunner.js with a timeout.',
-      'The runner returns worker/process result units for visualization.',
-    ],
-    codePath: 'src/dashboard/nodeLabApi.ts -> IAAS backend/src/routes/nodeLabRoutes.js -> src/utils/nodeRuntimeLab.js',
-  };
-}
-
-function getRuntimeUnitDetail(unit: NodeConceptRun['units'][number], run: NodeConceptRun): RuntimeLabDetail {
-  const identity = unit.workerId ? `cluster worker ${unit.workerId}` : unit.threadId ? `worker thread ${unit.threadId}` : unit.role;
-
-  return {
-    title: `${identity} result`,
-    subtitle: `PID ${unit.pid} - ${unit.durationMs} ms`,
-    process:
-      'A result unit is one execution participant returned by the backend runner. In worker-thread mode it represents a thread in the same PID. In child-process and cluster-style process work it represents a separate process boundary.',
-    realTimeExample:
-      'For a real deployment pipeline, each unit could represent one Terraform plan job, one AWS region sync, or one architecture validation shard. The dashboard would show status, logs, duration, and errors for each unit.',
-    steps: [
-      `The selected ${formatConceptLabel(run.concept)} demo created this unit.`,
-      `It processed a bounded prime-count task with limit ${unit.limit}.`,
-      `It found ${unit.primes} primes and returned in ${unit.durationMs} ms.`,
-      'The parent process serialized this result as JSON for the React dashboard.',
-    ],
-    codePath: 'IAAS backend/src/tools/nodeConceptLabRunner.js',
-  };
-}
-
-function formatConceptLabel(concept: string) {
-  return concept.replace(/_/g, ' ');
-}
-
 function getFindingFix(finding: unknown) {
   if (finding && typeof finding === 'object' && 'fix' in finding) {
     const fix = (finding as { fix?: unknown }).fix;
@@ -4466,233 +3105,78 @@ function getFindingFix(finding: unknown) {
   return 'Review this AWS finding in the source service console.';
 }
 
-function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: AwsAccountRecord[]; regions: string[]; onAwsChanged: () => Promise<void> }) {
-  const [name, setName] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [roleArn, setRoleArn] = useState('');
-  const [externalId, setExternalId] = useState('');
-  const [defaultRegion, setDefaultRegion] = useState(regions[0] ?? 'ap-south-1');
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [deployerArn, setDeployerArn] = useState('');
-  const [deployerIdentityError, setDeployerIdentityError] = useState('');
-  const [copiedField, setCopiedField] = useState('');
-
-  useEffect(() => {
-    if (!regions.includes(defaultRegion) && regions[0]) setDefaultRegion(regions[0]);
-  }, [defaultRegion, regions]);
-
-  useEffect(() => {
-    getDeployerIdentity()
-      .then((identity) => setDeployerArn(identity.arn))
-      .catch((identityError) => setDeployerIdentityError(identityError instanceof Error ? identityError.message : 'Unable to resolve infraflow AWS identity'));
-  }, []);
-
-  function copyToClipboard(field: string, value: string) {
-    void navigator.clipboard?.writeText(value);
-    setCopiedField(field);
-    window.setTimeout(() => setCopiedField((current) => (current === field ? '' : current)), 1800);
-  }
-
-  async function handleConnect(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    setIsConnecting(true);
-
-    try {
-      await connectAwsAccount({
-        name,
-        accountId,
-        roleArn,
-        externalId: externalId || undefined,
-        defaultRegion,
-      });
-      setMessage('AWS account connected and synced successfully.');
-      setName('');
-      setAccountId('');
-      setRoleArn('');
-      setExternalId('');
-      await onAwsChanged();
-    } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'AWS connection failed');
-    } finally {
-      setIsConnecting(false);
-    }
-  }
-
-  async function handleSync(id: string) {
-    setError('');
-    setMessage('');
-    setIsConnecting(true);
-    try {
-      await syncAwsAccount(id);
-      setMessage('AWS account synced successfully.');
-      await onAwsChanged();
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : 'AWS sync failed');
-    } finally {
-      setIsConnecting(false);
-    }
-  }
-
-  async function handleDisconnect(account: AwsAccountRecord) {
-    const confirmed = window.confirm(`Disconnect ${account.name} from infraflow? Live AWS insights and sync will stop for this account.`);
-    if (!confirmed) return;
-
-    setError('');
-    setMessage('');
-    setIsConnecting(true);
-
-    try {
-      await disconnectAwsAccount(account._id);
-      setMessage(`${account.name} disconnected successfully.`);
-      await onAwsChanged();
-    } catch (disconnectError) {
-      setError(disconnectError instanceof Error ? disconnectError.message : 'AWS disconnect failed');
-    } finally {
-      setIsConnecting(false);
-    }
-  }
-
-  return (
-    <div className="dash-page">
-      <Panel title="One-time IAM role setup" action="Recommended">
-        <p className="dash-role-setup-intro">
-          Create a dedicated IAM role in AWS with the trust and permissions policies below, attached once. This covers every resource type
-          infraflow can deploy (S3, VPC/EC2, Lambda, ECS, RDS/DocumentDB, API Gateway, and more) plus the IAM role management infraflow needs
-          for features like Lambda execution roles and GitHub Actions OIDC — so you won't hit missing-permission errors piecemeal, one
-          deployment at a time. Paste the resulting role ARN into "Connect AWS account" below. You can connect as many roles/accounts as you
-          want and pick which one to deploy with from the dropdown shown when you deploy a diagram.
-        </p>
-        {deployerIdentityError && <div className="dash-form-error">{deployerIdentityError}</div>}
-        <div className="dash-role-setup-grid">
-          <div className="dash-role-setup-block">
-            <header>
-              <strong>1. Trust policy</strong>
-              <button
-                className="pipeline-link-button"
-                disabled={!deployerArn}
-                onClick={() => copyToClipboard('trust', JSON.stringify(buildDeployRoleTrustPolicy(deployerArn, externalId || undefined), null, 2))}
-                type="button"
-              >
-                <Copy size={14} />
-                {copiedField === 'trust' ? 'Copied' : 'Copy'}
-              </button>
-            </header>
-            <p>Who is allowed to assume this role — infraflow's own AWS identity, resolved live below.</p>
-            <pre>{deployerArn ? JSON.stringify(buildDeployRoleTrustPolicy(deployerArn, externalId || undefined), null, 2) : 'Resolving infraflow AWS identity...'}</pre>
-          </div>
-          <div className="dash-role-setup-block">
-            <header>
-              <strong>2. Permissions policy</strong>
-              <button
-                className="pipeline-link-button"
-                onClick={() => copyToClipboard('permissions', JSON.stringify(deployRolePermissionsPolicy, null, 2))}
-                type="button"
-              >
-                <Copy size={14} />
-                {copiedField === 'permissions' ? 'Copied' : 'Copy'}
-              </button>
-            </header>
-            <p>What the role can actually do. IAM management is scoped to role/infraflow-* only — never your own existing roles.</p>
-            <pre>{JSON.stringify(deployRolePermissionsPolicy, null, 2)}</pre>
-          </div>
-        </div>
-      </Panel>
-      <div className="dash-connect-layout">
-        <Panel title="Connection steps" action="IAM setup">
-          <div className="dash-connect-steps">
-            {awsConnectionSteps.map((step, index) => {
-              const Icon = step.icon;
-              return (
-                <div key={step.title}>
-                  <span>{index + 1}</span>
-                  <Icon size={19} />
-                  <strong>{step.title}</strong>
-                  <p>{step.description}</p>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-        <Panel title="Connect AWS account" action="AssumeRole">
-          <form className="dash-role-form" onSubmit={handleConnect}>
-            <label>
-              Account name
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Production AWS" required />
-            </label>
-            <label>
-              AWS Account ID
-              <input value={accountId} onChange={(event) => setAccountId(event.target.value)} placeholder="123456789012" required />
-            </label>
-            <label>
-              IAM Role ARN
-              <input value={roleArn} onChange={(event) => setRoleArn(event.target.value)} placeholder="arn:aws:iam::123456789012:role/infraflowRole" required />
-            </label>
-            <label>
-              External ID
-              <input value={externalId} onChange={(event) => setExternalId(event.target.value)} placeholder="Optional but recommended" />
-            </label>
-            <label>
-              Default region
-              <select value={defaultRegion} onChange={(event) => setDefaultRegion(event.target.value)}>
-                {regions.map((region) => (
-                  <option key={region} value={region}>
-                    {region}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {message && <div className="dash-form-success">{message}</div>}
-            {error && <div className="dash-form-error">{error}</div>}
-            <button className="dash-primary-action" disabled={isConnecting}>
-              <ExternalLink size={16} />
-              {isConnecting ? 'Connecting...' : 'Connect and sync'}
-            </button>
-          </form>
-        </Panel>
-      </div>
-      <Panel title="Connected accounts" action={`${accounts.length} accounts`}>
-        <div className="dash-account-list">
-          {accounts.length ? (
-            accounts.map((account) => (
-              <div className="dash-account-row" key={account._id}>
-                <div>
-                  <strong>{account.name}</strong>
-                  <span>{account.accountId || 'Unknown account'} - {account.defaultRegion}</span>
-                  {account.lastError && <small>{account.lastError}</small>}
-                </div>
-                <em>{account.status}</em>
-                <div className="dash-account-actions">
-                  <button className="dash-secondary-action" disabled={isConnecting} onClick={() => void handleSync(account._id)}>
-                    <RefreshCw size={15} />
-                    Sync now
-                  </button>
-                  <button className="dash-secondary-action dash-danger-action" disabled={isConnecting} onClick={() => void handleDisconnect(account)}>
-                    <Trash2 size={15} />
-                    Disconnect
-                  </button>
-                </div>
-              </div>
-            ))
-          ) : (
-            <EmptyState>No AWS account connected yet.</EmptyState>
-          )}
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
 function hasGithubWorkflowScope(connection: GithubConnection) {
   if (!connection.scopes?.length) return true;
   return connection.scopes.includes('workflow');
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return <div className="dash-empty-state">{children}</div>;
+function findMainScrollTarget(): HTMLElement | Window | null {
+  const doc = document.documentElement;
+  if (doc.scrollHeight - window.innerHeight > 16) {
+    return window;
+  }
+
+  const content = document.querySelector('.dash-content');
+  if (!content) return null;
+
+  const candidates = content.querySelectorAll<HTMLElement>('*');
+  for (const el of candidates) {
+    if (el.scrollHeight - el.clientHeight <= 16) continue;
+    const overflowY = getComputedStyle(el).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function useScrollHint(deps: React.DependencyList = []) {
+  const [showScrollHint, setShowScrollHint] = useState(false);
+
+  useEffect(() => {
+    let target: HTMLElement | Window | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    function evaluate() {
+      if (target === window) {
+        const doc = document.documentElement;
+        setShowScrollHint(doc.scrollHeight - window.innerHeight - window.scrollY > 16);
+      } else if (target instanceof HTMLElement) {
+        setShowScrollHint(target.scrollHeight - target.clientHeight - target.scrollTop > 16);
+      } else {
+        setShowScrollHint(false);
+      }
+    }
+
+    target = findMainScrollTarget();
+    evaluate();
+
+    target?.addEventListener('scroll', evaluate, { passive: true });
+    window.addEventListener('resize', evaluate);
+    resizeObserver = new ResizeObserver(evaluate);
+    resizeObserver.observe(target instanceof HTMLElement ? target : document.documentElement);
+
+    return () => {
+      target?.removeEventListener('scroll', evaluate);
+      window.removeEventListener('resize', evaluate);
+      resizeObserver?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { showScrollHint };
+}
+
+function ScrollHintIcon() {
+  return (
+    <div className="dash-scroll-hint" aria-hidden="true">
+      <span className="dash-scroll-hint__tooltip">Scroll up / down</span>
+      <span className="dash-scroll-hint__track">
+        <span className="dash-scroll-hint__thumb" />
+      </span>
+    </div>
+  );
 }
 
 function KpiGrid({ insights }: { insights?: AwsInsights }) {
@@ -4908,22 +3392,6 @@ function DashboardChart() {
       </div>
     </div>
   );
-}
-
-function Panel({ title, action, children }: { title: string; action?: string; children: React.ReactNode }) {
-  return (
-    <section className="dash-panel">
-      <header>
-        <h2>{title}</h2>
-        {action && <button>{action}</button>}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function Code2Icon() {
-  return <TerminalSquare size={16} />;
 }
 
 const clientRoleRank: Record<string, number> = {

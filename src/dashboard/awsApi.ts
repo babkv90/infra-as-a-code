@@ -1,6 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+import { apiRequest } from '../utils/apiClient';
 
 export type AwsAccountRecord = {
   _id: string;
@@ -74,25 +72,4 @@ export type IamRoleSummary = { arn: string; roleName: string; createDate?: strin
 
 export async function listAccountIamRoles(accountId: string) {
   return apiRequest<IamRoleSummary[]>(`/aws/accounts/${accountId}/iam-roles`);
-}
-
-async function apiRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  const result = await response.json().catch(() => null);
-
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Request failed');
-  }
-
-  return result.data as T;
 }

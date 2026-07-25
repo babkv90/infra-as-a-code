@@ -1,6 +1,6 @@
-import { getStoredToken } from '../auth/authClient';
+import { apiRequest as sharedApiRequest } from '../utils/apiClient';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+const pipelineRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Application pipeline request failed');
 
 export type ApplicationPipelineFile = {
   path: string;
@@ -181,24 +181,4 @@ export async function reportPipelineRunResult(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-}
-
-async function pipelineRequest<T>(path: string, init: RequestInit = {}) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success) {
-    throw new Error(result?.message ?? 'Application pipeline request failed');
-  }
-
-  return result.data as T;
 }

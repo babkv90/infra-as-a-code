@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CloudCog,
   Code2,
-  Cpu,
   Database,
   GitBranch,
   KeyRound,
@@ -14,11 +13,9 @@ import {
   LifeBuoy,
   LineChart,
   LockKeyhole,
-  Network,
   Rocket,
   SearchCheck,
   Server,
-  Settings,
   SlidersHorizontal,
   ShieldCheck,
   Workflow,
@@ -39,7 +36,6 @@ export type DashboardPage =
   | 'resource-info'
   | 'app-pipeline'
   | 'security'
-  | 'runtime-lab'
   | 'connect-aws'
   | 'support'
   | 'super-admin';
@@ -60,7 +56,6 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'resource-info', label: 'Resource Info', icon: Database },
   { id: 'app-pipeline', label: 'App Pipeline', icon: GitBranch },
   { id: 'security', label: 'Security Review', icon: ShieldCheck },
-  // { id: 'runtime-lab', label: 'Runtime Lab', icon: Cpu, badge: 'Node' },
   { id: 'connect-aws', label: 'Connect AWS', icon: CloudCog },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'super-admin', label: 'Super Admin', icon: SlidersHorizontal },

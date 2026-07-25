@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DeleteObjectsCommand, ListObjectsV2Command, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '../config/env.js';
+import { LAMBDA_ZIP_UPLOAD_ROOT } from '../middleware/lambdaZipUpload.js';
 import { AwsAccount } from '../models/AwsAccount.js';
 import { Deployment } from '../models/Deployment.js';
 import { assumeAwsRole } from './awsRoleCredentials.js';
@@ -48,6 +49,8 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     deployment.terraformWorkDir = workDir;
     await deployment.save();
 
+    await placeLambdaZipUploads(deployment, workDir);
+
     if (deployment.terraform.includes('lambda_stub.zip')) {
       await writeFile(path.join(workDir, 'lambda_stub.zip'), createLambdaStubZip());
     }
@@ -78,6 +81,11 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     });
     await deployment.save();
 
+    // A sitting-deployed deployment doesn't need the downloaded provider binaries (600MB+) on disk
+    // until its next update or destroy, and TF_PLUGIN_CACHE_DIR means that next `terraform init`
+    // just re-copies from the already-warm shared cache in seconds — no re-download.
+    await removeProviderCache(workDir);
+
     await createNotification({
       workspace: deployment.workspace,
       type: 'deployment',
@@ -106,7 +114,14 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
           level: 'warning',
         });
         await deployment.save();
-        await runTerraformDestroy(id, { force: true, auto: true });
+        try {
+          await runTerraformDestroy(id, { force: true, auto: true });
+        } finally {
+          // runTerraformDestroy already removes the provider cache on its own success path (below),
+          // but if the destroy attempt itself throws, that cleanup never runs — do it here too so a
+          // failed deploy-then-destroy doesn't leave 600MB+ of orphaned provider binaries behind.
+          await removeProviderCache(deployment.terraformWorkDir);
+        }
       } else if (isUpdate) {
         deployment.logs.push({
           message: 'This update failed. Nothing was automatically destroyed since infrastructure from before this update may still be running — check Terraform state and the AWS console before retrying.',
@@ -233,6 +248,23 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     }
   } finally {
     runningDeployments.delete(id);
+  }
+}
+
+// Lambda nodes deployed via an uploaded zip (see FilePathField in PropertiesPanel.tsx) reference
+// their package by upload id — terraformGenerator.js emits `filename = "<uploadId>.zip"` for those,
+// so the file has to physically exist under that exact name in the Terraform work directory before
+// `apply` runs, or AWS's provider fails with "open <uploadId>.zip: no such file" just like the
+// original bug report (a locally-typed path that could never resolve on this server).
+async function placeLambdaZipUploads(deployment, workDir) {
+  for (const uploadId of deployment.lambdaZipUploadIds ?? []) {
+    const source = path.join(LAMBDA_ZIP_UPLOAD_ROOT, `${uploadId}.zip`);
+    if (!(await pathExists(source))) {
+      throw new Error(
+        `Uploaded Lambda deployment package (${uploadId}.zip) was not found on the server. Re-upload the zip from the Lambda node's "Deployment zip path" field and redeploy.`,
+      );
+    }
+    await copyFile(source, path.join(workDir, `${uploadId}.zip`));
   }
 }
 

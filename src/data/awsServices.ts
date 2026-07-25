@@ -48,7 +48,7 @@ export const awsServices: AwsService[] = [
     ...commonFields,
     { key: 'function_name', label: 'Function name', type: 'text' },
     { key: 'role_arn', label: 'Execution role ARN', type: 'iam-role' },
-    { key: 'filename', label: 'Deployment zip path', type: 'text' },
+    { key: 'filename', label: 'Deployment zip path', type: 'file-path' },
     { key: 'source_code_hash', label: 'Source code hash expression', type: 'text' },
     { key: 'handler', label: 'Handler', type: 'text' },
     { key: 'runtime', label: 'Runtime', type: 'select', options: ['nodejs20.x', 'python3.12', 'java21', 'go1.x'] },
@@ -150,7 +150,7 @@ export const awsServices: AwsService[] = [
     { key: 'protocol', label: 'Protocol', type: 'select', options: loadBalancerProtocols },
     { key: 'target_group_arn', label: 'Target group ARN expression', type: 'text' },
   ]),
-  service('apigw', 'API Gateway', 'API', 'Networking', 'Webhook', '#8b5cf6', ['Client'], ['Route'], 'aws_api_gateway_rest_api', { name: '', protocol_type: '' }, [
+  service('apigw', 'API Gateway', 'API', 'Networking', 'Webhook', '#8b5cf6', ['Client'], ['Route'], 'aws_apigatewayv2_api', { name: '', protocol_type: '' }, [
     ...commonFields,
     nameField,
     { key: 'protocol_type', label: 'Protocol type', type: 'select', options: apiProtocols },

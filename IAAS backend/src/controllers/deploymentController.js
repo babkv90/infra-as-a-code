@@ -10,6 +10,21 @@ import { auditLog } from '../utils/audit.js';
 import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/terraformDeploymentRunner.js';
 
+// A Lambda node's "Deployment zip path" field stores the uploaded file's server-generated id in
+// config.filename_upload_id (see PropertiesPanel.tsx's FilePathField). Collecting those ids here,
+// at request time, lets terraformDeploymentRunner.js know which uploaded zips to copy into a
+// deployment's Terraform work directory before `apply` runs.
+function lambdaZipUploadIdsFromNodes(nodes = []) {
+  return Array.from(
+    new Set(
+      nodes
+        .filter((node) => node?.data?.serviceId === 'lambda')
+        .map((node) => String(node.data?.config?.filename_upload_id ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 export const createDeploymentSchema = z.object({
   body: z.object({
     name: z.string().min(2).optional(),
@@ -35,6 +50,15 @@ export const updateCanvasDeploymentSchema = z.object({
     nodes: z.array(z.any()).default([]),
     edges: z.array(z.any()).default([]),
   }),
+});
+
+export const uploadLambdaZip = asyncHandler(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'A .zip file is required.');
+  const uploadId = req.file.filename.replace(/\.zip$/, '');
+  res.status(201).json({
+    success: true,
+    data: { uploadId, fileName: req.file.originalname, sizeBytes: req.file.size },
+  });
 });
 
 export const listDeployments = asyncHandler(async (req, res) => {
@@ -110,6 +134,7 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     plan: plan.plan,
     terraform: plan.terraform,
     validationIssues: plan.validationIssues,
+    lambdaZipUploadIds: lambdaZipUploadIdsFromNodes(req.validated.body.nodes),
     logs: [
       {
         message: hasBlockers
@@ -212,6 +237,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   deployment.plan = plan.plan;
   deployment.terraform = plan.terraform;
   deployment.validationIssues = plan.validationIssues;
+  deployment.lambdaZipUploadIds = lambdaZipUploadIdsFromNodes(req.validated.body.nodes);
 
   if (hasBlockers) {
     deployment.logs.push({ message: 'Update rejected: the edited diagram has blocking validation errors.', level: 'error' });

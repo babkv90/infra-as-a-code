@@ -27,6 +27,10 @@ type DiagramStore = {
   activeView: DiagramViewMode;
   activeRegion: string;
   lastSavedAt?: string;
+  // True whenever the diagram has changed since it was last loaded/saved — there's no persist
+  // middleware on this store (see markSaved's comment), so this is what lets the UI warn before a
+  // refresh/close silently discards everything back to history.length === 0.
+  isDirty: boolean;
   isDark: boolean;
   issues: ValidationIssue[];
   history: DiagramSnapshot[];
@@ -81,6 +85,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   mode: 'select',
   activeView: 'topology',
   activeRegion: 'ap-south-1',
+  isDirty: false,
   isDark: false,
   issues: [],
   history: [],
@@ -428,9 +433,12 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   },
   importDiagram: (snapshot) => {
     pushHistory(set, get);
-    set((state) => ({ nodes: snapshot.nodes, edges: snapshot.edges, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1 }));
+    // Loading a diagram (a demo, a template, or the user's own saved one) isn't itself an
+    // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory
+    // just set — only edits made *after* this point should count as dirty.
+    set((state) => ({ nodes: snapshot.nodes, edges: snapshot.edges, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
   },
-  markSaved: () => set({ lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
+  markSaved: () => set({ lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isDirty: false }),
   checkpoint: () => pushHistory(set, get),
   attachNodeToContainingGroup: (nodeId) => {
     const { nodes } = get();
@@ -465,7 +473,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
 
 function pushHistory(set: (partial: Partial<DiagramStore>) => void, get: () => DiagramStore): void {
   const { nodes, edges, history } = get();
-  set({ history: [...history, { nodes, edges }].slice(-maxHistory), future: [] });
+  set({ history: [...history, { nodes, edges }].slice(-maxHistory), future: [], isDirty: true });
 }
 
 function createNode(serviceId: string, position: XYPosition, id?: string): AwsNode {
