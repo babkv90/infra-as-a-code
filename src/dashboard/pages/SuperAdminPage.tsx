@@ -1,11 +1,20 @@
-import { BadgeDollarSign, BrainCircuit, RefreshCw, Rocket, Search, UserCheck, Users, Workflow } from 'lucide-react';
+import { BadgeDollarSign, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
+import { BacklogTab } from '../components/BacklogTab';
+import { ChangeLogTab } from '../components/ChangeLogTab';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { getSuperAdminOverview, grantSuperAdminCredits, updateSuperAdminUserRole, type SuperAdminOverview, type SuperAdminUser } from '../superAdminApi';
 
 const ADMIN_ROLE_OPTIONS = ['viewer', 'devops', 'architect', 'admin', 'owner', 'superadmin'];
 const ADMIN_STATUS_OPTIONS = ['active', 'invited', 'disabled'];
+
+type AdminTab = 'users' | 'changelog' | 'backlog';
+const ADMIN_TABS: Array<{ id: AdminTab; label: string; icon: typeof Users }> = [
+  { id: 'users', label: 'Users & Access', icon: Users },
+  { id: 'changelog', label: 'Change Log', icon: GitCommitVertical },
+  { id: 'backlog', label: 'Technical Backlog', icon: ListChecks },
+];
 
 export function SuperAdminPage() {
   const user = getStoredUser();
@@ -19,6 +28,7 @@ export function SuperAdminPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
 
   const users = overview?.users ?? [];
   const selectedUser = users.find((candidate) => candidate.id === selectedUserId) ?? users[0];
@@ -125,6 +135,30 @@ export function SuperAdminPage() {
         {error && <div className="pipeline-notice pipeline-notice--error">{error}</div>}
       </div>
 
+      <nav className="admin-tab-bar" role="tablist">
+        {ADMIN_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              className={`admin-tab ${activeTab === tab.id ? 'admin-tab--active' : ''}`}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              type="button"
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {activeTab === 'changelog' && <ChangeLogTab />}
+      {activeTab === 'backlog' && <BacklogTab />}
+
+      {activeTab === 'users' && (
+      <>
       <section className="admin-kpi-strip">
         <div className="admin-kpi-card">
           <span className="admin-kpi-icon">
@@ -393,6 +427,8 @@ export function SuperAdminPage() {
           </section>
         </aside>
       </div>
+      </>
+      )}
     </div>
   );
 }

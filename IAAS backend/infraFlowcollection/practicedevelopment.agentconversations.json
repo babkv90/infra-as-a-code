@@ -1,0 +1,2686 @@
+[{
+  "_id": {
+    "$oid": "6a5e10d9570bfefb5a0b9bc1"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e10d9570bfefb5a0b9bc3"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:13:13.970Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a5e10d9570bfefb5a0b9bc4"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:13:13.971Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e12e9570bfefb5a0b9be0"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:22:01.575Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a5e12e9570bfefb5a0b9be1"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:22:01.575Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e13bf570bfefb5a0b9be9"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:25:35.779Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.28271099008021233,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "index": 7,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 272,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.26433324866725727,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "index": 1492,
+              "pages": [
+                570,
+                570
+              ],
+              "size": 313,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.25029962700603436,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "index": 5,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.24954379948600808,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "index": 4,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1476",
+            "score": 0.24514523827312806,
+            "text": "ng requests or processes. You can also scan this data \nin real time for anomalous patterns using solutions such as CloudWatch Logs anomaly detection. \nThese insights can be placed on dashboards to keep them organized according to your needs and \npreferences.\nChange management 559",
+            "metadata": {
+              "index": 1476,
+              "pages": [
+                564,
+                564
+              ],
+              "size": 280,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e13bf570bfefb5a0b9bea"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:25:35.780Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e1478570bfefb5a0b9bf4"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:28:40.170Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.28271099008021233,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "index": 7,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 272,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.26433324866725727,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "index": 1492,
+              "pages": [
+                570,
+                570
+              ],
+              "size": 313,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.25029962700603436,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "index": 5,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.24954379948600808,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "index": 4,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1476",
+            "score": 0.24514523827312806,
+            "text": "ng requests or processes. You can also scan this data \nin real time for anomalous patterns using solutions such as CloudWatch Logs anomaly detection. \nThese insights can be placed on dashboards to keep them organized according to your needs and \npreferences.\nChange management 559",
+            "metadata": {
+              "index": 1476,
+              "pages": [
+                564,
+                564
+              ],
+              "size": 280,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1478570bfefb5a0b9bf5"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:28:40.171Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hihi",
+      "_id": {
+        "$oid": "6a5e148a570bfefb5a0b9c01"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:28:58.998Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain an answer to your greeting \"hihi.\"",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.29093794443011445,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "index": 7,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 272,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.26440863054380576,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "index": 5,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.2611298372618188,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "index": 1492,
+              "pages": [
+                570,
+                570
+              ],
+              "size": 313,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-13",
+            "score": 0.2606487985974984,
+            "text": "nd hardware .................................................................................................................... 716\nData management .............................................................................................................................. 734\nNetworking and content delivery ................................................................................................... 757\nProcess and culture ............................................................................................................................ 786\nCost optimization ..................................................................................................................................... 803\nPractice Cloud Financial Management ........................................................................................... 803\nExpenditure and usage awareness .................................................................................................. 826\nCost-eﬀectiv",
+            "metadata": {
+              "index": 13,
+              "pages": [
+                4,
+                4
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.2560103683674378,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "index": 4,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e148a570bfefb5a0b9c02"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:28:59.000Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Summarize billing changes",
+      "_id": {
+        "$oid": "6a5e176f570bfefb5a0b9c10"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:41:19.001Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The retrieved context discusses several aspects of billing changes related to AWS services:\n\n1. **Savings Plans Application**: In a Consolidated Billing Family, Savings Plans are applied first to the owner account's usage and then to other accounts if sharing is enabled. They are applied to the highest savings percentage first, and if there are multiple usages with equal savings percentages, they are applied to the usage with the lowest Savings Plans rate. Remaining usage after the commitment is charged at On-Demand rates. Users can refresh Savings Plans Recommendations in AWS Cost Management at any time to generate new recommendations (Source 2).\n\n2. **Detailed Billing Information**: AWS now offers detailed billing information with hourly granularity through the AWS Cost and Usage Report (CUR) 2.0. This new method provides daily or hourly usage data, rates, costs, and usage attributes for all chargeable AWS services, along with improvements over previous versions. The CUR includes various dimensions such as tagging, location, resource attributes, and account IDs (Source 3).\n\n3. **Cost Management Tools**: Organizations can utilize cost management tools to track consumption and identify reasons for cost increases. This includes creating exports of the CUR for detailed analysis (Source 3).\n\n4. **Collaboration and Understanding**: It is important for various stakeholders, including CFOs, financial controllers, and technology members, to have a shared understanding of costs from creation to payment. This involves discussing pricing models, tiered pricing, discount models, budgeting, and financial requirements (Source 4).\n\nOverall, these changes emphasize the importance of detailed tracking, strategic application of savings, and collaborative financial management in AWS billing practices.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2206",
+            "score": 0.48147504914044414,
+            "text": "eate billing and cost management data exports using basic SQL, and visualize \nyour billing and cost management data by integrating with Quick. You can also export your data \nin standard mode to analyze your data with other processing tools like Amazon Athena.\nExpenditure and usage awareness 847",
+            "metadata": {
+              "index": 2206,
+              "pages": [
+                852,
+                852
+              ],
+              "size": 295,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2344",
+            "score": 0.47543760759465875,
+            "text": "ded.\nIn a Consolidated Billing Family, Savings Plans are applied ﬁrst to the owner account's usage, \nand then to other accounts' usage. This occurs only if you have sharing enabled. Your Savings \nPlans are applied to your highest savings percentage ﬁrst. If there are multiple usages with equal \nsavings percentages, Savings Plans are applied to the ﬁrst usage with the lowest Savings Plans rate. \nSavings Plans continue to apply until there are no more remaining uses or your commitment is \nexhausted. Any remaining usage is charged at the On-Demand rates. You can refresh Savings Plans \nRecommendations in AWS Cost Management to generate new Savings Plans Recommendations at \nany time.\nAfter analyzing ﬂexibility of instances, you can commit by following recommendations. Create cost \nmodeling by analyzing the workload’s short-term costs with potential diﬀerent resource options, \nanalyzing AWS pricing models, and aligning them with your business requirements to ﬁnd out total \ncost of ownership ",
+            "metadata": {
+              "index": 2344,
+              "pages": [
+                905,
+                905
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2202",
+            "score": 0.42830776332170944,
+            "text": "tion of costs and usage.\nLevel of risk exposed if this best practice is not established: High\nImplementation guidance\nDetailed billing information such as hourly granularity in cost management tools allow \norganizations to track their consumptions with further details and help them to identify some of \nthe cost increase reasons. These data sources provide the most accurate view of cost and usage \nacross your entire organization.\nYou can use AWS Data Exports to create exports of the AWS Cost and Usage Report (CUR) 2.0. \nThis is the new and recommended way to receive your detailed cost and usage data from AWS. It \nprovides daily or hourly usage granularity, rates, costs, and usage attributes for all chargeable AWS \nservices (the same information as CUR), along with some improvements. All possible dimensions \nare in the CUR such as tagging, location, resource attributes, and account IDs.\nThere are three export types based on the type of export you want to create: a standard data \nexport, ",
+            "metadata": {
+              "index": 2202,
+              "pages": [
+                851,
+                851
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2099",
+            "score": 0.4238837036018285,
+            "text": "ction with \nthe cloud bill. This will typically be CFOs, ﬁnancial controllers, ﬁnancial planners, business \nanalysts, procurement, and sourcing. Technology members will typically be product and \napplication owners, technical managers and representatives from all teams that build on the \ncloud. Other members may include business unit owners, such as marketing, that will inﬂuence \nusage of products, and third parties such as consultants, to achieve alignment to your goals and \nmechanisms, and to assist with reporting.\n• Deﬁne topics for discussion: Deﬁne the topics that are common across the teams, or will need \na shared understanding. Follow cost from that time it is created, until the bill is paid. Note any \nmembers involved, and organizational processes that are required to be applied. Understand \neach step or process it goes through and the associated information, such as pricing models \navailable, tiered pricing, discount models, budgeting, and ﬁnancial requirements.\n• Establish reg",
+            "metadata": {
+              "index": 2099,
+              "pages": [
+                815,
+                815
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2132",
+            "score": 0.4228769179135939,
+            "text": "ly Cost and Usage Budgets\n• AWS Cost Anomaly Detection\nRelated examples:\n• AWS Cost Anomaly Detection Alert with Slack\nCOST01-BP07 Keep up-to-date with new service releases\nConsult regularly with experts or AWS Partners to consider which services and features provide \nlower cost. Review AWS blogs and other information sources.\nPractice Cloud Financial Management 820",
+            "metadata": {
+              "index": 2132,
+              "pages": [
+                825,
+                825
+              ],
+              "size": 368,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e176f570bfefb5a0b9c11"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:41:19.001Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Generate Terraform fix",
+      "_id": {
+        "$oid": "6a5e1785570bfefb5a0b9c21"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:41:41.668Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain specific Terraform code or examples to generate a Terraform fix. It discusses principles of immutable infrastructure, deployment strategies, and automation but does not provide concrete Terraform configurations or fixes.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-439",
+            "score": 0.38326006369109733,
+            "text": "AWS Well-Architected Framework Framework\nExamples of solutions published by AWS include Customizations for AWS Control Tower (CfCT)\nand AWS Control Tower Account Factory for Terraform (AFT).\n3. Your organization applies the same principles of testing, promoting code, and policy changes \nfor the landing zone through environments on your path to production. This strategy provides a \nstable and secure landing zone environment for your application and workload teams.\nCommon anti-patterns:\n• You are performing development in a shared development environment and another developer \noverwrites your code changes.\n• The restrictive security controls on your shared development environment are preventing you \nfrom experimenting with new services and features.\n• You perform load testing on your production systems and cause an outage for your users.\n• A critical error resulting in data loss has occurred in production. In your production environment, \nyou attempt to recreate the conditions that lead ",
+            "metadata": {
+              "index": 439,
+              "pages": [
+                169,
+                169
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1570",
+            "score": 0.37730858145688334,
+            "text": "AWS Well-Architected Framework Framework\nREL08-BP04 Deploy using immutable infrastructure\nImmutable infrastructure is a model that mandates that no updates, security patches, or \nconﬁguration changes happen in-place on production workloads. When a change is needed, the \narchitecture is built onto new infrastructure and deployed into production.\nFollow an immutable infrastructure deployment strategy to increase the reliability, consistency, \nand reproducibility in your workload deployments.\nDesired outcome: With immutable infrastructure, no in-place modiﬁcations are allowed to run \ninfrastructure resources within a workload. Instead, when a change is needed, a new set of updated \ninfrastructure resources containing all the necessary changes are deployed in parallel to your \nexisting resources. This deployment is validated automatically, and if successful, traﬃc is gradually \nshifted to the new set of resources.\nThis deployment strategy applies to software updates, security patches, infr",
+            "metadata": {
+              "index": 1570,
+              "pages": [
+                598,
+                598
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1581",
+            "score": 0.3575210732678833,
+            "text": "AWS Well-Architected Framework Framework\n• Blue/green deployments: the Blue/Green Deployments on AWS whitepaper describes example \ntechniques to implement blue/green deployment strategies.\n• Detect conﬁguration or state drifts. For more detail, see Detecting unmanaged conﬁguration \nchanges to stacks and resources.\nResources\nRelated best practices:\n• REL08-BP05 Deploy changes with automation\nRelated documents:\n• Automating safe, hands-oﬀ deployments\n• Leveraging AWS CloudFormation to create an immutable infrastructure at Nubank\n• Infrastructure as code\n• Implementing an alarm to automatically detect drift in AWS CloudFormation stacks\nRelated videos:\n• AWS re:Invent 2020: Reliability, consistency, and conﬁdence through immutability\nREL08-BP05 Deploy changes with automation\nDeployments and patching are automated to eliminate negative impact.\nMaking changes to production systems is one of the largest risk areas for many organizations. We \nconsider deployments a ﬁrst-class problem to be sol",
+            "metadata": {
+              "index": 1581,
+              "pages": [
+                602,
+                602
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1002",
+            "score": 0.35483075035531925,
+            "text": "o establish trustworthiness in AWS compute environments. \n Automated remediations are initiated when non-compliant resources are detected. \nCommon anti-patterns:\n• Following the practice of immutable infrastructure, but not having a solution in place for \nemergency patching or replacement of production systems.\n• Using automation to ﬁx misconﬁgured resources, but not having a manual override mechanism \nin place.  Situations may arise where you need to adjust the requirements, and you may need to \nsuspend automations until you make these changes.\nBeneﬁts of establishing this best practice: Automation can reduce the risk of unauthorized access \nand use of your compute resources.  It helps to prevent misconﬁgurations from making their way \ninto production environments, and detecting and ﬁxing misconﬁgurations should they occur. \n Automation also helps to detect unauthorized access and use of compute resources to reduce your \ntime to respond.  This in turn can reduce the overall scope of i",
+            "metadata": {
+              "index": 1002,
+              "pages": [
+                385,
+                385
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1573",
+            "score": 0.3459175209894102,
+            "text": "AWS Well-Architected Framework Framework\nLevel of risk exposed if this best practice is not established: Medium\nImplementation guidance\nAutomation\nWhen deﬁning an immutable infrastructure deployment strategy, it is recommended to use\nautomation as much as possible to increase reproducibility and minimize the potential of human \nerror. For more detail, see REL08-BP05 Deploy changes with automation and Automating safe, \nhands-oﬀ deployments.\nWith infrastructure as code (IaC), infrastructure provisioning, orchestration, and deployment steps \nare deﬁned in a programmatic, descriptive, and declarative way and stored in a source control \nsystem. Leveraging infrastructure as code makes it simpler to automate infrastructure deployment \nand helps achieve infrastructure immutability.\nDeployment patterns\nWhen a change in the workload is required, the immutable infrastructure deployment strategy \nmandates that a new set of infrastructure resources is deployed, including all necessary changes. \nIt ",
+            "metadata": {
+              "index": 1573,
+              "pages": [
+                599,
+                599
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1785570bfefb5a0b9c22"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:41:41.668Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T12:13:13.930Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T12:41:41.670Z"
+  },
+  "__v": 7
+},
+{
+  "_id": {
+    "$oid": "6a5e17dc236452bf2a094db2"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "Detect drift from diagram",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Detect drift from diagram",
+      "_id": {
+        "$oid": "6a5e17dc236452bf2a094db4"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:43:08.920Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "This is a real-time RAG response from IAAC_agent_python based on the local documentation available in the workspace. Key context: # high level design: infraflow ## 1. purpose infraflow is an ai-powered iaas and cloud infrastructure automation platform. it allows users to visually design aws architecture with a node-based builder, connect an aws account, sync live account insights, generate terraform, and deploy supported aws resources to the connected account. the product has three main surfaces: - public landing page for marketing and navigation. - authenticated dashboard for aws insights, visual infrastructure design, terraform export, and deployment. - node.js backend api; # low level design: infraflow ## 1. technology stack frontend: - react. - typescript. - vite. - react flow. - zustand. - lucide react icons. - tailwind css and custom css. backend: - node.js. - express. - mongodb with mongoose. - zod validation. - jwt authentication. - aws sdk v3. - terraform cli. ## 2. source layout ```text src/ auth/ components/ edges/ nodes/ dashboard/ data/ landing/ store/ utils/ iaas backend/src/ config/ constants/ controllers/ middleware/ models/ routes/ services/ utils/ ``` ##",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8001",
+        "contexts": [
+          {
+            "title": "HLD.md",
+            "score": 8,
+            "snippet": "# high level design: infraflow ## 1. purpose infraflow is an ai-powered iaas and cloud infrastructure automation platform. it allows users to visually design aws architecture with a node-based builder, connect an aws account, sync live account insights, generate terraform, and deploy supported aws resources to the connected account. the product has three main surfaces: - public landing page for marketing and navigation. - authenticated dashboard for aws insights, visual infrastructure design, terraform export, and deployment. - node.js backend api"
+          },
+          {
+            "title": "LLD.md",
+            "score": 4,
+            "snippet": "# low level design: infraflow ## 1. technology stack frontend: - react. - typescript. - vite. - react flow. - zustand. - lucide react icons. - tailwind css and custom css. backend: - node.js. - express. - mongodb with mongoose. - zod validation. - jwt authentication. - aws sdk v3. - terraform cli. ## 2. source layout ```text src/ auth/ components/ edges/ nodes/ dashboard/ data/ landing/ store/ utils/ iaas backend/src/ config/ constants/ controllers/ middleware/ models/ routes/ services/ utils/ ``` ##"
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e17dc236452bf2a094db5"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:43:08.922Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T12:43:08.870Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T12:43:08.925Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a5e18ca236452bf2a094dea"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e18ca236452bf2a094dec"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:47:06.417Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "This is a real-time RAG response from IAAC_agent_python based on the local documentation available in the workspace. Key context: # high level design: infraflow ## 1. purpose infraflow is an ai-powered iaas and cloud infrastructure automation platform. it allows users to visually design aws architecture with a node-based builder, connect an aws account, sync live account insights, generate terraform, and deploy supported aws resources to the connected account. the product has three main surfaces: - public landing page for marketing and navigation. - authenticated dashboard for aws insights, visual infrastructure design, terraform export, and deployment. - node.js backend api; # low level design: infraflow ## 1. technology stack frontend: - react. - typescript. - vite. - react flow. - zustand. - lucide react icons. - tailwind css and custom css. backend: - node.js. - express. - mongodb with mongoose. - zod validation. - jwt authentication. - aws sdk v3. - terraform cli. ## 2. source layout ```text src/ auth/ components/ edges/ nodes/ dashboard/ data/ landing/ store/ utils/ iaas backend/src/ config/ constants/ controllers/ middleware/ models/ routes/ services/ utils/ ``` ##",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8001",
+        "contexts": [
+          {
+            "title": "HLD.md",
+            "score": 2,
+            "snippet": "# high level design: infraflow ## 1. purpose infraflow is an ai-powered iaas and cloud infrastructure automation platform. it allows users to visually design aws architecture with a node-based builder, connect an aws account, sync live account insights, generate terraform, and deploy supported aws resources to the connected account. the product has three main surfaces: - public landing page for marketing and navigation. - authenticated dashboard for aws insights, visual infrastructure design, terraform export, and deployment. - node.js backend api"
+          },
+          {
+            "title": "LLD.md",
+            "score": 2,
+            "snippet": "# low level design: infraflow ## 1. technology stack frontend: - react. - typescript. - vite. - react flow. - zustand. - lucide react icons. - tailwind css and custom css. backend: - node.js. - express. - mongodb with mongoose. - zod validation. - jwt authentication. - aws sdk v3. - terraform cli. ## 2. source layout ```text src/ auth/ components/ edges/ nodes/ dashboard/ data/ landing/ store/ utils/ iaas backend/src/ config/ constants/ controllers/ middleware/ models/ routes/ services/ utils/ ``` ##"
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e18ca236452bf2a094ded"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:47:06.417Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T12:47:06.406Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T12:47:06.419Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a5e1abd3c244658bb434647"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e1ac03c244658bb434649"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:55:28.382Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.28266191482543945,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "index": 7,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 272,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.2643674612045288,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "size": 313,
+              "index": 1492,
+              "pages": [
+                570,
+                570
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.25030070543289185,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "pages": [
+                3,
+                3
+              ],
+              "index": 5
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.2495976686477661,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "pages": [
+                3,
+                3
+              ],
+              "index": 4,
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1476",
+            "score": 0.24514496326446533,
+            "text": "ng requests or processes. You can also scan this data \nin real time for anomalous patterns using solutions such as CloudWatch Logs anomaly detection. \nThese insights can be placed on dashboards to keep them organized according to your needs and \npreferences.\nChange management 559",
+            "metadata": {
+              "index": 1476,
+              "size": 280,
+              "pages": [
+                564,
+                564
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1ac03c244658bb43464a"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:55:28.385Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e1b8b3c244658bb4346a5"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:58:51.966Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.28266191482543945,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "index": 7,
+              "size": 272,
+              "pages": [
+                3,
+                3
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.2643674612045288,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "pages": [
+                570,
+                570
+              ],
+              "size": 313,
+              "index": 1492,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.25030070543289185,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "size": 1000,
+              "index": 5,
+              "pages": [
+                3,
+                3
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.2495976686477661,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "index": 4
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1476",
+            "score": 0.24514496326446533,
+            "text": "ng requests or processes. You can also scan this data \nin real time for anomalous patterns using solutions such as CloudWatch Logs anomaly detection. \nThese insights can be placed on dashboards to keep them organized according to your needs and \npreferences.\nChange management 559",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "index": 1476,
+              "size": 280,
+              "pages": [
+                564,
+                564
+              ]
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1b8b3c244658bb4346a6"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:58:51.967Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "what is this",
+      "_id": {
+        "$oid": "6a5e1ba43c244658bb4346ae"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:59:16.750Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The retrieved context refers to the \"AWS Well-Architected Framework,\" which is a document provided by Amazon Web Services (AWS). It outlines best practices and guidelines for building secure, high-performing, resilient, and efficient infrastructure for applications. The document includes notices about the responsibilities of customers regarding the information provided and clarifies that it does not create any commitments or assurances from AWS. It also mentions that AWS products and services are provided \"as is\" without warranties. The framework is intended for informational purposes and is subject to change. For the latest terminology, it refers to an AWS glossary. \n\nIf you need more specific information about the framework or its components, please provide additional context or details.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.23677223920822144,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                3,
+                3
+              ],
+              "index": 7,
+              "size": 272
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2577",
+            "score": 0.22436344623565674,
+            "text": "AWS Well-Architected Framework Framework\nNotices\nCustomers are responsible for making their own independent assessment of the information in \nthis document. This document: (a) is for informational purposes only, (b) represents current AWS \nproduct oﬀerings and practices, which are subject to change without notice, and (c) does not create \nany commitments or assurances from AWS and its aﬃliates, suppliers or licensors. AWS products or \nservices are provided “as is” without warranties, representations, or conditions of any kind, whether \nexpress or implied. The responsibilities and liabilities of AWS to its customers are controlled by \nAWS agreements, and this document is not part of, nor does it modify, any agreement between \nAWS and its customers.\nCopyright © 2024 Amazon Web Services, Inc. or its aﬃliates.\n996\n\nAWS Well-Architected Framework Framework\nAWS Glossary\nFor the latest AWS terminology, see the AWS glossary in the AWS Glossary Reference.\n997",
+            "metadata": {
+              "size": 964,
+              "index": 2577,
+              "pages": [
+                1001,
+                1002
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-16",
+            "score": 0.20852130651474,
+            "text": "............................................................... 945\nData ....................................................................................................................................................... 957\nHardware and services ...................................................................................................................... 975\nProcess and culture ............................................................................................................................ 985\nNotices .......................................................................................................................................... 996\nAWS Glossary ............................................................................................................................... 997\nv",
+            "metadata": {
+              "index": 16,
+              "pages": [
+                5,
+                5
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 820
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-982",
+            "score": 0.1999914050102234,
+            "text": " application libraries, only from \ntrusted registries and verify their signatures. These are stored in private registries for your build \nInfrastructure protection 372",
+            "metadata": {
+              "pages": [
+                377,
+                377
+              ],
+              "size": 167,
+              "index": 982,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-428",
+            "score": 0.19960767030715942,
+            "text": "ards is a part \nof continuous improvement.\n• OPS11-BP04 Perform knowledge management - As part of your knowledge management \npractice, document and share design standards.\nPrepare 159",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "size": 183,
+              "pages": [
+                164,
+                164
+              ],
+              "index": 428
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1ba43c244658bb4346af"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:59:16.751Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "how to use it",
+      "_id": {
+        "$oid": "6a5e1bbc3c244658bb4346b9"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:59:40.370Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain specific instructions on how to use a particular tool or service. It discusses various best practices and resources related to AWS services and workload management, but does not provide a direct \"how to\" guide. For detailed usage instructions, you may need to refer to specific documentation or resources related to the tool or service in question.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-191",
+            "score": 0.30705469846725464,
+            "text": "s to measure the sustainability impact of your workload more \naccurately, as vendors deliver features to meet their own sustainability goals.\nIncrease utilization of build environments: Use automation and infrastructure as code to bring \nup pre-production environments when needed and take them down when not used. A common \npattern is to schedule periods of availability that coincide with the working hours of your \ndevelopment team members. Hibernation is a useful tool to preserve state and rapidly bring \ninstances online only when needed. Use instance types with burst capacity, Spot Instances, elastic \ndatabase services, containers, and other technologies to align development and test capacity with \nuse.\nBest practices 62",
+            "metadata": {
+              "pages": [
+                67,
+                67
+              ],
+              "index": 191,
+              "size": 731,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2159",
+            "score": 0.29693835973739624,
+            "text": "s as a guide.\n• Deﬁne the actions: Using the locations, resources, and users identiﬁed previously, deﬁne \nthe actions that are required by each to achieve the workload outcomes over its life time \nExpenditure and usage awareness 829",
+            "metadata": {
+              "index": 2159,
+              "pages": [
+                834,
+                834
+              ],
+              "size": 232,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-538",
+            "score": 0.2833746075630188,
+            "text": "our \nlog data.\nc. Use CloudWatch Logs compare (diﬀ) to perform diﬀerential analysis between diﬀerent time \nperiods or across diﬀerent log groups. Use this capability to pinpoint changes and assess their \nimpacts on your system's performance or behavior.\nOperate 202",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "size": 265,
+              "pages": [
+                207,
+                207
+              ],
+              "index": 538
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-618",
+            "score": 0.28302431106567383,
+            "text": "ch to aggregate and display metrics from various AWS services and\nquery metrics from other data sources, creating a uniﬁed view of your system's health and \nbusiness metrics.\n• Use features like CloudWatch Logs Insights to query and visualize log data from diﬀerent \napplications and services.\nOperate 237",
+            "metadata": {
+              "size": 305,
+              "index": 618,
+              "pages": [
+                242,
+                242
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2406",
+            "score": 0.28281915187835693,
+            "text": "es to ﬁnd out real world applications of AWS services and customer stories. \nYou can also watch the Back to Basics video series that explains, examines, and breaks down basic \ncloud architecture pattern best practices. Another source is How to Build This videos, which are \ndesigned to assist people with big ideas on how to bring their minimum viable product (MVP) to \nlife using AWS services. It is a way for builders from all over the world who have a strong idea to \ngain architectural guidance from experienced AWS Solutions Architects. Finally, you can review the\nGetting Started resource materials, which has step by step tutorials.\nBefore starting your review process, follow your business’ requirements for the workload, \nsecurity and data privacy requirements in order to use speciﬁc service or Region and performance \nrequirements while following your agreed review process.\nImplementation steps\nOptimize over time 923",
+            "metadata": {
+              "pages": [
+                928,
+                928
+              ],
+              "index": 2406,
+              "size": 929,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1bbc3c244658bb4346ba"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T12:59:40.370Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Find idle resources",
+      "_id": {
+        "$oid": "6a5e1d823c244658bb434702"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T13:07:14.363Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "To find idle resources, you can utilize the following strategies based on the retrieved context:\n\n1. **Monitor CloudWatch Metrics**: Use metrics such as CPUUtilization to identify instances that are idle or under-utilized. This can help you pinpoint resources that are not being effectively used (Source 2).\n\n2. **Regular Rightsizing Checks**: For stable workloads, regularly check AWS rightsizing tools like AWS Compute Optimizer to identify opportunities for optimizing and right-sizing instances (Source 2).\n\n3. **Identify Low or No Utilization Periods**: Look for periods of low or no utilization and scale down resources accordingly to remove excess capacity and improve efficiency (Source 3).\n\n4. **Revise Architecture and Patterns**: Analyze your architecture to consolidate under-utilized components and retire those that are no longer needed. This can help increase overall utilization and reduce idle resources (Source 4).\n\n5. **Monitor Workload Activity**: Continuously monitor the activity of workload components to identify changes in utilization, allowing you to remove or refactor components that have low or no use (Source 4).\n\n6. **Decommission Unused Assets**: Before decommissioning, ensure that the resources identified are indeed not being used by the organization (Source 5).\n\nBy implementing these strategies, you can effectively identify and manage idle resources in your cloud environment.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2441",
+            "score": 0.49934422969818115,
+            "text": " creation and maintenance of unused assets\nDecommission unused assets in your workload to reduce the number of cloud resources required to \nsupport your demand and minimize waste.\nAlignment to demand 936",
+            "metadata": {
+              "size": 203,
+              "source": "wellarchitected-framework.pdf",
+              "index": 2441,
+              "pages": [
+                941,
+                941
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2539",
+            "score": 0.48140883445739746,
+            "text": " CloudWatch metrics such as\nCPUUtilization to identify if the instance is idle or under-utilized.\n• For stable workloads, check AWS rightsizing tools such as AWS Compute Optimizer at regular \nintervals to identify opportunities to optimize and right-size the instances. For further \nexamples and recommendations, see the following labs:\n• Well-Architected Lab - Rightsizing Recommendations\n• Well-Architected Lab - Rightsizing with Compute Optimizer\n• Well-Architected Lab - Optimize Hardware Patterns and Observice Sustainability KPIs\nResources\nRelated documents:\n• Optimizing your AWS Infrastructure for Sustainability, Part I: Compute\n• AWS Graviton\n• Amazon EC2 DL1\n• Amazon EC2 Capacity Reservation Fleets\n• Amazon EC2 Spot Fleet\n• Functions: Lambda Function Conﬁguration\n• Attribute-based instance type selection for Amazon EC2 Fleet\n• Building Sustainable, Eﬃcient, and Cost-Optimized Applications on AWS\n• How the Contino Sustainability Dashboard Helps Customers Optimize Their Carbon Footpri",
+            "metadata": {
+              "size": 1000,
+              "pages": [
+                985,
+                985
+              ],
+              "index": 2539,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2430",
+            "score": 0.4714586138725281,
+            "text": "rverless) that are natively scaling by design or provide auto \nscaling as a feature.\nIdentify periods of low or no utilization and scale resources to remove excess capacity and improve \neﬃciency.\nAlignment to demand 932",
+            "metadata": {
+              "pages": [
+                937,
+                937
+              ],
+              "size": 219,
+              "index": 2430,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-180",
+            "score": 0.46518802642822266,
+            "text": ". Components might become idle \nfrom lack of use because of changes in user behavior over time. Revise patterns and architect \nure to consolidate under-utilized components to increase overall utilization. Retire component \ns that are no longer required. Understand the performance of your workload components, and \noptimize the components that consume the most resources. Be aware of the devices that your \ncustomers use to access your services, and implement patterns to minimize the need for device \nupgrades.\nOptimize software and architecture for asynchronous and scheduled jobs: Use eﬃcient software \ndesigns and architectures to minimize the average resources required per unit of work. Implement \nmechanisms that result in even utilization of components to reduce resources that are idle between \ntasks and minimize the impact of load spikes.\nRemove or refactor workload components with low or no use: Monitor workload activity to identify \nchanges in utilization of individual components over",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "index": 180,
+              "pages": [
+                64,
+                64
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2248",
+            "score": 0.46377265453338623,
+            "text": "ps. \nBefore decommissioning resources, verify that resources you have identiﬁed for decommissioning \nare not being used by the organization.\nResource decommissioning ﬂow.\nResources\nRelated documents:\nExpenditure and usage awareness 863",
+            "metadata": {
+              "size": 235,
+              "pages": [
+                868,
+                868
+              ],
+              "index": 2248,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e1d823c244658bb434703"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T13:07:14.365Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a5e29e63c244658bb4349ca"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:00:06.426Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-7",
+            "score": 0.28266191482543945,
+            "text": "........................................................................................................... 55\nDeﬁnition ................................................................................................................................................ 56\niii",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "index": 7,
+              "size": 272,
+              "pages": [
+                3,
+                3
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1492",
+            "score": 0.2643674612045288,
+            "text": "ing)\nUse automation to take action when an event is detected, for example, to replace failed \ncomponents.\nAutomated real-time processing of alarms is implemented so that systems can take quick \ncorrective action and attempt to prevent failures or degraded service when alarms are triggered. \nChange management 565",
+            "metadata": {
+              "pages": [
+                570,
+                570
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 1492,
+              "size": 313
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-5",
+            "score": 0.25030070543289185,
+            "text": "..................................................................................... 39\nDesign principles ................................................................................................................................... 40\nDeﬁnition ................................................................................................................................................ 40\nBest practices ......................................................................................................................................... 41\nResources ................................................................................................................................................ 46\nCost optimization ....................................................................................................................................... 46\nDesign principles ...............................................................................................................",
+            "metadata": {
+              "pages": [
+                3,
+                3
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 5,
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-4",
+            "score": 0.2495976686477661,
+            "text": "iability ...................................................................................................................................................... 32\nDesign principles ................................................................................................................................... 32\nDeﬁnition ................................................................................................................................................ 33\nBest practices ......................................................................................................................................... 34\nResources ................................................................................................................................................ 39\nPerformance eﬃciency .............................................................................................................................. 39\nDesign principles ...........................................",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "index": 4,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1476",
+            "score": 0.24514496326446533,
+            "text": "ng requests or processes. You can also scan this data \nin real time for anomalous patterns using solutions such as CloudWatch Logs anomaly detection. \nThese insights can be placed on dashboards to keep them organized according to your needs and \npreferences.\nChange management 559",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                564,
+                564
+              ],
+              "size": 280,
+              "index": 1476
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e29e63c244658bb4349cb"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:00:06.427Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "who are you",
+      "_id": {
+        "$oid": "6a5e29f23c244658bb4349db"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:00:18.947Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain an answer to the question \"who are you.\"",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-737",
+            "score": 0.27870750427246094,
+            "text": "ure AWS \nworkloads.\n• Human identities: The human identities that require access to your AWS environments and \napplications can be categorized into three groups: workforce, third parties, and users.\nThe workforce group includes administrators, developers, and operators who are members of \nyour organization. They need access to manage, build, and operate your AWS resources.\nThird parties are external collaborators, such as contractors, vendors, or partners. They interact \nwith your AWS resources as part of their engagement with your organization.\nUsers are the consumers of your applications. They access your AWS resources through web \nbrowsers, client applications, mobile apps, or interactive command-line tools.\n• Machine identities: Your workload applications, operational tools, and components require an \nidentity to make requests to AWS services, such as reading data. These identities also include \nIdentity and access management 285",
+            "metadata": {
+              "size": 947,
+              "source": "wellarchitected-framework.pdf",
+              "index": 737,
+              "pages": [
+                290,
+                290
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-771",
+            "score": 0.23457974195480347,
+            "text": "(such as assigning access based on a user's group \nmembership or attributes). Your workforce users sign in to the central identity provider and \nfederate (single sign-on) to internal and external applications, removing the need for users to \nremember multiple credentials. Your identity provider is integrated with your human resources \n(HR) systems so that personnel changes are automatically synchronized to your identity provider. \nFor example, if someone leaves your organization, you can automatically revoke access to \nfederated applications and systems (including AWS). You have enabled detailed audit logging in \nyour identity provider and are monitoring these logs for unusual user behavior.\nCommon anti-patterns:\n• You do not use federation and single-sign on. Your workforce users create separate user accounts \nand credentials in multiple applications and systems.\n• You have not automated the lifecycle of identities for workforce users, such as by integrating \nyour identity provider wi",
+            "metadata": {
+              "pages": [
+                304,
+                304
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "index": 771
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-778",
+            "score": 0.22810566425323486,
+            "text": "icy (SCP) to your organization that helps prevent the creation of new IAM users \nand groups, enforcing that access to AWS is via federated identities.\nNote\nYou are responsible for handling the rotation of SCIM access tokens as described in the\nAutomatic provisioning documentation. Additionally, you are responsible for rotating the \ncertiﬁcates supporting your identity federation.\nGuidance for users of your applications You can manage the identities of users of your \napplications, such as a mobile app, using Amazon Cognito as your centralized identity provider. \nAmazon Cognito enables authentication, authorization, and user management for your web and \nmobile apps. Amazon Cognito provides an identity store that scales to millions of users, supports \nsocial and enterprise identity federation, and oﬀers advanced security features to help protect \nyour users and business. You can integrate your custom web or mobile application with Amazon \nCognito to add user authentication and access cont",
+            "metadata": {
+              "pages": [
+                306,
+                306
+              ],
+              "index": 778,
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-751",
+            "score": 0.227341890335083,
+            "text": "AWS Well-Architected Framework Framework\nFor third-party identities:\n• When granting third parties, such as software as a service (SaaS) providers, access to resources in \nyour AWS account, you can use cross-account roles and resource-based policies. Additionally, you \ncan use the Amazon Cognito OAuth 2.0 grant client credentials ﬂow for B2B SaaS customers or \npartners.\nUser identities that access your AWS resources through web browsers, client applications, mobile \napps, or interactive command-line tools:\n• If you need to grant applications for consumers or customers access to your AWS resources, you \ncan use Amazon Cognito identity pools or Amazon Cognito user pools to provide temporary \ncredentials. The permissions for the credentials are conﬁgured through IAM roles. You can also \ndeﬁne a separate IAM role with limited permissions for guest users who are not authenticated.\nMachine identities\nFor machine identities, you might need to use long-term credentials. In these cases, you sho",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "index": 751,
+              "size": 1000,
+              "pages": [
+                296,
+                296
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-86",
+            "score": 0.22643506526947021,
+            "text": "AWS Well-Architected Framework Framework\nSEC 2:  How do you manage identities for people and machines?\nThere are two types of identities you need to manage when approaching operating secure AWS \nworkloads. Understanding the type of identity you need to manage and grant access helps you \nverify the right identities have access to the right resources under the right conditions.\nHuman Identities: Your administrators, developers, operators, and end users require an identity \nto access your AWS environments and applications. These are members of your organization, or \nexternal users with whom you collaborate, and who interact with your AWS resources via a web \nbrowser, client application, or interactive command line tools.\nMachine Identities: Your service applications, operational tools, and workloads require an \nidentity to make requests to AWS services, for example, to read data. These identities include \nmachines running in your AWS environment such as Amazon EC2 instances or AWS Lambda ",
+            "metadata": {
+              "pages": [
+                29,
+                29
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 86,
+              "size": 1000
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e29f23c244658bb4349dc"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:00:18.947Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "waht is ec2",
+      "_id": {
+        "$oid": "6a5e2a5f3c244658bb4349ee"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:02:07.987Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain a specific definition of \"EC2.\" However, it mentions Amazon EC2 in relation to various services and features, such as Amazon EBS (Elastic Block Store) and EC2 instance types, indicating that it is a service related to cloud computing on AWS (Amazon Web Services) [Source 2][Source 4].",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1989",
+            "score": 0.5700464844703674,
+            "text": "is a network \ninterface for Amazon EC2 instances that \nallows you to run workloads requiring high \nlevels of internode communications at scale \non AWS.\nAmazon EBS-optimized instances use an \noptimized conﬁguration stack and provide \nadditional, dedicated capacity to increase the \nAmazon EBS I/O.\nResources\nRelated documents:\n• Application Load Balancer\nNetworking and content delivery 765",
+            "metadata": {
+              "index": 1989,
+              "size": 389,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                770,
+                770
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2497",
+            "score": 0.5579496622085571,
+            "text": "orage service \ndesigned for Amazon Elastic \nCompute Cloud (Amazon \nEC2). Amazon EBS includes \nSSD-backed storage for \ntransactional, IOPS-intensive \nworkloads and HDD-backe \nd storage for throughput-\nintensive workloads.\nData 961",
+            "metadata": {
+              "index": 2497,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                966,
+                966
+              ],
+              "size": 229
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2307",
+            "score": 0.5244831442832947,
+            "text": "ed and access a broader range of capacity with Amazon EC2 \nSpot Instances. Amazon EC2 Fleet and Amazon EC2 Auto Scaling select and launch instances \nthat ﬁt the speciﬁed attributes, removing the need to manually pick instance types. For storage \nresources, you can use the Amazon S3 Intelligent Tiering and Amazon EFS Infrequent Access\nfeatures, which allow you to select storage classes automatically that deliver automatic storage \ncost savings when data access patterns change, without performance impact or operational \noverhead.\nResources\nRelated documents:\n• AWS Auto Scaling\n• AWS Right-Sizing\n• AWS Compute Optimizer\n• Amazon CloudWatch features\n• CloudWatch Getting Set Up\n• CloudWatch Publishing Custom Metrics\nCost-eﬀective resources 886",
+            "metadata": {
+              "size": 748,
+              "pages": [
+                891,
+                891
+              ],
+              "index": 2307,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1918",
+            "score": 0.5075204372406006,
+            "text": " with AWS\n• Amazon EC2 Instance Types\n• Amazon ECS Containers: Amazon ECS Container Instances\n• Amazon EKS Containers: Amazon EKS Worker Nodes\n• Functions: Lambda Function Conﬁguration\n• Processor State Control for Your Amazon EC2 Instance\n• Deep Dive on Amazon ECS Cluster Auto Scaling\n• Introducing Karpenter – An Open-Source High-Performance Kubernetes Cluster Autoscaler\nRelated videos:\n• AWS re:Invent 2023 – AWS Graviton: The best price performance for your AWS workloads\n• AWS re:Invent 2023 – New Amazon EC2 generative AI capabilities in AWS Management Console\n• AWS re:Invent 2023 – What’s new with Amazon EC2\n• AWS re:Invent 2023 – Smart savings: Amazon EC2 cost-optimization strategies\n• AWS re:Invent 2021 – Powering next-gen Amazon EC2: Deep dive on the Nitro System\n• AWS re:Invent 2019 – Amazon EC2 foundations\nRelated examples:\nCompute and hardware 731",
+            "metadata": {
+              "size": 868,
+              "index": 1918,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                736,
+                736
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2361",
+            "score": 0.49066638946533203,
+            "text": "ws you to establish a secure and private connection between your private \nnetwork and the AWS global network. It is ideal for small oﬃces or business partners because it \nprovides simpliﬁed connectivity, and it is a fully managed and elastic service.\n• VPC Endpoints allow connectivity between AWS services over private networking and can be \nused to reduce public data transfer and NAT gateway costs. Gateway VPC endpoints have no \nhourly charges, and support Amazon S3 and Amazon DynamoDB. Interface VPC endpoints are \nprovided by AWS PrivateLink and have an hourly fee and per-GB usage cost.\nCost-eﬀective resources 906",
+            "metadata": {
+              "index": 2361,
+              "source": "wellarchitected-framework.pdf",
+              "size": 622,
+              "pages": [
+                911,
+                911
+              ]
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e2a5f3c244658bb4349ef"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:02:07.988Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "what is Monitor CloudWatch Metrics",
+      "_id": {
+        "$oid": "6a5e2afa3c244658bb434a03"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:04:42.042Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Monitoring CloudWatch Metrics involves using Amazon CloudWatch to collect, visualize, and analyze metrics from various AWS services and applications. Key features include:\n\n1. **Dashboards**: You can configure CloudWatch dashboards to visualize metrics and compare them over time, which helps in understanding system performance and health.\n2. **Percentiles and Anomaly Detection**: Utilizing percentiles provides insights into metric distribution, while anomaly detection helps identify unusual patterns without relying on static thresholds.\n3. **Cross-Account Observability**: This feature allows monitoring applications that span multiple accounts within a region, enhancing troubleshooting capabilities.\n4. **Metric Insights and Math**: CloudWatch Metric Insights enables querying and analyzing metric data across accounts and regions, while Metric Math allows for transformations and calculations on metrics for deeper insights.\n5. **Default Metrics**: AWS services generate default metrics that can be collected to understand workload dependencies and performance, and you can also create custom metrics as needed.\n\nOverall, these capabilities help in refining alerting strategies and improving operational reliability by focusing on critical metrics and trends [Source 2][Source 3][Source 4].",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-618",
+            "score": 0.6069012880325317,
+            "text": "ch to aggregate and display metrics from various AWS services and\nquery metrics from other data sources, creating a uniﬁed view of your system's health and \nbusiness metrics.\n• Use features like CloudWatch Logs Insights to query and visualize log data from diﬀerent \napplications and services.\nOperate 237",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                242,
+                242
+              ],
+              "size": 305,
+              "index": 618
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-532",
+            "score": 0.5892153978347778,
+            "text": "e Amazon CloudWatch for a centralized view and deep-dive \nanalysis.\na. Conﬁgure CloudWatch dashboards to visualize your metrics and compare them over time.\nb. Use percentiles in CloudWatch to get a clear view of metric distribution, which can help in \ndeﬁning SLAs and understanding outliers.\nc. Set up CloudWatch anomaly detection to identify unusual patterns without relying on static \nthresholds.\nd. Implement CloudWatch cross-account observability to monitor and troubleshoot applications \nthat span multiple accounts within a Region.\ne. Use CloudWatch Metric Insights to query and analyze metric data across accounts and \nRegions, identifying trends and anomalies.\nf. Apply CloudWatch Metric Math to transform, aggregate, or perform calculations on your \nmetrics for deeper insights.\n3. Employ Amazon DevOps Guru: Incorporate Amazon DevOps Guru for its machine learning-\nenhanced anomaly detection to identify early signs of operational issues for your serverless \napplications and remediate the",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "index": 532,
+              "size": 1000,
+              "pages": [
+                205,
+                205
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1465",
+            "score": 0.5735071897506714,
+            "text": "AWS Well-Architected Framework Framework\nto log workload speciﬁc data. Collect metrics for CPU, network I/O, and disk I/O averages from \nservices such as Amazon ECS, Amazon EKS, Amazon EC2, Elastic Load Balancing, AWS Auto \nScaling, and Amazon EMR. See AWS Services That Publish CloudWatch Metrics for a list of AWS \nservices that publish metrics to CloudWatch.\n2. Review all default metrics and explore any data collection gaps. Every service generates \ndefault metrics. Collecting default metrics allows you to better understand the dependencies \nbetween workload components, and how component reliability and performance aﬀect the \nworkload. You can also create and publish your own metrics to CloudWatch using the AWS CLI or \nan API.\n3. Evaluate all the metrics to decide which ones to alert on for each AWS service in your \nworkload. You may choose to select a subset of metrics that have a major impact on workload \nreliability. Focusing on critical metrics and threshold allows you to reﬁne th",
+            "metadata": {
+              "size": 1000,
+              "index": 1465,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                561,
+                561
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1461",
+            "score": 0.573473334312439,
+            "text": "ilization. Use AWS Health Dashboard for a personalized view into \nthe performance and availability of the AWS services underlying your AWS resources.\nMonitoring in the cloud oﬀers new opportunities. Most cloud providers have developed \ncustomizable hooks and can deliver insights to help you monitor multiple layers of your workload. \nAWS services such as Amazon CloudWatch apply statistical and machine learning algorithms \nto continually analyze metrics of systems and applications, determine normal baselines, and \nsurface anomalies with minimal user intervention. Anomaly detection algorithms account for the \nseasonality and trend changes of metrics.\nChange management 554",
+            "metadata": {
+              "index": 1461,
+              "pages": [
+                559,
+                559
+              ],
+              "size": 677,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-557",
+            "score": 0.5353114604949951,
+            "text": "AWS Well-Architected Framework Framework\n2. Use Markdown widgets: Before diving into the metrics, use Markdown widgets to add textual \ncontext at the top of your dashboard. This should explain what the dashboard covers, the \nsigniﬁcance of the represented metrics, and can also contain links to other dashboards and \ntroubleshooting tools.\n3. Create dashboard variables: Incorporate dashboard variables where appropriate to allow for \ndynamic and ﬂexible dashboard views.\n4. Create metrics widgets: Add metric widgets to visualize various metrics your application emits, \ntailoring these widgets to eﬀectively represent system health and business outcomes.\n5. Log Insights queries: Utilize CloudWatch Log Insights to derive actionable metrics from your \nlogs and display these insights on your dashboard.\n6. Set up alarms: Integrate CloudWatch Alarms into your dashboard for a quick view of any metrics \nbreaching their thresholds.\n7. Use Contributor Insights: Incorporate CloudWatch Contributor Insi",
+            "metadata": {
+              "index": 557,
+              "size": 1000,
+              "pages": [
+                216,
+                216
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e2afa3c244658bb434a04"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T14:04:42.042Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "what is security",
+      "_id": {
+        "$oid": "6a5e3b8d3c244658bb434a74"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:15:25.514Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain a specific definition of \"security.\" However, it discusses aspects of security in the context of application development, emphasizing the importance of incorporating security throughout the design, development, and deployment lifecycle, as well as fostering a collaborative security culture within organizations. Security is portrayed as a shared responsibility that involves training, automation, and proactive measures to identify and mitigate risks.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-107",
+            "score": 0.484112024307251,
+            "text": "plication security.\nSEC 11:  How do you incorporate and validate the security properties of applications \nthroughout the design, development, and deployment lifecycle?\nTraining people, testing using automation, understanding dependencies, and validating the \nsecurity properties of tools and applications help to reduce the likelihood of security issues in \nproduction workloads.\nResources\nRefer to the following resources to learn more about our best practices for Security.\nDocumentation\n• AWS Cloud Security\nResources 31",
+            "metadata": {
+              "index": 107,
+              "size": 523,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                36,
+                36
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1168",
+            "score": 0.47918587923049927,
+            "text": "e overall delivery timeline. You have a collaborative and \ninclusive security culture within your organization, where the ownership of security is shared across \nall builders.\nCommon anti-patterns:\n• You wait until a security review, and then consider the security properties of a system.\n• You leave all security decisions to a central security team.\n• You don't communicate how the decisions taken in the SDLC relate to the overall security \nexpectations or policies of the organization.\nApplication security 441",
+            "metadata": {
+              "index": 1168,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                446,
+                446
+              ],
+              "size": 514
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-104",
+            "score": 0.47651076316833496,
+            "text": "he \nsecurity properties of the workloads you develop. You should have appropriately trained people in \nyour organization, understand the security properties of your build and release infrastructure, and \nuse automation to identify security issues.\nAdopting application security testing as a regular part of your software development lifecycle \n(SDLC) and post release processes help validate that you have a structured mechanism to identify, \nﬁx, and prevent application security issues entering your production environment.\nBest practices 30",
+            "metadata": {
+              "pages": [
+                35,
+                35
+              ],
+              "size": 542,
+              "index": 104,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-3",
+            "score": 0.47629547119140625,
+            "text": ".................................................... 20\nSecurity ......................................................................................................................................................... 20\nDesign principles ................................................................................................................................... 21\nDeﬁnition ................................................................................................................................................ 21\nBest practices ......................................................................................................................................... 22\nResources ................................................................................................................................................ 31\nReliability .............................................................................................................................................",
+            "metadata": {
+              "index": 3,
+              "pages": [
+                3,
+                3
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1167",
+            "score": 0.47195541858673096,
+            "text": "modeling, secure coding practices, and using services for secure conﬁgurations and operations. \nProvide your team access to training through self-service resources, and regularly gather their \nfeedback for continuous improvement.\nDesired outcome: You equip your team with the knowledge and skills necessary to design and \nbuild software with security in mind from the outset. Through training on threat modeling and \nsecure development practices, your team has a deep understanding of potential security risks and \nhow to mitigate them during the software development lifecycle (SDLC). This proactive approach \nto security is part of your team's culture, and you become able to identify and remediate potential \nsecurity issues early on. As a result, your team delivers high-quality, secure software and features \nmore eﬃciently, which accelerates the overall delivery timeline. You have a collaborative and \ninclusive security culture within your organization, where the ownership of security is sha",
+            "metadata": {
+              "size": 1000,
+              "index": 1167,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                446,
+                446
+              ]
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e3b8d3c244658bb434a75"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:15:25.514Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Detect drift from diagram",
+      "_id": {
+        "$oid": "6a5e3bd63c244658bb434a8d"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:16:38.771Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain a diagram to detect drift from. However, it does define drift as any change that causes an infrastructure resource to have a different state or configuration than expected, and it emphasizes the importance of detecting and remediating unmanaged configuration changes to maintain immutable infrastructure (Source 1). If you need specific details about a diagram or visual representation, that information is not provided in the retrieved context.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1576",
+            "score": 0.36992526054382324,
+            "text": "AWS Well-Architected Framework Framework\nFigure 8: Blue/green deployment with AWS Elastic Beanstalk and Amazon Route 53\nDrift detection\nDrift is deﬁned as any change that causes an infrastructure resource to have a diﬀerent state or \nconﬁguration to what is expected. Any type of unmanaged conﬁguration change goes against the \nnotion of immutable infrastructure, and should be detected and remediated in order to have a \nsuccessful implementation of immutable infrastructure.\nImplementation steps\n• Disallow the in-place modiﬁcation of running infrastructure resources.\n• You can use AWS Identity and Access Management (IAM) to specify who or what can access \nservices and resources in AWS, centrally manage ﬁne-grained permissions, and analyze access \nto reﬁne permissions across AWS.\n• Automate the deployment of infrastructure resources to increase reproducibility and minimize \nthe potential of human error.\n• As described in the Introduction to DevOps on AWS whitepaper, automation is a corners",
+            "metadata": {
+              "pages": [
+                600,
+                600
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "index": 1576
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1514",
+            "score": 0.3350633382797241,
+            "text": " system component interactions, including component by component \ncorrelation to logging, performance, and failures. Because tracing makes it easy to visually identify \nroot causes, less time is spent investigating root causes. Teams that understand component \ninteractions in detail make better and faster decisions when resolving issues. Decisions like when \nto invoke disaster recovery (DR) failover or where to best implement self-healing strategies can \nbe improved by analyzing systems traces, ultimately improving customer satisfaction with your \nservices.\nChange management 573",
+            "metadata": {
+              "pages": [
+                578,
+                578
+              ],
+              "index": 1514,
+              "size": 585,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-358",
+            "score": 0.32824957370758057,
+            "text": "tributed tracing\nOPS04-BP01 Identify key performance indicators\nImplementing observability in your workload starts with understanding its state and making \ndata-driven decisions based on business requirements. One of the most eﬀective ways to ensure \nalignment between monitoring activities and business objectives is by deﬁning and monitoring key \nperformance indicators (KPIs).\nDesired outcome: Eﬃcient observability practices that are tightly aligned with business objectives, \nensuring that monitoring eﬀorts are always in service of tangible business outcomes.\nCommon anti-patterns:\nPrepare 130",
+            "metadata": {
+              "pages": [
+                135,
+                135
+              ],
+              "index": 358,
+              "size": 599,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1832",
+            "score": 0.3274882435798645,
+            "text": "AWS Well-Architected Framework Framework\nRelated videos:\n• AWS re:Invent 2018: Architecture Patterns for Multi-Region Active-Active Applications\n• AWS re:Invent 2019: Backup-and-restore and disaster-recovery solutions with AWS\nREL13-BP04 Manage conﬁguration drift at the DR site or Region\nTo perform a successful disaster recovery (DR) procedure, your workload must be able to \nresume normal operations in a timely manner with no relevant loss of functionality or data once \nthe DR environment has been brought online. To achieve this goal, it's essential to maintain \nconsistent infrastructure, data, and conﬁgurations between your DR environment and the primary \nenvironment.\nDesired outcome: Your disaster recovery site's conﬁguration and data are in parity with the \nprimary site, which facilitates rapid and complete recovery when needed.\nCommon anti-patterns:\n• You fail to update recovery locations when changes are made to the primary locations, which \nresults in outdated conﬁgurations that ",
+            "metadata": {
+              "pages": [
+                700,
+                700
+              ],
+              "index": 1832,
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-722",
+            "score": 0.3232778310775757,
+            "text": "del is a living \ndocument and should continue to evolve as your workloads change. Revisit your threat models \nover time, including when there is a major change, a change in the threat landscape, or when you \nadopt a new feature or service.\nImplementation steps\nHow can we perform threat modeling?\nThere are many diﬀerent ways to perform threat modeling. Much like programming languages, \nthere are advantages and disadvantages to each, and you should choose the way that works best \nfor you. One approach is to start with Shostack’s 4 Question Frame for Threat Modeling, which \nposes open-ended questions to provide structure to your threat modeling exercise:\n1. What are we working on?\nThe purpose of this question is to help you understand and agree upon the system you are \nbuilding and the details about that system that are relevant to security. Creating a model or \ndiagram is the most popular way to answer this question, as it helps you to visualize what \nyou are building, for example, using",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                285,
+                285
+              ],
+              "index": 722,
+              "size": 1000
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e3bd63c244658bb434a8e"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:16:38.772Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Explain Lambda failures",
+      "_id": {
+        "$oid": "6a5e3beb3c244658bb434aa8"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:16:59.250Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain specific information about \"Lambda failures.\" It discusses AWS Lambda in the context of error handling, automatic retries, and best practices for implementing idempotency, but does not provide a detailed explanation of what constitutes Lambda failures or their implications.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1368",
+            "score": 0.5060663223266602,
+            "text": ".\n• If your workload needs to invoke multiple batch jobs, you could leverage AWS Step Functions\nto simplify the orchestration of batch jobs that run in AWS or on-premises. This sample project\ndemonstrates orchestration of batch jobs using Step Functions, AWS Batch, and Lambda.\n• Monitor batch jobs to look for abnormalities, such as a job taking longer than it should to \ncomplete. You could use tools like CloudWatch Container Insights to monitor AWS Batch \nenvironments and jobs. In this instance, your workload would stop the next job from beginning \nand inform the relevant staﬀ of the exception.\nResources\nRelated documents:\n• AWS Cloud Operations: Monitoring and Observability\n• The Amazon's Builder Library: Challenges with distributed systems\n• REL11-BP05 Use static stability to prevent bimodal behavior\n• AWS Lambda Developer Guide: Error handling and automatic retries in AWS Lambda\n• Tuning AWS Java SDK HTTP request settings for latency-aware Amazon DynamoDB applications\n• AWS Messagin",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                524,
+                524
+              ],
+              "size": 1000,
+              "index": 1368
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1369",
+            "score": 0.5024387836456299,
+            "text": "handling and automatic retries in AWS Lambda\n• Tuning AWS Java SDK HTTP request settings for latency-aware Amazon DynamoDB applications\n• AWS Messaging\n• What is streaming data?\n• AWS Lambda Developer Guide: Asynchronous invocation\n• Amazon Simple Queue Service FAQ: FIFO queues\nWorkload architecture 519",
+            "metadata": {
+              "index": 1369,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                524,
+                524
+              ],
+              "size": 304
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-945",
+            "score": 0.48926109075546265,
+            "text": " \nand can prevent their unique behavior from creating false positive alerts in inspection systems.\nAs part of your design, consider how using AWS managed services inﬂuences your network \ntopology. Explore how services such as Amazon VPC Lattice can help make the interoperability of \nyour workload components across network layers easier. When using AWS Lambda, deploy in your \nInfrastructure protection 359",
+            "metadata": {
+              "index": 945,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                364,
+                364
+              ],
+              "size": 407
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1398",
+            "score": 0.48597609996795654,
+            "text": "ests, failed requests, and duplicate requests.\nIf your workload leverages AWS Lambda functions, consider Powertools for AWS Lambda. \nPowertools for AWS Lambda is a developer toolkit that helps implement serverless best \npractices and increase developer velocity when you work with AWS Lambda functions. In \nparticular, it provides a utility to convert your Lambda functions into idempotent operations \nwhich are safe to retry.\n5. Communicate idempotency clearly\nDocument your API and workload components to clearly communicate the idempotent nature \nof the operations. This helps clients understand the expected behavior and how to interact with \nyour workload reliably.\n6. Monitor and audit\nImplement monitoring and auditing mechanisms to detect any issues related to the \nidempotency of responses, such as unexpected response variations or excessive duplicate \nrequest handling. This can help you detect and investigate any issues or unexpected behaviors in \nyour workload.\nResources\nRelated best p",
+            "metadata": {
+              "size": 1000,
+              "pages": [
+                535,
+                535
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 1398
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2027",
+            "score": 0.47270750999450684,
+            "text": "an help you run code closer to users of your workload like the following:\nService When to use\nLambda@edge Use for compute-heavy operations that are \ninitiated when objects are not in the cache.\nNetworking and content delivery 779",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                784,
+                784
+              ],
+              "index": 2027,
+              "size": 229
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e3beb3c244658bb434aa9"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:16:59.251Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T12:55:25.138Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T15:16:59.258Z"
+  },
+  "__v": 12
+},
+{
+  "_id": {
+    "$oid": "6a5e41193c244658bb434af0"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "What are the AWS Well-Architected pillars?",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What are the AWS Well-Architected pillars?",
+      "_id": {
+        "$oid": "6a5e411d3c244658bb434af2"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:39:09.122Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected Framework is based on six pillars:\n\n1. Operational Excellence\n2. Security\n3. Reliability\n4. Performance Efficiency\n5. Cost Optimization\n6. Sustainability\n\nThese pillars provide a foundation for designing and operating reliable, secure, efficient, cost-effective, and sustainable systems in the cloud [Source 3][Source 4].",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-203",
+            "score": 0.8073282837867737,
+            "text": "AWS Well-Architected Framework Framework\nFurther reading\nAWS Architecture Center\nAWS Cloud Compliance\nAWS Well-Architected Partner program\nAWS Well-Architected Tool\nAWS Well-Architected homepage\nOperational Excellence Pillar whitepaper\nSecurity Pillar whitepaper\nReliability Pillar whitepaper\nPerformance Eﬃciency Pillar whitepaper\nCost Optimization Pillar whitepaper\nSustainability Pillar whitepaper\nThe Amazon Builders' Library\n68",
+            "metadata": {
+              "index": 203,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                73,
+                73
+              ],
+              "size": 432
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-200",
+            "score": 0.7990923523902893,
+            "text": "AWS Well-Architected Framework Framework\nConclusion\nThe AWS Well-Architected Framework provides architectural best practices across the six pillars for \ndesigning and operating reliable, secure, eﬃcient, cost-eﬀective, and sustainable systems in the \ncloud. The Framework provides a set of questions that allows you to review an existing or proposed \narchitecture. It also provides a set of AWS best practices for each pillar. Using the Framework in \nyour architecture will help you produce stable and eﬃcient systems, which allow you to focus on \nyour functional requirements.\n66",
+            "metadata": {
+              "pages": [
+                71,
+                71
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 580,
+              "index": 200
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-37",
+            "score": 0.770748496055603,
+            "text": "AWS Well-Architected Framework Framework\nThe pillars of the framework\nCreating a software system is a lot like constructing a building. If the foundation is not solid, \nstructural problems can undermine the integrity and function of the building. When architecting \ntechnology solutions, if you neglect the six pillars of operational excellence, security, reliability, \nperformance eﬃciency, cost optimization, and sustainability, it can become challenging to build a \nsystem that delivers on your expectations and requirements. Incorporating these pillars into your \narchitecture will help you produce stable and eﬃcient systems. This will allow you to focus on the \nother aspects of design, such as functional requirements.\nPillars\n• Operational excellence\n• Security\n• Reliability\n• Performance eﬃciency\n• Cost optimization\n• Sustainability\nOperational excellence\nOperational excellence (OE) is a commitment to build software correctly while consistently \ndelivering a great customer experience. T",
+            "metadata": {
+              "size": 1000,
+              "index": 37,
+              "pages": [
+                13,
+                13
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-21",
+            "score": 0.7577611804008484,
+            "text": " workloads.\nDeﬁnitions\nEvery day, experts at AWS assist customers in architecting systems to take advantage of best \npractices in the cloud. We work with you on making architectural trade-oﬀs as your designs evolve. \nAs you deploy these systems into live environments, we learn how well these systems perform and \nthe consequences of those trade-oﬀs.\nBased on what we have learned, we have created the AWS Well-Architected Framework, which \nprovides a consistent set of best practices for customers and partners to evaluate architectures, \nand provides a set of questions you can use to evaluate how well an architecture is aligned to AWS \nbest practices.\nThe AWS Well-Architected Framework is based on six pillars — operational excellence, security, \nreliability, performance eﬃciency, cost optimization, and sustainability.\nTable 1. The pillars of the AWS Well-Architected Framework\nName Description\nOperational excellence The ability to support development and run \nworkloads eﬀectively, gain insi",
+            "metadata": {
+              "index": 21,
+              "pages": [
+                7,
+                7
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-22",
+            "score": 0.7544718980789185,
+            "text": "the AWS Well-Architected Framework\nName Description\nOperational excellence The ability to support development and run \nworkloads eﬀectively, gain insight into their \noperations, and to continuously improve \nsupporting processes and procedures to \ndeliver business value.\nSecurity The security pillar describes how to take \nadvantage of cloud technologies to protect \nDeﬁnitions 2",
+            "metadata": {
+              "pages": [
+                7,
+                7
+              ],
+              "index": 22,
+              "size": 379,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e411d3c244658bb434af3"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:39:09.122Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "what is ec2 instance",
+      "_id": {
+        "$oid": "6a5e41883c244658bb434af9"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:40:56.227Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "An EC2 instance is a virtual server in Amazon's Elastic Compute Cloud (EC2) that provides a wide selection of instance types with varying levels of CPU, memory, storage, and networking capacity to accommodate different use cases. Each instance type is designed to meet specific resource requirements, allowing users to select the right combination of resources based on their workload demands. Instances come in multiple sizes, enabling adjustments based on the specific needs of applications or software being run on them (Source 5).",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1989",
+            "score": 0.5756263732910156,
+            "text": "is a network \ninterface for Amazon EC2 instances that \nallows you to run workloads requiring high \nlevels of internode communications at scale \non AWS.\nAmazon EBS-optimized instances use an \noptimized conﬁguration stack and provide \nadditional, dedicated capacity to increase the \nAmazon EBS I/O.\nResources\nRelated documents:\n• Application Load Balancer\nNetworking and content delivery 765",
+            "metadata": {
+              "pages": [
+                770,
+                770
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 389,
+              "index": 1989
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2307",
+            "score": 0.529386579990387,
+            "text": "ed and access a broader range of capacity with Amazon EC2 \nSpot Instances. Amazon EC2 Fleet and Amazon EC2 Auto Scaling select and launch instances \nthat ﬁt the speciﬁed attributes, removing the need to manually pick instance types. For storage \nresources, you can use the Amazon S3 Intelligent Tiering and Amazon EFS Infrequent Access\nfeatures, which allow you to select storage classes automatically that deliver automatic storage \ncost savings when data access patterns change, without performance impact or operational \noverhead.\nResources\nRelated documents:\n• AWS Auto Scaling\n• AWS Right-Sizing\n• AWS Compute Optimizer\n• Amazon CloudWatch features\n• CloudWatch Getting Set Up\n• CloudWatch Publishing Custom Metrics\nCost-eﬀective resources 886",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                891,
+                891
+              ],
+              "size": 748,
+              "index": 2307
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2534",
+            "score": 0.5275212526321411,
+            "text": "patterns:\n• You are only using one family of instances.\n• You are only using x86 instances.\n• You specify one instance type in your Amazon EC2 Auto Scaling conﬁguration.\n• You use AWS instances in a manner that they were not designed for (for example, you use \ncompute-optimized instances for a memory-intensive workload).\n• You do not evaluate new instance types regularly.\n• You do not check recommendations from AWS rightsizing tools such as AWS Compute Optimizer.\nBeneﬁts of establishing this best practice: By using energy-eﬃcient and right-sized instances, you \nare able to greatly reduce the environmental impact and cost of your workload.\nHardware and services 978",
+            "metadata": {
+              "pages": [
+                983,
+                983
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 2534,
+              "size": 672
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2299",
+            "score": 0.5262038707733154,
+            "text": "ndwidth requirement\nIdentify the purpose of compute requirements and which instance is needed, and then explore the \nvarious Amazon EC2 instance families. Amazon oﬀers the following instance type families:\n• General Purpose\n• Compute Optimized\n• Memory Optimized\n• Storage Optimized\n• Accelerated Computing\n• HPC Optimized\nFor a deeper understanding of the speciﬁc purposes and use cases that a particular Amazon EC2 \ninstance family can fulﬁll, see AWS Instance types.\nSystem requirements gathering is critical for you to select the speciﬁc instance family and instance \ntype that best serves your needs. Instance type names are comprised of the family name and the \ninstance size. For example, the t2.micro instance is from the T2 family and is micro-sized.\nSelect resource size or type based on workload and resource characteristics (for example, compute, \nmemory, throughput, or write intensive). This selection is typically made using cost modeling, a \nCost-eﬀective resources 883",
+            "metadata": {
+              "pages": [
+                888,
+                888
+              ],
+              "index": 2299,
+              "source": "wellarchitected-framework.pdf",
+              "size": 985
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2298",
+            "score": 0.5061378479003906,
+            "text": "AWS Well-Architected Framework Framework\nImplementation guidance\nAmazon EC2 provides a wide selection of instance types with diﬀerent levels of CPU, memory, \nstorage, and networking capacity to ﬁt diﬀerent use cases. These instance types feature diﬀerent \nblends of CPU, memory, storage, and networking capabilities, giving you versatility when selecting \nthe right resource combination for your projects. Every instance type comes in multiple sizes, \nso that you can adjust your resources based on your workload’s demands. To determine which \ninstance type you need, gather details about the system requirements of the application or \nsoftware that you plan to run on your instance. These details should include the following:\n• Operating system\n• Number of CPU cores\n• GPU cores\n• Amount of system memory (RAM)\n• Storage type and space\n• Network bandwidth requirement\nIdentify the purpose of compute requirements and which instance is needed, and then explore the \nvarious Amazon EC2 instance famil",
+            "metadata": {
+              "pages": [
+                888,
+                888
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "index": 2298
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e41883c244658bb434afa"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:40:56.228Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "what is cloudformation and cpu memory",
+      "_id": {
+        "$oid": "6a5e41a83c244658bb434b02"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:41:28.076Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "AWS CloudFormation is a service that helps developers create AWS resources in an orderly and predictable manner. It allows users to define resources in text files using JSON or YAML format, which are then processed to build the specified services in a safe and repeatable way. This service is particularly useful for managing infrastructure as code, enabling version control and collaboration among developers [Source 1].\n\nCPU memory refers to the amount of memory (RAM) available to a CPU for processing tasks. In the context of AWS, different instance types provide varying levels of CPU, memory, storage, and networking capacity to fit different use cases. When selecting an instance type, it's important to consider the system requirements of the application, including the number of CPU cores and the amount of system memory needed [Source 4].",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1579",
+            "score": 0.4842962622642517,
+            "text": "ve \nway.\n• AWS CloudFormation helps developers create AWS resources in an orderly and predictable \nfashion. Resources are written in text ﬁles using JSON or YAML format. The templates \nrequire a speciﬁc syntax and structure that depends on the types of resources being created \nand managed. You author your resources in JSON or YAML with any code editor, check it \ninto a version control system, and then CloudFormation builds the speciﬁed services in safe, \nrepeatable manner.\n• AWS Serverless Application Model (AWS SAM) is an open-source framework that you can use \nto build serverless applications on AWS. AWS SAM integrates with other AWS services, and is \nan extension of CloudFormation.\n• AWS Cloud Development Kit (AWS CDK) is an open-source software development framework \nto model and provision your cloud application resources using familiar programming \nlanguages. You can use AWS CDK to model application infrastructure using TypeScript, \nPython, Java, and .NET. AWS CDK uses CloudFormat",
+            "metadata": {
+              "index": 1579,
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                601,
+                601
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-133",
+            "score": 0.48063623905181885,
+            "text": "AWS Well-Architected Framework Framework\nCompute and hardware\nThe optimal compute choice for a particular workload can vary based on application design, usage \npatterns, and conﬁguration settings. Architectures may use diﬀerent compute choices for various \ncomponents and allow diﬀerent features to improve performance. Selecting the wrong compute \nchoice for an architecture can lead to lower performance eﬃciency.\nIn AWS, compute is available in three forms: instances, containers, and functions:\n• Instances are virtualized servers, permitting you to change their capabilities with a button or an \nAPI call. Because resource decisions in the cloud aren’t ﬁxed, you can experiment with diﬀerent \nserver types. At AWS, these virtual server instances come in diﬀerent families and sizes, and they \noﬀer a wide variety of capabilities, including solid-state drives (SSDs) and graphics processing \nunits (GPUs).\n• Containers are a method of operating system virtualization that permit you to run an app",
+            "metadata": {
+              "pages": [
+                47,
+                47
+              ],
+              "index": 133,
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1541",
+            "score": 0.47978299856185913,
+            "text": "AWS Well-Architected Framework Framework\nNote\nAWS has observed that with most applications, memory utilization increases as the \napplication warms up and then reaches a steady value. When demand decreases, memory \nutilization typically remains elevated rather than decreasing in parallel. Because memory \nutilization does not correspond to demand in both directions–that is, growing and falling \nwith demand–consider carefully before you select this metric for automatic scaling.\nMetric-based scaling is a latent operation. It can take several minutes for utilization metrics to \npropagate to auto scaling mechanisms, and these mechanisms typically wait for a clear signal \nof increased demand before reacting. Then, as the auto scaler creates new resources, it can take \nadditional time for them to come to full service. Because of this, it is important to not set your \nscaling metric targets too close to full utilization (for example, 90% CPU utilization). Doing so risks \nexhausting existing res",
+            "metadata": {
+              "pages": [
+                588,
+                588
+              ],
+              "index": 1541,
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2298",
+            "score": 0.4662938117980957,
+            "text": "AWS Well-Architected Framework Framework\nImplementation guidance\nAmazon EC2 provides a wide selection of instance types with diﬀerent levels of CPU, memory, \nstorage, and networking capacity to ﬁt diﬀerent use cases. These instance types feature diﬀerent \nblends of CPU, memory, storage, and networking capabilities, giving you versatility when selecting \nthe right resource combination for your projects. Every instance type comes in multiple sizes, \nso that you can adjust your resources based on your workload’s demands. To determine which \ninstance type you need, gather details about the system requirements of the application or \nsoftware that you plan to run on your instance. These details should include the following:\n• Operating system\n• Number of CPU cores\n• GPU cores\n• Amount of system memory (RAM)\n• Storage type and space\n• Network bandwidth requirement\nIdentify the purpose of compute requirements and which instance is needed, and then explore the \nvarious Amazon EC2 instance famil",
+            "metadata": {
+              "pages": [
+                888,
+                888
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 2298,
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1862",
+            "score": 0.46597129106521606,
+            "text": "s not established: Medium\nImplementation guidance\nOptimizing workloads for cost can improve resource utilization and avoid waste in a cloud \nworkload. Factoring cost into architectural decisions usually includes right-sizing workload \ncomponents and enabling elasticity, which results in improved cloud workload performance \neﬃciency.\nImplementation steps\n• Establish cost objectives like budget limits for your cloud workload.\n• Identify the key components (like instances and storage) that drive cost of your workload. \nYou can use AWS Pricing Calculator and AWS Cost Explorer to identify key cost drivers in your \nworkload.\n• Understand pricing models in the cloud, such as On-Demand, Reserved Instances, Savings Plans, \nand Spot Instances.\n• Use Well-Architected cost optimization best practices to optimize these key components for cost.\n• Continually monitor and analyze cost to identify cost optimization opportunities in your \nworkload.\nArchitecture selection 707",
+            "metadata": {
+              "index": 1862,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                712,
+                712
+              ],
+              "size": 971
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e41a83c244658bb434b03"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:41:28.077Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Generate Terraform fix",
+      "_id": {
+        "$oid": "6a5e439d3c244658bb434b12"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:49:49.801Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain specific Terraform code or examples to generate a Terraform fix. It discusses best practices related to immutable infrastructure and automation in AWS environments but does not provide the necessary details for a Terraform implementation.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-439",
+            "score": 0.3832595944404602,
+            "text": "AWS Well-Architected Framework Framework\nExamples of solutions published by AWS include Customizations for AWS Control Tower (CfCT)\nand AWS Control Tower Account Factory for Terraform (AFT).\n3. Your organization applies the same principles of testing, promoting code, and policy changes \nfor the landing zone through environments on your path to production. This strategy provides a \nstable and secure landing zone environment for your application and workload teams.\nCommon anti-patterns:\n• You are performing development in a shared development environment and another developer \noverwrites your code changes.\n• The restrictive security controls on your shared development environment are preventing you \nfrom experimenting with new services and features.\n• You perform load testing on your production systems and cause an outage for your users.\n• A critical error resulting in data loss has occurred in production. In your production environment, \nyou attempt to recreate the conditions that lead ",
+            "metadata": {
+              "size": 1000,
+              "pages": [
+                169,
+                169
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 439
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1570",
+            "score": 0.3773082494735718,
+            "text": "AWS Well-Architected Framework Framework\nREL08-BP04 Deploy using immutable infrastructure\nImmutable infrastructure is a model that mandates that no updates, security patches, or \nconﬁguration changes happen in-place on production workloads. When a change is needed, the \narchitecture is built onto new infrastructure and deployed into production.\nFollow an immutable infrastructure deployment strategy to increase the reliability, consistency, \nand reproducibility in your workload deployments.\nDesired outcome: With immutable infrastructure, no in-place modiﬁcations are allowed to run \ninfrastructure resources within a workload. Instead, when a change is needed, a new set of updated \ninfrastructure resources containing all the necessary changes are deployed in parallel to your \nexisting resources. This deployment is validated automatically, and if successful, traﬃc is gradually \nshifted to the new set of resources.\nThis deployment strategy applies to software updates, security patches, infr",
+            "metadata": {
+              "index": 1570,
+              "size": 1000,
+              "pages": [
+                598,
+                598
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1581",
+            "score": 0.35746413469314575,
+            "text": "AWS Well-Architected Framework Framework\n• Blue/green deployments: the Blue/Green Deployments on AWS whitepaper describes example \ntechniques to implement blue/green deployment strategies.\n• Detect conﬁguration or state drifts. For more detail, see Detecting unmanaged conﬁguration \nchanges to stacks and resources.\nResources\nRelated best practices:\n• REL08-BP05 Deploy changes with automation\nRelated documents:\n• Automating safe, hands-oﬀ deployments\n• Leveraging AWS CloudFormation to create an immutable infrastructure at Nubank\n• Infrastructure as code\n• Implementing an alarm to automatically detect drift in AWS CloudFormation stacks\nRelated videos:\n• AWS re:Invent 2020: Reliability, consistency, and conﬁdence through immutability\nREL08-BP05 Deploy changes with automation\nDeployments and patching are automated to eliminate negative impact.\nMaking changes to production systems is one of the largest risk areas for many organizations. We \nconsider deployments a ﬁrst-class problem to be sol",
+            "metadata": {
+              "index": 1581,
+              "pages": [
+                602,
+                602
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1002",
+            "score": 0.35483038425445557,
+            "text": "o establish trustworthiness in AWS compute environments. \n Automated remediations are initiated when non-compliant resources are detected. \nCommon anti-patterns:\n• Following the practice of immutable infrastructure, but not having a solution in place for \nemergency patching or replacement of production systems.\n• Using automation to ﬁx misconﬁgured resources, but not having a manual override mechanism \nin place.  Situations may arise where you need to adjust the requirements, and you may need to \nsuspend automations until you make these changes.\nBeneﬁts of establishing this best practice: Automation can reduce the risk of unauthorized access \nand use of your compute resources.  It helps to prevent misconﬁgurations from making their way \ninto production environments, and detecting and ﬁxing misconﬁgurations should they occur. \n Automation also helps to detect unauthorized access and use of compute resources to reduce your \ntime to respond.  This in turn can reduce the overall scope of i",
+            "metadata": {
+              "index": 1002,
+              "pages": [
+                385,
+                385
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-1573",
+            "score": 0.34591710567474365,
+            "text": "AWS Well-Architected Framework Framework\nLevel of risk exposed if this best practice is not established: Medium\nImplementation guidance\nAutomation\nWhen deﬁning an immutable infrastructure deployment strategy, it is recommended to use\nautomation as much as possible to increase reproducibility and minimize the potential of human \nerror. For more detail, see REL08-BP05 Deploy changes with automation and Automating safe, \nhands-oﬀ deployments.\nWith infrastructure as code (IaC), infrastructure provisioning, orchestration, and deployment steps \nare deﬁned in a programmatic, descriptive, and declarative way and stored in a source control \nsystem. Leveraging infrastructure as code makes it simpler to automate infrastructure deployment \nand helps achieve infrastructure immutability.\nDeployment patterns\nWhen a change in the workload is required, the immutable infrastructure deployment strategy \nmandates that a new set of infrastructure resources is deployed, including all necessary changes. \nIt ",
+            "metadata": {
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                599,
+                599
+              ],
+              "index": 1573
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e439d3c244658bb434b13"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T15:49:49.802Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T15:39:05.290Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T15:49:49.808Z"
+  },
+  "__v": 4
+},
+{
+  "_id": {
+    "$oid": "6a5e583a3cf23bce8449c229"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "who you are",
+  "messages": [
+    {
+      "role": "user",
+      "content": "who you are",
+      "_id": {
+        "$oid": "6a5e58463cf23bce8449c22b"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T17:17:58.771Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The available context does not contain an answer to the question \"who you are.\"",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-737",
+            "score": 0.31092369556427,
+            "text": "ure AWS \nworkloads.\n• Human identities: The human identities that require access to your AWS environments and \napplications can be categorized into three groups: workforce, third parties, and users.\nThe workforce group includes administrators, developers, and operators who are members of \nyour organization. They need access to manage, build, and operate your AWS resources.\nThird parties are external collaborators, such as contractors, vendors, or partners. They interact \nwith your AWS resources as part of their engagement with your organization.\nUsers are the consumers of your applications. They access your AWS resources through web \nbrowsers, client applications, mobile apps, or interactive command-line tools.\n• Machine identities: Your workload applications, operational tools, and components require an \nidentity to make requests to AWS services, such as reading data. These identities also include \nIdentity and access management 285",
+            "metadata": {
+              "size": 947,
+              "index": 737,
+              "pages": [
+                290,
+                290
+              ],
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-86",
+            "score": 0.2566035985946655,
+            "text": "AWS Well-Architected Framework Framework\nSEC 2:  How do you manage identities for people and machines?\nThere are two types of identities you need to manage when approaching operating secure AWS \nworkloads. Understanding the type of identity you need to manage and grant access helps you \nverify the right identities have access to the right resources under the right conditions.\nHuman Identities: Your administrators, developers, operators, and end users require an identity \nto access your AWS environments and applications. These are members of your organization, or \nexternal users with whom you collaborate, and who interact with your AWS resources via a web \nbrowser, client application, or interactive command line tools.\nMachine Identities: Your service applications, operational tools, and workloads require an \nidentity to make requests to AWS services, for example, to read data. These identities include \nmachines running in your AWS environment such as Amazon EC2 instances or AWS Lambda ",
+            "metadata": {
+              "pages": [
+                29,
+                29
+              ],
+              "index": 86,
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-751",
+            "score": 0.2550004720687866,
+            "text": "AWS Well-Architected Framework Framework\nFor third-party identities:\n• When granting third parties, such as software as a service (SaaS) providers, access to resources in \nyour AWS account, you can use cross-account roles and resource-based policies. Additionally, you \ncan use the Amazon Cognito OAuth 2.0 grant client credentials ﬂow for B2B SaaS customers or \npartners.\nUser identities that access your AWS resources through web browsers, client applications, mobile \napps, or interactive command-line tools:\n• If you need to grant applications for consumers or customers access to your AWS resources, you \ncan use Amazon Cognito identity pools or Amazon Cognito user pools to provide temporary \ncredentials. The permissions for the credentials are conﬁgured through IAM roles. You can also \ndeﬁne a separate IAM role with limited permissions for guest users who are not authenticated.\nMachine identities\nFor machine identities, you might need to use long-term credentials. In these cases, you sho",
+            "metadata": {
+              "index": 751,
+              "pages": [
+                296,
+                296
+              ],
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf"
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-50",
+            "score": 0.24730604887008667,
+            "text": "for each application, workload, platform, and infrastructure \ncomponent, and that each process and procedure has an identiﬁed owner responsible for its \ndeﬁnition, and owners responsible for their performance.\nHaving understanding of the business value of each component, process, and procedure, of why \nthose resources are in place or activities are performed, and why that ownership exists will inform \nthe actions of your team members. Clearly deﬁne the responsibilities of team members so that \nthey may act appropriately and have mechanisms to identify responsibility and ownership. Have \nmechanisms to request additions, changes, and exceptions so that you do not constrain innovation. \nDeﬁne agreements between teams describing how they work together to support each other and \nyour business outcomes.\nProvide support for your team members so that they can be more eﬀective in taking action and \nsupporting your business outcomes. Engaged senior leadership should set expectations and \nmeasure",
+            "metadata": {
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "index": 50,
+              "pages": [
+                17,
+                17
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-778",
+            "score": 0.24470025300979614,
+            "text": "icy (SCP) to your organization that helps prevent the creation of new IAM users \nand groups, enforcing that access to AWS is via federated identities.\nNote\nYou are responsible for handling the rotation of SCIM access tokens as described in the\nAutomatic provisioning documentation. Additionally, you are responsible for rotating the \ncertiﬁcates supporting your identity federation.\nGuidance for users of your applications You can manage the identities of users of your \napplications, such as a mobile app, using Amazon Cognito as your centralized identity provider. \nAmazon Cognito enables authentication, authorization, and user management for your web and \nmobile apps. Amazon Cognito provides an identity store that scales to millions of users, supports \nsocial and enterprise identity federation, and oﬀers advanced security features to help protect \nyour users and business. You can integrate your custom web or mobile application with Amazon \nCognito to add user authentication and access cont",
+            "metadata": {
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                306,
+                306
+              ],
+              "index": 778
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e58463cf23bce8449c22c"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T17:17:58.771Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T17:17:46.766Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T17:17:58.777Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a5e680efd508a483f3de009"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "Summarize billing changes",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize billing changes",
+      "_id": {
+        "$oid": "6a5e6816fd508a483f3de00b"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T18:25:26.441Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The retrieved context discusses several aspects of billing changes related to AWS services:\n\n1. **Savings Plans Application**: In a Consolidated Billing Family, Savings Plans are applied first to the owner account's usage and then to other accounts if sharing is enabled. They are applied to the highest savings percentage first, and if multiple usages have equal savings percentages, they are applied to the usage with the lowest Savings Plans rate. Remaining usage after the commitment is charged at On-Demand rates. Users can refresh Savings Plans Recommendations in AWS Cost Management at any time to generate new recommendations (Source 2).\n\n2. **Detailed Billing Information**: AWS now offers detailed billing information with hourly granularity through the AWS Cost and Usage Report (CUR) 2.0. This new method provides daily or hourly usage data, rates, costs, and usage attributes for all chargeable AWS services, along with improvements over previous versions. The CUR includes various dimensions such as tagging, location, resource attributes, and account IDs (Source 3).\n\n3. **Cost Management Tools**: Organizations can utilize cost management tools to track consumption and identify reasons for cost increases. Detailed billing information helps in understanding costs and usage across the organization (Source 3).\n\n4. **Collaboration and Communication**: Effective billing management involves collaboration among various stakeholders, including CFOs, financial controllers, and technology teams. It is important to define common topics for discussion and understand the processes involved in billing, including pricing models and financial requirements (Source 4).\n\nOverall, these changes emphasize the importance of detailed tracking, strategic application of savings plans, and collaborative financial management to optimize costs in cloud usage.",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "contexts": [
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2206",
+            "score": 0.4814741015434265,
+            "text": "eate billing and cost management data exports using basic SQL, and visualize \nyour billing and cost management data by integrating with Quick. You can also export your data \nin standard mode to analyze your data with other processing tools like Amazon Athena.\nExpenditure and usage awareness 847",
+            "metadata": {
+              "size": 295,
+              "pages": [
+                852,
+                852
+              ],
+              "source": "wellarchitected-framework.pdf",
+              "index": 2206
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2344",
+            "score": 0.475436806678772,
+            "text": "ded.\nIn a Consolidated Billing Family, Savings Plans are applied ﬁrst to the owner account's usage, \nand then to other accounts' usage. This occurs only if you have sharing enabled. Your Savings \nPlans are applied to your highest savings percentage ﬁrst. If there are multiple usages with equal \nsavings percentages, Savings Plans are applied to the ﬁrst usage with the lowest Savings Plans rate. \nSavings Plans continue to apply until there are no more remaining uses or your commitment is \nexhausted. Any remaining usage is charged at the On-Demand rates. You can refresh Savings Plans \nRecommendations in AWS Cost Management to generate new Savings Plans Recommendations at \nany time.\nAfter analyzing ﬂexibility of instances, you can commit by following recommendations. Create cost \nmodeling by analyzing the workload’s short-term costs with potential diﬀerent resource options, \nanalyzing AWS pricing models, and aligning them with your business requirements to ﬁnd out total \ncost of ownership ",
+            "metadata": {
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "index": 2344,
+              "pages": [
+                905,
+                905
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2202",
+            "score": 0.4282887578010559,
+            "text": "tion of costs and usage.\nLevel of risk exposed if this best practice is not established: High\nImplementation guidance\nDetailed billing information such as hourly granularity in cost management tools allow \norganizations to track their consumptions with further details and help them to identify some of \nthe cost increase reasons. These data sources provide the most accurate view of cost and usage \nacross your entire organization.\nYou can use AWS Data Exports to create exports of the AWS Cost and Usage Report (CUR) 2.0. \nThis is the new and recommended way to receive your detailed cost and usage data from AWS. It \nprovides daily or hourly usage granularity, rates, costs, and usage attributes for all chargeable AWS \nservices (the same information as CUR), along with some improvements. All possible dimensions \nare in the CUR such as tagging, location, resource attributes, and account IDs.\nThere are three export types based on the type of export you want to create: a standard data \nexport, ",
+            "metadata": {
+              "index": 2202,
+              "source": "wellarchitected-framework.pdf",
+              "size": 1000,
+              "pages": [
+                851,
+                851
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2099",
+            "score": 0.4237600564956665,
+            "text": "ction with \nthe cloud bill. This will typically be CFOs, ﬁnancial controllers, ﬁnancial planners, business \nanalysts, procurement, and sourcing. Technology members will typically be product and \napplication owners, technical managers and representatives from all teams that build on the \ncloud. Other members may include business unit owners, such as marketing, that will inﬂuence \nusage of products, and third parties such as consultants, to achieve alignment to your goals and \nmechanisms, and to assist with reporting.\n• Deﬁne topics for discussion: Deﬁne the topics that are common across the teams, or will need \na shared understanding. Follow cost from that time it is created, until the bill is paid. Note any \nmembers involved, and organizational processes that are required to be applied. Understand \neach step or process it goes through and the associated information, such as pricing models \navailable, tiered pricing, discount models, budgeting, and ﬁnancial requirements.\n• Establish reg",
+            "metadata": {
+              "index": 2099,
+              "size": 1000,
+              "source": "wellarchitected-framework.pdf",
+              "pages": [
+                815,
+                815
+              ]
+            }
+          },
+          {
+            "id": "wellarchitected-framework.pdf#chunk-2132",
+            "score": 0.42287617921829224,
+            "text": "ly Cost and Usage Budgets\n• AWS Cost Anomaly Detection\nRelated examples:\n• AWS Cost Anomaly Detection Alert with Slack\nCOST01-BP07 Keep up-to-date with new service releases\nConsult regularly with experts or AWS Partners to consider which services and features provide \nlower cost. Review AWS blogs and other information sources.\nPractice Cloud Financial Management 820",
+            "metadata": {
+              "pages": [
+                825,
+                825
+              ],
+              "size": 368,
+              "index": 2132,
+              "source": "wellarchitected-framework.pdf"
+            }
+          }
+        ]
+      },
+      "_id": {
+        "$oid": "6a5e6816fd508a483f3de00c"
+      },
+      "createdAt": {
+        "$date": "2026-07-20T18:25:26.449Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-20T18:25:18.821Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-20T18:25:26.467Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a63bee5f1e189a232f81fb3"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a63bee5f1e189a232f81fb5"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:37:09.269Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a63bee5f1e189a232f81fb6"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:37:09.269Z"
+      }
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a63bef0f1e189a232f81fc0"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:37:20.266Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a63bef0f1e189a232f81fc1"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:37:20.266Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-24T19:37:09.263Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-24T19:37:20.267Z"
+  },
+  "__v": 2
+},
+{
+  "_id": {
+    "$oid": "6a63bfc9f1e189a232f82021"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a63bfc9f1e189a232f82023"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:40:57.289Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a63bfc9f1e189a232f82024"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:40:57.289Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-24T19:40:57.286Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-24T19:40:57.290Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a63c0cdf1e189a232f8b903"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a63c0cdf1e189a232f8b905"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:45:17.413Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a63c0cdf1e189a232f8b906"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:45:17.413Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-24T19:45:17.408Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-24T19:45:17.414Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "6a63c1bdf1e189a232facfc1"
+  },
+  "workspace": {
+    "$oid": "6a5e0c7f62945be2e2cd9204"
+  },
+  "user": {
+    "$oid": "6a5e0c7f62945be2e2cd9201"
+  },
+  "title": "hi",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "_id": {
+        "$oid": "6a63c1bdf1e189a232facfc3"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:49:17.910Z"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The AWS Well-Architected RAG service is not available right now. Start the FastAPI service at http://127.0.0.1:8000 and make sure the vector store is indexed. Details: fetch failed",
+      "metadata": {
+        "provider": "fastapi-rag",
+        "ragApiUrl": "http://127.0.0.1:8000",
+        "error": "fetch failed"
+      },
+      "_id": {
+        "$oid": "6a63c1bdf1e189a232facfc4"
+      },
+      "createdAt": {
+        "$date": "2026-07-24T19:49:17.910Z"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-07-24T19:49:17.904Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-24T19:49:17.911Z"
+  },
+  "__v": 1
+}]

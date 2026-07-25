@@ -350,6 +350,20 @@ function isPlaceholderValue(value: unknown) {
   return text.includes('example.com') || text.includes('replace-with-') || text.includes('placeholder') || /^z[0-9a-z]*example$/i.test(String(value).trim());
 }
 
+export function isValidArn(value: unknown) {
+  return /^arn:(aws|aws-cn|aws-us-gov):[a-zA-Z0-9-]+:[a-z0-9-]*:\d{0,12}:.+$/.test(String(value).trim());
+}
+
+// A field resolved from a diagram connection (or a raw Terraform reference someone typed directly)
+// is a Terraform expression, not a literal value — ARN-shape checking only makes sense against a
+// literal string the user actually typed. Mirrors terraformGenerator.js's own
+// looksLikeTerraformExpression so "what the generator will treat as an expression" and "what this
+// validator skips" stay in sync.
+export function looksLikeTerraformExpression(value: unknown) {
+  const trimmed = String(value).trim();
+  return /^\${.+}$/.test(trimmed) || /^(data\.|aws_|var\.|local\.|module\.)/.test(trimmed);
+}
+
 function defaultConnectivityNotes(node: AwsNode) {
   return [`Use Terraform outputs for ${node.data.serviceName} id, ARN, endpoint, or URL values after apply completes.`];
 }

@@ -1,4 +1,6 @@
+import mongoose from 'mongoose';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { AwsAccount } from '../models/AwsAccount.js';
 import { Deployment } from '../models/Deployment.js';
 import { Diagram } from '../models/Diagram.js';
@@ -8,22 +10,10 @@ import { assertDiagramServiceAccess } from '../utils/accessControl.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
-import { runTerraformDeployment, runTerraformDestroy } from '../services/terraformDeploymentRunner.js';
-
-// A Lambda node's "Deployment zip path" field stores the uploaded file's server-generated id in
-// config.filename_upload_id (see PropertiesPanel.tsx's FilePathField). Collecting those ids here,
-// at request time, lets terraformDeploymentRunner.js know which uploaded zips to copy into a
-// deployment's Terraform work directory before `apply` runs.
-function lambdaZipUploadIdsFromNodes(nodes = []) {
-  return Array.from(
-    new Set(
-      nodes
-        .filter((node) => node?.data?.serviceId === 'lambda')
-        .map((node) => String(node.data?.config?.filename_upload_id ?? '').trim())
-        .filter(Boolean),
-    ),
-  );
-}
+import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
+import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
+import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
+import { verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 
 export const createDeploymentSchema = z.object({
   body: z.object({
@@ -54,10 +44,10 @@ export const updateCanvasDeploymentSchema = z.object({
 
 export const uploadLambdaZip = asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(400, 'A .zip file is required.');
-  const uploadId = req.file.filename.replace(/\.zip$/, '');
+  const upload = await saveLambdaZipUpload(req.file.buffer, req.file.originalname);
   res.status(201).json({
     success: true,
-    data: { uploadId, fileName: req.file.originalname, sizeBytes: req.file.size },
+    data: { uploadId: upload.uploadId, fileName: upload.fileName, sizeBytes: upload.sizeBytes },
   });
 });
 
@@ -78,14 +68,22 @@ export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
     if (!awsAccount) throw new ApiError(404, 'AWS account not found');
   }
 
-  const plan = buildDeploymentPlan(diagram);
+  // Pre-generated so the Terraform backend block (github-actions executor only) can reference this
+  // deployment's own id before the Deployment document exists — see deploymentPlanner.js /
+  // terraformGenerator.js. Explicitly set as _id below so this is the id that actually gets used, not
+  // a second, different one Mongo would otherwise generate at create time.
+  const deploymentId = new mongoose.Types.ObjectId();
+  const executor = env.DEPLOYMENT_EXECUTOR;
+  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions' });
   const deployment = await Deployment.create({
+    _id: deploymentId,
     workspace: req.user.workspace,
     diagram: diagram._id,
     requestedBy: req.user._id,
     awsAccount: awsAccount?._id,
     name: req.validated.body.name ?? `${diagram.name} deployment`,
     status: req.validated.body.status ?? (plan.plan.blockers ? 'draft' : 'planned'),
+    executor,
     resourceCount: plan.resourceCount,
     connectionCount: plan.connectionCount,
     plan: plan.plan,
@@ -120,15 +118,19 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     edges: req.validated.body.edges,
   });
 
-  const plan = buildDeploymentPlan(diagram);
+  const deploymentId = new mongoose.Types.ObjectId();
+  const executor = env.DEPLOYMENT_EXECUTOR;
+  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions' });
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
   const deployment = await Deployment.create({
+    _id: deploymentId,
     workspace: req.user.workspace,
     diagram: diagram._id,
     requestedBy: req.user._id,
     awsAccount: awsAccount._id,
     name: `${diagramName} deployment`,
     status: hasBlockers ? 'draft' : 'queued',
+    executor,
     resourceCount: plan.resourceCount,
     connectionCount: plan.connectionCount,
     plan: plan.plan,
@@ -229,7 +231,11 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   diagram.updatedBy = req.user._id;
   await diagram.save();
 
-  const plan = buildDeploymentPlan(diagram);
+  // Regenerated with the SAME executor/backend this deployment was originally created with —
+  // deployment.executor is pinned for life (see Deployment.js), never re-derived from the current
+  // env.DEPLOYMENT_EXECUTOR default, so an update can never silently move a deployment's Terraform
+  // config onto a different backend than what its existing state actually lives in.
+  const plan = await buildDeploymentPlan(diagram, { deploymentId: deployment._id, remoteStateBackend: deployment.executor === 'github-actions' });
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
 
   deployment.resourceCount = plan.resourceCount;
@@ -307,4 +313,14 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   void runTerraformDestroy(deployment._id, { force: true });
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
+});
+
+export const verifyDeploymentResourcesRoute = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+
+  await auditLog(req, 'deployment.verify_resources', 'Deployment', deployment._id);
+  const result = await verifyDeploymentResources(deployment._id);
+  res.json({ success: true, data: result });
 });

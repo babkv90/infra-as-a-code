@@ -1,0 +1,205 @@
+name: Terraform Deploy
+
+# Executes a single deployment's Terraform (apply or destroy) on GitHub's infrastructure instead of
+# our own backend server — see IAAS backend/src/services/githubTerraformRunner.js, which pushes the
+# generated main.tf to deployments/<deployment_id>/ in this repo and dispatches this workflow. The
+# decision logic (validation gates, auto-destroy-on-failure) lives entirely in that backend code and
+# deploymentGuards.js — this workflow only ever does what it's told via inputs, and reports back what
+# happened. It never decides anything on its own.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Infraflow deployment id
+        required: true
+        type: string
+      action:
+        description: apply or destroy
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+      is_update:
+        description: "true if this applies changes to already-deployed infrastructure"
+        required: false
+        default: "false"
+        type: string
+      working_directory:
+        description: Path within this repo holding the generated main.tf for this deployment
+        required: true
+        type: string
+      aws_region:
+        description: Target AWS region for the customer account being deployed to
+        required: true
+        type: string
+      aws_access_key_id:
+        description: Temporary STS credentials assumed by Infraflow's backend for this run only
+        required: true
+        type: string
+      aws_secret_access_key:
+        required: true
+        type: string
+      aws_session_token:
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_VERSION: "1.9.8"
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }} — ${{ inputs.deployment_id }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      # Must run before anything else logs or echoes these values.
+      - name: Mask sensitive inputs
+        run: |
+          echo "::add-mask::${{ inputs.aws_access_key_id }}"
+          echo "::add-mask::${{ inputs.aws_secret_access_key }}"
+          echo "::add-mask::${{ inputs.aws_session_token }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      # GitHub-hosted runners are fresh VMs every run, so there's no local disk to persist a plugin
+      # cache on between runs the way the local executor's TF_PLUGIN_CACHE_DIR does — actions/cache
+      # is the equivalent mechanism here: same effect (skip re-downloading the AWS provider most
+      # runs), different implementation, since there's no literal shared filesystem to point at.
+      - name: Restore Terraform provider plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', inputs.working_directory)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
+      - name: Configure Terraform plugin cache directory
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo "plugin_cache_dir = \"$HOME/.terraform.d/plugin-cache\"" > ~/.terraformrc
+
+      - name: Terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: terraform init -input=false
+
+      # Redundant with Layer 2 of Infraflow's own validation pipeline (which already ran `terraform
+      # validate` against this exact generated config before the deployment was ever allowed to
+      # reach "queued") — kept here anyway as a belt-and-suspenders check against this specific
+      # runner's actual provider versions, matching the explicit init/validate/plan/apply sequence
+      # this workflow was asked to implement.
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        if: inputs.action == 'apply'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        if: inputs.action == 'apply'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: terraform apply -input=false -auto-approve tfplan
+
+      # Mirrors emptyS3BucketsFromTerraformState in the local executor — Terraform can't destroy a
+      # non-empty S3 bucket. Only handles current object versions; a versioned bucket with historical
+      # versions can still block destroy here, unlike the local executor's fuller cleanup. Flagged as
+      # a known gap versus local, not silently different.
+      - name: Empty S3 buckets before destroy
+        if: inputs.action == 'destroy'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: |
+          BUCKETS=$(terraform show -json 2>/dev/null | jq -r '((.values.root_module.resources // []) | map(select(.type == "aws_s3_bucket")) | .[].values.bucket)' 2>/dev/null || true)
+          for BUCKET in $BUCKETS; do
+            echo "Emptying s3://$BUCKET before destroy..."
+            aws s3 rm "s3://$BUCKET" --recursive || echo "::warning::Could not empty $BUCKET — it may already be empty, versioned (see step description), or inaccessible."
+          done
+
+      - name: Terraform destroy
+        if: inputs.action == 'destroy'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: terraform destroy -input=false -auto-approve
+
+      # Always runs, success or failure — this is how the backend's poll loop (pollWorkflowStatus in
+      # githubTerraformRunner.js) learns the outcome, gets the captured outputs, and finds out whether
+      # real AWS resources exist (so the shared auto-destroy-on-failure logic in deploymentGuards.js
+      # knows whether to trigger a cleanup destroy run).
+      - name: Report result to Infraflow
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+        run: |
+          OUTCOME="failure"
+          if [ "${{ job.status }}" = "success" ]; then OUTCOME="success"; fi
+
+          OUTPUTS="{}"
+          if [ "$OUTCOME" = "success" ] && [ "${{ inputs.action }}" = "apply" ]; then
+            OUTPUTS=$(terraform output -json infraflow_resource_outputs 2>/dev/null || echo '{}')
+          fi
+
+          RESOURCE_COUNT=$(terraform show -json 2>/dev/null | jq '((.values.root_module.resources // []) | length)' 2>/dev/null || echo 0)
+          HAS_STATE="false"
+          if [ "${RESOURCE_COUNT:-0}" -gt 0 ] 2>/dev/null; then HAS_STATE="true"; fi
+
+          LOG_EXCERPT=""
+          if [ "$OUTCOME" = "failure" ]; then
+            LOG_EXCERPT="Terraform ${{ inputs.action }} failed in GitHub Actions run ${{ github.run_id }}. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} for full logs."
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg runId "${{ github.run_id }}" \
+            --arg action "${{ inputs.action }}" \
+            --arg outcome "$OUTCOME" \
+            --argjson outputs "$OUTPUTS" \
+            --argjson hasState "$HAS_STATE" \
+            --arg logExcerpt "$LOG_EXCERPT" \
+            '{runId: $runId, action: $action, outcome: $outcome, outputs: $outputs, hasState: $hasState, logExcerpt: $logExcerpt}')
+
+          curl -sS --fail-with-body -X POST "${{ vars.INFRAFLOW_API_BASE_URL }}/deployments/${{ inputs.deployment_id }}/github-run-callback" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.INFRAFLOW_CALLBACK_SECRET }}" \
+            -d "$PAYLOAD"

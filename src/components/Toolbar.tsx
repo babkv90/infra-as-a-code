@@ -21,7 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import { useReactFlow, useViewport } from 'reactflow';
 import { groupKinds } from '../data/awsServices';
@@ -29,6 +29,7 @@ import { useDiagramStore } from '../store/diagramStore';
 import { exportTerraform } from '../utils/exportTerraform';
 import { applyEnterpriseLayout, normalizeImportedDiagram } from '../utils/importDiagram';
 import { sendTerraformPayload } from '../utils/terraformPayloadApi';
+import { validateDiagram } from '../utils/validate';
 import type { AwsNode, DiagramViewMode, GroupKind, ToolMode } from '../types';
 import type { ThemeMode } from '../theme';
 
@@ -65,7 +66,6 @@ function Toolbar({
     activeView,
     activeRegion,
     isDark,
-    issues,
     history,
     future,
     setMode,
@@ -82,6 +82,11 @@ function Toolbar({
   const selectedCount = nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length;
   const hasSelection = selectedCount > 0 || Boolean(selectedNodeId) || Boolean(selectedEdgeId);
   const effectiveIsDark = theme ? theme === 'dark' : isDark;
+  // Computed live rather than read from the store's `issues` field, which only updates when
+  // validate() has actually been called — the Deploy gate needs to be correct even if the user never
+  // clicked "Validate" first.
+  const liveIssues = useMemo(() => validateDiagram(nodes, edges, activeRegion), [nodes, edges, activeRegion]);
+  const blockingErrorCount = liveIssues.filter((issue) => issue.severity === 'error').length;
 
   const tools: Array<{ mode: ToolMode; label: string; icon: typeof ScanLine }> = [
     { mode: 'select', label: 'Select', icon: ScanLine },
@@ -257,6 +262,8 @@ function Toolbar({
         </button>
         <button
           className="text-button deploy-toolbar-button"
+          disabled={blockingErrorCount > 0}
+          title={blockingErrorCount > 0 ? `${blockingErrorCount} blocking error${blockingErrorCount === 1 ? '' : 's'} must be fixed first — click Validate to see them.` : undefined}
           onClick={() => {
             validate();
             onOpenDeployment?.();

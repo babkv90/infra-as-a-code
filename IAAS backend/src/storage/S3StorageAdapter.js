@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { StorageAdapter } from './StorageAdapter.js';
 
 // Keys are S3 object keys, used as-is (callers are expected to prefix with a deployment id where
@@ -13,6 +13,7 @@ export class S3StorageAdapter extends StorageAdapter {
   constructor({ bucket, region, scratchRoot }) {
     super();
     if (!bucket) throw new Error('S3StorageAdapter requires a bucket.');
+    this.mode = 's3';
     this.bucket = bucket;
     this.client = new S3Client(region ? { region } : {});
     this.scratchRoot = scratchRoot ?? path.join(tmpdir(), 'infraflow-deployments');
@@ -39,6 +40,22 @@ export class S3StorageAdapter extends StorageAdapter {
       if (error?.name === 'NotFound' || error?.$metadata?.httpStatusCode === 404) return false;
       throw error;
     }
+  }
+
+  async listFiles(prefix) {
+    const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    const names = [];
+    let continuationToken;
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: normalizedPrefix, ContinuationToken: continuationToken }),
+      );
+      for (const object of response.Contents ?? []) {
+        names.push(object.Key.slice(normalizedPrefix.length));
+      }
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return names;
   }
 
   async getWorkingDirectory(deploymentId) {

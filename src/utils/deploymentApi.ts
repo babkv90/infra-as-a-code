@@ -98,3 +98,27 @@ export async function destroyDeployment(id: string) {
 export async function forceDestroyDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}/force-destroy`, { method: 'POST' });
 }
+
+export type ResourceVerificationEntry = {
+  name: string;
+  label: string;
+  service: string;
+  terraformAddress: string;
+  status: 'present' | 'missing' | 'destroyed' | 'unknown';
+  consoleUrl: string;
+};
+
+export type ResourceVerificationResult = {
+  checkedAt: string;
+  region: string;
+  regionConsoleUrl: string;
+  resources: ResourceVerificationEntry[];
+  error?: string;
+};
+
+// Runs `terraform plan -refresh-only` against the real AWS account (read-only, never applies) so
+// the answer to "is this actually still there" reflects live AWS state, not just what Terraform's
+// local state file last recorded — the two can disagree after a destroy attempt fails partway.
+export async function verifyDeploymentResources(id: string) {
+  return apiRequest<ResourceVerificationResult>(`/deployments/${id}/verify-resources`, { method: 'POST' });
+}

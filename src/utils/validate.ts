@@ -1,5 +1,5 @@
 import type { AwsEdge, AwsNode } from '../types';
-import { validateResourceRequirements } from './resourceRequirements';
+import { isValidArn, looksLikeTerraformExpression, validateResourceRequirements } from './resourceRequirements';
 
 export type ValidationIssue = {
   nodeId?: string;
@@ -8,10 +8,15 @@ export type ValidationIssue = {
   message: string;
 };
 
-export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationIssue[] {
+export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[], activeRegion?: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [...validateResourceRequirements(nodes, edges)];
   const serviceIds = new Set(nodes.map((node) => node.data.serviceId));
+  const nodeIds = new Set(nodes.map((node) => node.id));
   const connectedPairs = edges.map((edge) => [nodes.find((node) => node.id === edge.source), nodes.find((node) => node.id === edge.target)] as const);
+
+  if (activeRegion?.trim() && !isValidAwsRegion(activeRegion)) {
+    issues.push({ severity: 'error', message: `"${activeRegion}" is not a valid AWS region (expected a shape like "us-east-1" or "ap-south-1").` });
+  }
 
   for (const node of nodes) {
     if (node.type === 'groupBox') continue;
@@ -23,8 +28,14 @@ export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationI
       }
     }
 
-    if (node.data.serviceId === 'lambda' && !connectedPairs.some(([source, target]) => [source?.data.serviceId, target?.data.serviceId].includes('iam'))) {
-      issues.push({ nodeId: node.id, severity: 'warning', message: 'Lambda has no visible IAM Role connection.' });
+    for (const [key, value] of Object.entries(node.data.config ?? {})) {
+      if (key.endsWith('_arn') && String(value ?? '').trim() && !looksLikeTerraformExpression(value) && !isValidArn(value)) {
+        issues.push({
+          nodeId: node.id,
+          severity: 'error',
+          message: `${node.data.label || node.data.serviceName} field "${key}" doesn't look like a valid ARN (expected a shape like "arn:aws:service:region:account-id:resource").`,
+        });
+      }
     }
 
     if (
@@ -74,6 +85,10 @@ export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationI
   }
 
   for (const edge of edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      issues.push({ edgeId: edge.id, severity: 'error', message: 'Connection references a node that no longer exists in the diagram.' });
+    }
+
     if (edge.data?.connectionType === 'security' && !edge.data.port) {
       issues.push({ edgeId: edge.id, severity: 'warning', message: 'Security connection should declare a port.' });
     }
@@ -81,3 +96,11 @@ export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[]): ValidationI
 
   return issues;
 }
+
+// Shape check only — deliberately not an exhaustive region/partition enum, since AWS adds regions
+// over time and a stale hardcoded list would start rejecting real ones. Matches us-east-1,
+// ap-south-1, us-gov-west-1, cn-north-1, etc. Mirrored in the backend's diagramValidator.js.
+function isValidAwsRegion(value: string) {
+  return /^[a-z]{2}(-gov)?-[a-z]+-\d$/.test(value.trim());
+}
+

@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { StorageAdapter } from './StorageAdapter.js';
@@ -7,6 +7,7 @@ import { StorageAdapter } from './StorageAdapter.js';
 export class LocalStorageAdapter extends StorageAdapter {
   constructor({ rootDir }) {
     super();
+    this.mode = 'local';
     this.rootDir = rootDir;
   }
 
@@ -30,6 +31,15 @@ export class LocalStorageAdapter extends StorageAdapter {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async listFiles(prefix) {
+    try {
+      return await readdir(this._resolve(prefix));
+    } catch (error) {
+      if (error?.code === 'ENOENT') return [];
+      throw error;
     }
   }
 

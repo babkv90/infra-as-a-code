@@ -3,7 +3,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+// AWS_LAMBDA_FUNCTION_NAME is a reserved variable Lambda always sets on the real function's
+// behalf, never present anywhere else — the standard way to detect "this process is actually
+// running inside Lambda" without guessing from NODE_ENV (which locals can also set to
+// 'production'). Real values there come from the function's own configured environment variables,
+// set directly in the Lambda console/IaC — never from a .env file, which won't exist in the
+// deployment package at all. Skipping dotenv entirely in that case (rather than relying on it
+// silently finding nothing, or on its default non-override behavior) means a .env file accidentally
+// left in a zip could never shadow the real configured values, and makes the local-vs-Lambda split
+// explicit here instead of implicit in dotenv's loading semantics.
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 function readString(name, fallback = '') {
   const value = process.env[name];
@@ -58,6 +70,20 @@ export const env = {
   GITHUB_CLIENT_SECRET: readString('GITHUB_CLIENT_SECRET'),
   GITHUB_OAUTH_CALLBACK_URL: readString('GITHUB_OAUTH_CALLBACK_URL'),
   GITHUB_TOKEN_ENCRYPTION_KEY: readString('GITHUB_TOKEN_ENCRYPTION_KEY'),
+  // Selects which runner NEW deployments are created with (src/services/deploymentExecutorDispatch.js).
+  // Read once, at deployment-creation time only — Deployment.executor then pins that single record to
+  // whichever value was in effect at that moment, for its entire lifecycle. Flipping this later never
+  // moves an already-created deployment onto a different executor.
+  DEPLOYMENT_EXECUTOR: readString('DEPLOYMENT_EXECUTOR', 'local'),
+  // Our own platform repo that generated Terraform gets pushed to for the github-actions executor —
+  // not the end user's repo (that's a separate, future "Option B" idea, out of scope here).
+  DEPLOYMENT_GITHUB_OWNER: readString('DEPLOYMENT_GITHUB_OWNER'),
+  DEPLOYMENT_GITHUB_REPO: readString('DEPLOYMENT_GITHUB_REPO'),
+  DEPLOYMENT_GITHUB_BRANCH: readString('DEPLOYMENT_GITHUB_BRANCH', 'main'),
+  // Authenticates the workflow's own callback POST (see terraformDeployCallbackController.js) back to
+  // this API with its run's outcome/outputs — a shared secret, not a user credential, since the caller
+  // is a GitHub Actions job, not a logged-in user.
+  DEPLOYMENT_CALLBACK_SECRET: readString('DEPLOYMENT_CALLBACK_SECRET'),
 };
 
 if (!env.MONGODB_URI) {
@@ -66,4 +92,18 @@ if (!env.MONGODB_URI) {
 
 if (env.STORAGE_MODE === 's3' && !env.STORAGE_S3_BUCKET) {
   throw new Error('STORAGE_S3_BUCKET is required when STORAGE_MODE=s3.');
+}
+
+if (env.DEPLOYMENT_EXECUTOR === 'github-actions') {
+  if (!env.DEPLOYMENT_GITHUB_OWNER || !env.DEPLOYMENT_GITHUB_REPO) {
+    throw new Error('DEPLOYMENT_GITHUB_OWNER and DEPLOYMENT_GITHUB_REPO are required when DEPLOYMENT_EXECUTOR=github-actions.');
+  }
+  if (!env.DEPLOYMENT_CALLBACK_SECRET) {
+    throw new Error('DEPLOYMENT_CALLBACK_SECRET is required when DEPLOYMENT_EXECUTOR=github-actions.');
+  }
+  if (env.STORAGE_MODE !== 's3') {
+    throw new Error(
+      'DEPLOYMENT_EXECUTOR=github-actions requires STORAGE_MODE=s3 — a GitHub-hosted runner has no access to this server\'s local disk, so Terraform state cannot live there. Set STORAGE_MODE=s3 (and STORAGE_S3_BUCKET/STORAGE_DYNAMODB_LOCK_TABLE) first.',
+    );
+  }
 }

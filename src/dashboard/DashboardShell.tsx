@@ -16,6 +16,7 @@ import {
   FilePlus2,
   GitBranch,
   Github,
+  History,
   LogOut,
   Maximize2,
   Minimize2,
@@ -48,6 +49,7 @@ import { getStoredUser, logout } from '../auth/authClient';
 import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDemoSource';
 import { useDiagramStore } from '../store/diagramStore';
 import { normalizeTerraformFiles } from '../utils/importDiagram';
+import { DeploymentLiveMonitor } from './components/DeploymentLiveMonitor';
 import { EmptyState, Panel } from './components/DashPrimitives';
 import { createSavedDiagram, deleteSavedDiagram, listSavedDiagrams, updateSavedDiagram, type SavedDiagram } from './diagramApi';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -100,7 +102,15 @@ import {
   type GithubConnection,
   type GithubRepository,
 } from '../github/githubApi';
-import { destroyDeployment, forceDestroyDeployment, getDeployment, listDeployments, type DeploymentRecord } from '../utils/deploymentApi';
+import {
+  destroyDeployment,
+  forceDestroyDeployment,
+  getDeployment,
+  listDeployments,
+  verifyDeploymentResources,
+  type DeploymentRecord,
+  type ResourceVerificationResult,
+} from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseAiAgent, canUseApplicationPipelines, serviceAccessTierForUser } from '../utils/accessControl';
@@ -222,6 +232,15 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
     }
   }
 
+  function goToNotificationTarget(item: NotificationRecord) {
+    setIsNotificationsOpen(false);
+    if (item.resourceType === 'Deployment') {
+      goToResourceInfo(item.resourceId);
+    } else if (item.resourceType === 'ApplicationPipeline') {
+      goToDashboardPage('app-pipeline');
+    }
+  }
+
   async function syncActiveAwsAccount() {
     if (!activeAwsAccount || isSyncingAws) return;
 
@@ -326,14 +345,14 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
                   {notifications.length ? (
                     <ul className="dash-notification-list">
                       {notifications.map((item) => (
-                        <li className={`dash-notification-item dash-notification-item--${item.status}`} key={item._id}>
+                        <li
+                          className={`dash-notification-item dash-notification-item--${item.status}`}
+                          key={item._id}
+                          onClick={() => goToNotificationTarget(item)}
+                        >
                           {item.status === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
                           <div>
                             <strong>{item.title}</strong>
-                            {item.message && <p>{item.message}</p>}
-                            {item.errorLog && (
-                              <pre className="dash-notification-log">{item.errorLog}</pre>
-                            )}
                             <small>{new Date(item.createdAt).toLocaleString()}</small>
                           </div>
                         </li>
@@ -372,6 +391,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
         </div>
         {showScrollHint && <ScrollHintIcon />}
       </section>
+      <DeploymentLiveMonitor />
     </div>
   );
 }
@@ -1008,6 +1028,7 @@ function DeploymentsPage({
   const [forceDestroyingDeploymentId, setForceDestroyingDeploymentId] = useState<string>();
   const [pendingForceDestroyDeployment, setPendingForceDestroyDeployment] = useState<DeploymentRecord | null>(null);
   const [expandedDeploymentId, setExpandedDeploymentId] = useState<string>();
+  const [destroyHistoryDeployment, setDestroyHistoryDeployment] = useState<DeploymentRecord | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState(commonDeploymentTemplates[0]?.id ?? '');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -1221,6 +1242,17 @@ function DeploymentsPage({
                                 {destroyingDeploymentId === deployment._id ? 'Destroying...' : 'Destroy'}
                               </button>
                             )}
+                            {extractDestroyAttempts(deployment.logs).length > 0 && (
+                              <button
+                                className="dash-secondary-action dash-nowrap-action"
+                                onClick={() => setDestroyHistoryDeployment(deployment)}
+                                title="See why a destroy attempt failed, and every past attempt for this deployment."
+                                type="button"
+                              >
+                                <History size={15} />
+                                Destroy log
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1242,61 +1274,62 @@ function DeploymentsPage({
         </div>
         </section>
 
-        <aside className="admin-side-col">
-          <section className="deploy-side-panel">
-            <header>
-              <strong>Deployment pipeline</strong>
-              <span>Reference</span>
-            </header>
-            <div className="dash-pipeline">
-              {deploymentPipeline.map((step) => {
-                const Icon = step.icon;
-                return (
-                  <div className={`dash-pipeline-step dash-pipeline-step--${step.status}`} key={step.label}>
-                    <Icon size={18} />
-                    <span>{step.label}</span>
-                    <small>{step.status}</small>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+      </div>
 
-          <section className="deploy-side-panel deploy-side-panel--scroll">
-            <header>
-              <strong>Infrastructure template guide</strong>
-              <span>{commonDeploymentTemplates.length} templates</span>
-            </header>
-            <div className="dash-deploy-template-picker">
-              <label>
-                <span>Application-compatible infrastructure</span>
-                <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
-                  {commonDeploymentTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedTemplate && (
-                <div className="dash-deploy-template-summary">
-                  <div>
-                    <strong>Compatible apps</strong>
-                    <p>{selectedTemplate.compatibility}</p>
-                  </div>
-                  <div>
-                    <strong>Infrastructure</strong>
-                    <p>{selectedTemplate.infrastructure}</p>
-                  </div>
-                  <div>
-                    <strong>Application deployment</strong>
-                    <p>{selectedTemplate.deploymentPath}</p>
-                  </div>
+      <div className="deploy-bottom-panels">
+        <section className="deploy-side-panel">
+          <header>
+            <strong>Deployment pipeline</strong>
+            <span>Reference</span>
+          </header>
+          <div className="dash-pipeline">
+            {deploymentPipeline.map((step) => {
+              const Icon = step.icon;
+              return (
+                <div className={`dash-pipeline-step dash-pipeline-step--${step.status}`} key={step.label}>
+                  <Icon size={18} />
+                  <span>{step.label}</span>
+                  <small>{step.status}</small>
                 </div>
-              )}
-            </div>
-          </section>
-        </aside>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="deploy-side-panel deploy-side-panel--scroll">
+          <header>
+            <strong>Infrastructure template guide</strong>
+            <span>{commonDeploymentTemplates.length} templates</span>
+          </header>
+          <div className="dash-deploy-template-picker">
+            <label>
+              <span>Application-compatible infrastructure</span>
+              <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                {commonDeploymentTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedTemplate && (
+              <div className="dash-deploy-template-summary">
+                <div>
+                  <strong>Compatible apps</strong>
+                  <p>{selectedTemplate.compatibility}</p>
+                </div>
+                <div>
+                  <strong>Infrastructure</strong>
+                  <p>{selectedTemplate.infrastructure}</p>
+                </div>
+                <div>
+                  <strong>Application deployment</strong>
+                  <p>{selectedTemplate.deploymentPath}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
       {pendingDestroyDeployment && (
         <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !destroyingDeploymentId && setPendingDestroyDeployment(null)}>
@@ -1400,6 +1433,12 @@ function DeploymentsPage({
             </footer>
           </section>
         </div>
+      )}
+      {destroyHistoryDeployment && (
+        <DestroyHistoryModal
+          deployment={deploymentRecords.find((item) => item._id === destroyHistoryDeployment._id) ?? destroyHistoryDeployment}
+          onClose={() => setDestroyHistoryDeployment(null)}
+        />
       )}
     </div>
   );
@@ -2987,6 +3026,206 @@ function deploymentLogLevel(level: string, message: string): 'error' | 'warning'
   if (level === 'error') return 'error';
   if (level === 'warning') return 'warning';
   return message.toLowerCase().includes('error') ? 'error' : 'info';
+}
+
+type DeploymentLogEntry = DeploymentRecord['logs'][number];
+
+type DestroyAttempt = {
+  key: string;
+  kind: 'destroy' | 'force-destroy' | 'auto-destroy';
+  label: string;
+  startedAt?: string;
+  outcome: 'succeeded' | 'failed' | 'in-progress';
+  failureReason?: string;
+  entries: DeploymentLogEntry[];
+};
+
+// terraformDeploymentRunner.js pushes one of these exact messages as the very first log line of any
+// destroy run (plain, force, or auto-triggered after a failed deploy) — they're the only reliable
+// boundary markers available for splitting one deployment's flat, chronological log array back into
+// separate destroy attempts. Deploy/update start messages are tracked too, only so their log lines
+// don't get misattributed to whichever destroy attempt happens to precede them.
+const DESTROY_ATTEMPT_START_MARKERS: Record<string, { kind: DestroyAttempt['kind']; label: string }> = {
+  'Starting Terraform destroy runner.': { kind: 'destroy', label: 'Destroy' },
+  'Force destroy requested by user. Proceeding even though the deployment may still be running elsewhere; Terraform state locking will safely reject this run if that is the case.': {
+    kind: 'force-destroy',
+    label: 'Force destroy',
+  },
+  'Automatically destroying AWS resources created before this deployment failed.': {
+    kind: 'auto-destroy',
+    label: 'Automatic cleanup after failed deploy',
+  },
+};
+
+const DEPLOY_ATTEMPT_START_MARKERS = new Set(['Starting Terraform deployment runner.', 'Starting Terraform update runner.']);
+
+function extractDestroyAttempts(logs: DeploymentLogEntry[]): DestroyAttempt[] {
+  const attempts: DestroyAttempt[] = [];
+  let current: DestroyAttempt | null = null;
+
+  logs.forEach((entry, index) => {
+    const marker = DESTROY_ATTEMPT_START_MARKERS[entry.message];
+    if (marker) {
+      current = { key: `${index}-${entry.message}`, kind: marker.kind, label: marker.label, startedAt: entry.at, outcome: 'in-progress', entries: [] };
+      attempts.push(current);
+    } else if (DEPLOY_ATTEMPT_START_MARKERS.has(entry.message)) {
+      current = null;
+    }
+
+    current?.entries.push(entry);
+  });
+
+  // The runner always pushes its true failure/success message as the LAST line of a finished
+  // attempt (via failDeployment on failure, or an explicit "destroy completed" info line on
+  // success) — reading only the last entry avoids misreading an unrelated raw Terraform output line
+  // that merely contains the word "error" as the actual failure reason.
+  for (const attempt of attempts) {
+    const last = attempt.entries[attempt.entries.length - 1];
+    if (last?.level === 'error') {
+      attempt.outcome = 'failed';
+      attempt.failureReason = last.message;
+    } else if (attempt.entries.some((entry) => /destroy completed|cleanup completed/i.test(entry.message))) {
+      attempt.outcome = 'succeeded';
+    }
+  }
+
+  return attempts.reverse();
+}
+
+function resourceVerificationStatusLabel(status: ResourceVerificationResult['resources'][number]['status']) {
+  if (status === 'present') return 'Still in AWS';
+  if (status === 'missing') return 'Confirmed removed';
+  if (status === 'destroyed') return 'Not tracked (already destroyed)';
+  return 'Unknown — verify manually';
+}
+
+function DestroyHistoryModal({ deployment, onClose }: { deployment: DeploymentRecord; onClose: () => void }) {
+  const attempts = extractDestroyAttempts(deployment.logs);
+  const [openAttemptKey, setOpenAttemptKey] = useState<string | undefined>(attempts[0]?.key);
+  const [verification, setVerification] = useState<ResourceVerificationResult | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+
+  async function handleVerify() {
+    setIsVerifying(true);
+    setVerifyError('');
+    try {
+      setVerification(await verifyDeploymentResources(deployment._id));
+    } catch (error) {
+      setVerifyError(error instanceof Error ? error.message : 'Unable to check AWS right now.');
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  return (
+    <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-labelledby="dash-destroy-history-title"
+        aria-modal="true"
+        className="dash-destroy-history-dialog"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <span className="dash-eyebrow">Destroy history</span>
+            <h2 id="dash-destroy-history-title">{deployment.name}</h2>
+          </div>
+          <button aria-label="Close destroy history" className="dash-icon-button" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="dash-verify-resources">
+          <div className="dash-verify-resources__intro">
+            <div>
+              <strong>Still in AWS, or cleaned up?</strong>
+              <span>Checks live AWS state directly &mdash; separate from what Terraform's local record says.</span>
+            </div>
+            <button className="dash-secondary-action" disabled={isVerifying} onClick={() => void handleVerify()} type="button">
+              <ShieldCheck size={15} />
+              {isVerifying ? 'Checking AWS...' : 'Verify resources in AWS'}
+            </button>
+          </div>
+
+          {verifyError && <div className="pipeline-notice pipeline-notice--error">{verifyError}</div>}
+
+          {verification && (
+            <div className="dash-verify-resources__results">
+              {verification.error && (
+                <div className="dash-verify-resources__warning">
+                  <AlertTriangle size={14} />
+                  <p>{verification.error}</p>
+                </div>
+              )}
+              <span className="dash-verify-resources__checked-at">Checked {new Date(verification.checkedAt).toLocaleString()} &middot; {verification.region}</span>
+              {verification.resources.length ? (
+                <ul className="dash-verify-resources__list">
+                  {verification.resources.map((resource) => (
+                    <li className={`dash-verify-resource dash-verify-resource--${resource.status}`} key={resource.name}>
+                      <div>
+                        <strong>{resource.label}</strong>
+                        <span>{resource.service || resource.terraformAddress}</span>
+                      </div>
+                      <div className="dash-verify-resource__status-group">
+                        <em className={`dash-verify-status-pill dash-verify-status-pill--${resource.status}`}>{resourceVerificationStatusLabel(resource.status)}</em>
+                        {resource.status !== 'destroyed' && (
+                          <a className="dash-verify-resource__link" href={resource.consoleUrl} rel="noreferrer" target="_blank">
+                            <ExternalLink size={12} />
+                            Verify in AWS Console
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="dash-verify-resources__empty">No tracked resource outputs were saved for this deployment to check.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="dash-destroy-history-list">
+          {attempts.map((attempt, index) => {
+            const isOpen = openAttemptKey === attempt.key;
+            return (
+              <div className={`dash-destroy-attempt dash-destroy-attempt--${attempt.outcome}`} key={attempt.key}>
+                <button className="dash-destroy-attempt__head" onClick={() => setOpenAttemptKey(isOpen ? undefined : attempt.key)} type="button">
+                  <div>
+                    <strong>
+                      Attempt {attempts.length - index} &middot; {attempt.label}
+                    </strong>
+                    <span>{attempt.startedAt ? new Date(attempt.startedAt).toLocaleString() : 'Time not recorded'}</span>
+                  </div>
+                  <em className={`dash-deploy-log-pill dash-deploy-log--${attempt.outcome === 'failed' ? 'error' : attempt.outcome === 'succeeded' ? 'info' : 'warning'}`}>
+                    {attempt.outcome === 'failed' ? 'Failed' : attempt.outcome === 'succeeded' ? 'Succeeded' : 'In progress'}
+                  </em>
+                </button>
+                {attempt.failureReason && (
+                  <div className="dash-destroy-attempt__reason">
+                    <AlertTriangle size={14} />
+                    <p>{attempt.failureReason}</p>
+                  </div>
+                )}
+                {isOpen && (
+                  <div className="dash-destroy-attempt__log">
+                    {attempt.entries.map((entry, entryIndex) => (
+                      <div className={`dash-destroy-log-line dash-destroy-log-line--${deploymentLogLevel(entry.level, entry.message)}`} key={`${attempt.key}-${entryIndex}`}>
+                        <span>{entry.at ? new Date(entry.at).toLocaleTimeString() : ''}</span>
+                        <p>{entry.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function SecurityPage({ insights }: { insights?: AwsInsights }) {

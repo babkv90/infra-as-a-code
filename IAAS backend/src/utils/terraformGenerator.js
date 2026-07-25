@@ -1,3 +1,6 @@
+import { env } from '../config/env.js';
+import { storage } from '../storage/index.js';
+
 const terraformTypeByServiceId = {
   alb: 'aws_lb',
   apigw: 'aws_apigatewayv2_api',
@@ -75,6 +78,23 @@ const outputAttributesByServiceId = {
   waf: ['arn', 'id', 'capacity'],
 };
 
+// A Lambda node's "Deployment zip path" field stores the uploaded file's server-generated id in
+// config.filename_upload_id (see PropertiesPanel.tsx's FilePathField). Shared by deploymentController.js
+// (to know which uploaded zips to copy into a real deployment's Terraform work directory before
+// `apply` runs) and deploymentPlanner.js (to stage the same zips into Layer 2's disposable
+// `terraform validate` scratch directory — without this, filebase64sha256() in the generated HCL
+// always fails validate with "file not found", even for a correctly uploaded zip).
+export function lambdaZipUploadIdsFromNodes(nodes = []) {
+  return Array.from(
+    new Set(
+      nodes
+        .filter((node) => node?.data?.serviceId === 'lambda')
+        .map((node) => String(node.data?.config?.filename_upload_id ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 export function generateTerraform(nodes = [], edges = [], options = {}) {
   const region = options.region ?? firstRegion(nodes) ?? 'ap-south-1';
   const suffix = sanitizeName(options.suffix ?? 'diagram').slice(0, 16) || 'diagram';
@@ -89,7 +109,7 @@ export function generateTerraform(nodes = [], edges = [], options = {}) {
       (node.data?.serviceId === 'cloudwatch' && configString(node.data?.config, 'namespace') === 'AWS/CloudFront'),
   );
   const blocks = dedupeTerraformBlocks([
-    terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider),
+    terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider, options.remoteStateBackend ? options.deploymentId : null),
     ...awsDataSourceBlocks(deployableNodes),
     ...ec2AmiDataBlocks(deployableNodes),
     ...ec2ManagedKeyPairBlocks(deployableNodes, names, suffix),
@@ -111,7 +131,40 @@ export function generateTerraform(nodes = [], edges = [], options = {}) {
   return blocks.filter(Boolean).join('\n\n');
 }
 
-function terraformHeader(region, includeTlsProvider = false, includeUsEast1Provider = false) {
+function terraformHeader(region, includeTlsProvider = false, includeUsEast1Provider = false, remoteStateDeploymentId = null) {
+  // Only declared in s3 storage mode, where Lambda resources can't compute source_code_hash locally
+  // via filebase64sha256() (see lambdaDeploymentPackageFromField) — terraformDeploymentRunner.js
+  // populates this from a generated .auto.tfvars.json before `apply` runs. Harmless to declare
+  // unconditionally, but skipped in local mode to keep local-mode output byte-for-byte unchanged.
+  const lambdaHashVariable =
+    storage.mode === 's3'
+      ? `
+
+variable "lambda_source_code_hashes" {
+  type    = map(string)
+  default = {}
+}`
+      : '';
+
+  // Only emitted for deployments created on the github-actions executor (see
+  // deploymentExecutorDispatch.js) — a GitHub-hosted runner is a fresh VM with no access to this
+  // server's local disk, so state has to live somewhere both this backend and the runner can reach.
+  // Local-executor deployments never get this block, so their generated Terraform stays exactly what
+  // it always was. Terraform's `backend` block cannot reference variables, so these are literal
+  // values baked in at generation time, not interpolated — that's a Terraform language constraint,
+  // not a shortcut.
+  const backendBlock = remoteStateDeploymentId
+    ? `
+  backend "s3" {
+    bucket         = "${escapeString(env.STORAGE_S3_BUCKET)}"
+    key            = "deployments/${escapeString(String(remoteStateDeploymentId))}/terraform.tfstate"
+    region         = "${escapeString(env.STORAGE_S3_REGION)}"
+    dynamodb_table = "${escapeString(env.STORAGE_DYNAMODB_LOCK_TABLE)}"
+    encrypt        = true
+  }
+`
+    : '';
+
   return `terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -124,7 +177,7 @@ function terraformHeader(region, includeTlsProvider = false, includeUsEast1Provi
       version = "~> 4.0"
     }` : ''}
   }
-}
+${backendBlock}}${lambdaHashVariable}
 
 provider "aws" {
   region = "${escapeString(region)}"
@@ -512,14 +565,20 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
       const { roleRef, extraBlocks } = connectedRoleRef
         ? { roleRef: connectedRoleRef, extraBlocks: [] }
         : lambdaExecutionRoleFromField(config, uniqueName);
-      const { filenameValue, sourceCodeHash } = lambdaDeploymentPackageFromField(config);
+      const packageInfo = lambdaDeploymentPackageFromField(config);
+      const packageLines =
+        packageInfo.kind === 's3'
+          ? `  s3_bucket        = ${formatValue(packageInfo.s3Bucket)}
+  s3_key           = ${formatValue(packageInfo.s3Key)}
+  source_code_hash = ${packageInfo.sourceCodeHashExpr}`
+          : `  filename         = ${formatValue(packageInfo.filenameValue)}
+  source_code_hash = ${formatMaybeExpression(packageInfo.sourceCodeHash)}`;
       return [
         ...extraBlocks,
         `resource "aws_lambda_function" "${name}" {
   function_name    = ${formatValue(configString(config, 'function_name') || uniqueName)}
   role             = ${formatMaybeExpression(roleRef)}
-  filename         = ${formatValue(filenameValue)}
-  source_code_hash = ${formatMaybeExpression(sourceCodeHash)}
+${packageLines}
   handler          = ${formatValue(configString(config, 'handler'))}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
@@ -1200,20 +1259,36 @@ function lambdaExecutionRoleFromField(config, uniqueName) {
 
 // A zip picked via PropertiesPanel's FilePathField gets uploaded to the backend, and its
 // server-generated id is stored in config.filename_upload_id (see FilePathField / deploymentApi.ts
-// uploadLambdaZip). terraformDeploymentRunner.js copies that file into the Terraform work directory
-// as "<uploadId>.zip" before `apply` runs — see placeLambdaZipUploads — so that has to be the exact
-// filename referenced here. A manually typed filename (no upload) is passed through unchanged, on
-// the assumption that whoever typed it made sure it already exists wherever `terraform apply` runs.
+// uploadLambdaZip). What Terraform needs to reference it depends on the active StorageAdapter:
+//  - local mode: terraformDeploymentRunner.js stages the zip into the Terraform work directory as
+//    "<uploadId>.zip" before `apply` runs (see stageLambdaZipUploads) — filename + filebase64sha256,
+//    same as before this storage abstraction existed.
+//  - s3 mode: the zip already lives in S3 (written there at upload time), so Terraform references it
+//    directly via s3_bucket/s3_key — no local file needed at all. filebase64sha256() can't run
+//    against an S3 object, so source_code_hash instead looks up a value computed once at upload time
+//    (see lambdaZipUploads.js) out of a map variable populated per-run by terraformDeploymentRunner.js.
+// A manually typed filename (no upload) is passed through unchanged in either mode, on the
+// assumption that whoever typed it made sure it already exists wherever `terraform apply` runs.
 function lambdaDeploymentPackageFromField(config) {
   const uploadId = configString(config, 'filename_upload_id');
   if (!uploadId) {
-    return { filenameValue: configString(config, 'filename'), sourceCodeHash: configString(config, 'source_code_hash') };
+    return { kind: 'inline', filenameValue: configString(config, 'filename'), sourceCodeHash: configString(config, 'source_code_hash') };
   }
 
-  const filenameValue = `${uploadId}.zip`;
+  const ref = storage.resolveArtifactReference(`lambda-zips/${uploadId}.zip`);
+  if (ref.type === 's3') {
+    return {
+      kind: 's3',
+      s3Bucket: ref.bucket,
+      s3Key: ref.key,
+      sourceCodeHashExpr: `lookup(var.lambda_source_code_hashes, ${formatValue(uploadId)}, null)`,
+    };
+  }
+
+  const filenameValue = ref.filename;
   const explicitHash = configString(config, 'source_code_hash');
   const sourceCodeHash = explicitHash || `filebase64sha256(${formatValue(filenameValue)})`;
-  return { filenameValue, sourceCodeHash };
+  return { kind: 'local', filenameValue, sourceCodeHash };
 }
 
 function sanitizeName(value) {

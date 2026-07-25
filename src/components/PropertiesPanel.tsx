@@ -7,7 +7,7 @@ import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdgeData, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
 import { uploadLambdaZip } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
-import { downloadJsonFile, getResourceRequirementReport } from '../utils/resourceRequirements';
+import { downloadJsonFile, getResourceRequirementReport, isValidArn, looksLikeTerraformExpression } from '../utils/resourceRequirements';
 
 const connectionTypes: EdgeConnectionType[] = ['data', 'event', 'security', 'monitoring'];
 const bindingTargetKinds: NodeBindingTargetKind[] = ['env', 'property', 'iam', 'connection'];
@@ -259,10 +259,13 @@ function PropertiesPanel() {
 
           {(service?.fields ?? awsServices[0].fields).map((field) => {
             const isRequired = resourceReport?.validKeys.find((item) => item.key === field.key)?.required ?? Boolean(field.required);
-            const isMissing = isRequired && !String(selectedNode.data.config[field.key] ?? '').trim();
+            const fieldValue = String(selectedNode.data.config[field.key] ?? '');
+            const isMissing = isRequired && !fieldValue.trim();
+            const isInvalidArn = field.key.endsWith('_arn') && fieldValue.trim() && !looksLikeTerraformExpression(fieldValue) && !isValidArn(fieldValue);
+            const fieldError = isMissing ? 'Required before deployment' : isInvalidArn ? 'Not a valid ARN — expected arn:aws:service:region:account-id:resource' : undefined;
 
             return (
-            <Field label={field.label} key={field.key} required={isRequired} error={isMissing ? 'Required before deployment' : undefined}>
+            <Field label={field.label} key={field.key} required={isRequired} error={fieldError}>
               {field.type === 'select' ? (
                 <select
                   value={String(selectedNode.data.config[field.key] ?? '')}
