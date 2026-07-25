@@ -26,7 +26,7 @@ env:
   ECR_REPOSITORY: current-visual-infrastructure-deployment-app
   ECS_CLUSTER: infraflow-cluster
   ECS_SERVICE: react-app-service
-  S3_BUCKET: infraflow-static-20260722034216793100000001
+  S3_BUCKET: replace-with-s3-bucket
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
