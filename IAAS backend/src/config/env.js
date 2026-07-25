@@ -45,6 +45,14 @@ export const env = {
   TERRAFORM_APPLY_ENABLED: readString('TERRAFORM_APPLY_ENABLED') === 'true',
   TERRAFORM_BIN: readString('TERRAFORM_BIN', 'terraform'),
   TERRAFORM_WORK_DIR: readString('TERRAFORM_WORK_DIR'),
+  // 'local' (default) or 's3' — selects the StorageAdapter (src/storage/index.js) for uploaded
+  // artifacts. Read once here and never checked elsewhere. STORAGE_S3_REGION falls back to
+  // AWS_REGION (the base identity's region) since they're usually the same, but is separate
+  // because AWS_REGION is about the STS-assume-role identity, not where this bucket lives.
+  STORAGE_MODE: readString('STORAGE_MODE', 'local'),
+  STORAGE_S3_BUCKET: readString('STORAGE_S3_BUCKET'),
+  STORAGE_S3_REGION: readString('STORAGE_S3_REGION') || readString('AWS_REGION'),
+  STORAGE_DYNAMODB_LOCK_TABLE: readString('STORAGE_DYNAMODB_LOCK_TABLE'),
   RAG_API_URL: readString('RAG_API_URL', 'http://127.0.0.1:8000'),
   GITHUB_CLIENT_ID: readString('GITHUB_CLIENT_ID'),
   GITHUB_CLIENT_SECRET: readString('GITHUB_CLIENT_SECRET'),
@@ -54,4 +62,8 @@ export const env = {
 
 if (!env.MONGODB_URI) {
   console.warn('MONGODB_URI is not set. Add it to IAAS backend/.env before running the API.');
+}
+
+if (env.STORAGE_MODE === 's3' && !env.STORAGE_S3_BUCKET) {
+  throw new Error('STORAGE_S3_BUCKET is required when STORAGE_MODE=s3.');
 }
