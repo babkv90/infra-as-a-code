@@ -6541,7 +6541,11 @@ button.dash-kpi-card {
 
 .dash-deploy-table-wrap {
   width: 100%;
-  min-height: 0;
+  /* Header (40px) + 10 rows at their tallest real-world height (100px, rows with the "Running Xm"
+     elapsed badge) — measured against live data, not guessed. A floor, not a fixed height: shorter
+     rows (no elapsed badge) show more than 10, taller viewports can still grow this further via the
+     grid-template-rows: minmax(0, 1fr) on .deploy-table-panel. */
+  min-height: 1040px;
   overflow: auto;
 }
 
