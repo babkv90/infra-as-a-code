@@ -23,10 +23,10 @@ permissions:
 env:
   DEPLOY_ENVIRONMENT: development
   AWS_REGION: ap-south-1
-  ECR_REPOSITORY: current-visual-infrastructure-deployment-app
+  ECR_REPOSITORY: react-vue-angular-static-frontend-app
   ECS_CLUSTER: infraflow-cluster
   ECS_SERVICE: react-app-service
-  S3_BUCKET: infraflow-static-20260725163010071600000001
+  S3_BUCKET: infraflow-static-20260726092656402600000001
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
