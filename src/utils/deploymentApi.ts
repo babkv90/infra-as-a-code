@@ -17,7 +17,8 @@ export type DeploymentRecord = {
     | 'destroying'
     | 'destroyed'
     | 'failed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'merged';
   resourceCount: number;
   connectionCount: number;
   diagram?: {
@@ -31,6 +32,7 @@ export type DeploymentRecord = {
   terraformWorkDir?: string;
   awsAccount?: string;
   outputs?: Record<string, unknown>;
+  mergedInto?: string;
   validationIssues: Array<{ severity: string; message: string; nodeId?: string; edgeId?: string }>;
   logs: Array<{ message: string; level: string; at?: string }>;
   startedAt?: string;
@@ -38,6 +40,14 @@ export type DeploymentRecord = {
   createdAt?: string;
   updatedAt?: string;
 };
+
+// Statuses a deployment must be in to be offered as a MERGE SOURCE in the UI — kept in sync with
+// MERGE_SOURCE_ELIGIBLE_STATUSES in the backend's deploymentController.js. Anything past this point
+// has (or may have) real AWS resources behind it, which merging cannot safely absorb.
+export const MERGE_SOURCE_ELIGIBLE_STATUSES: DeploymentRecord['status'][] = ['draft', 'validating', 'planned', 'approval_required'];
+// Statuses a deployment must be in to receive a merge — kept in sync with
+// MERGE_TARGET_ELIGIBLE_STATUSES in the backend.
+export const MERGE_TARGET_ELIGIBLE_STATUSES: DeploymentRecord['status'][] = ['deployed', 'failed'];
 
 export type CreateCanvasDeploymentPayload = {
   name?: string;
@@ -70,6 +80,15 @@ export async function getDeployment(id: string) {
   return apiRequest<DeploymentRecord>(`/deployments/${id}`);
 }
 
+// Renames the deployment ("stack") label only — never touches the diagram, Terraform config, or
+// AWS resources, so it works regardless of the deployment's current status.
+export async function renameDeployment(id: string, name: string) {
+  return apiRequest<DeploymentRecord>(`/deployments/${id}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
 export type UpdateCanvasDeploymentPayload = {
   activeRegion?: string;
   nodes: AwsNode[];
@@ -85,6 +104,47 @@ export async function updateDeployment(id: string, payload: UpdateCanvasDeployme
 
 export async function listDeployments() {
   return apiRequest<DeploymentRecord[]>('/deployments');
+}
+
+export type MergePreview = {
+  targetDeploymentId: string;
+  sourceDeploymentId: string;
+  activeRegion?: string;
+  nodes: AwsNode[];
+  edges: AwsEdge[];
+  importedNodeIds: string[];
+};
+
+// Computes (without persisting) what merging `sourceDeploymentId`'s diagram into deployment `id`
+// would produce: the target's existing nodes/edges plus the source's, id-remapped so they can't
+// collide. The caller loads this onto the canvas so the user can draw the connecting edge (the
+// "missing piece of information") before submitting it to mergeDeployment.
+export async function previewDeploymentMerge(id: string, sourceDeploymentId: string) {
+  return apiRequest<MergePreview>(`/deployments/${id}/merge-preview`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceDeploymentId }),
+  });
+}
+
+export type MergeDeploymentPayload = {
+  sourceDeploymentId: string;
+  nodes: AwsNode[];
+  edges: AwsEdge[];
+};
+
+export type MergeDeploymentResult = {
+  target: DeploymentRecord;
+  source: DeploymentRecord;
+};
+
+// Applies a completed merge: the target deployment is updated in place (same Terraform state/work
+// dir — Terraform will diff and create only the newly-imported resources) and the source deployment
+// is locked to 'merged' so it can never be independently applied again.
+export async function mergeDeployment(id: string, payload: MergeDeploymentPayload) {
+  return apiRequest<MergeDeploymentResult>(`/deployments/${id}/merge`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function applyDeployment(id: string) {

@@ -7,6 +7,7 @@ import {
   CloudCog,
   Code2,
   Database,
+  FolderOpen,
   GitBranch,
   KeyRound,
   LayoutDashboard,
@@ -30,6 +31,7 @@ import type { AwsEdge, AwsNode, DiagramSnapshot, EdgeConnectionType, GroupKind }
 export type DashboardPage =
   | 'overview'
   | 'builder'
+  | 'diagrams'
   | 'terraform'
   | 'ai-agent'
   | 'deployments'
@@ -50,6 +52,7 @@ export type DashboardNavItem = {
 export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'builder', label: 'Visual Builder', icon: Workflow },
+  { id: 'diagrams', label: 'Saved Diagrams', icon: FolderOpen },
   { id: 'terraform', label: 'Terraform Export', icon: Code2 },
   { id: 'ai-agent', label: 'AI Cloud Agent', icon: BrainCircuit, badge: 'AI' },
   { id: 'deployments', label: 'Deployments', icon: Rocket },

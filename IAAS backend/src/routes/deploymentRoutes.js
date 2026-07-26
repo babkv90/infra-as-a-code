@@ -9,7 +9,13 @@ import {
   forceDestroyDeployment,
   getDeployment,
   listDeployments,
+  mergeDeploymentFromCanvas,
+  mergeDeploymentSchema,
+  previewDeploymentMerge,
+  previewMergeDeploymentSchema,
   queueDeployment,
+  renameDeployment,
+  renameDeploymentSchema,
   updateCanvasDeploymentSchema,
   updateDeploymentFromCanvas,
   uploadLambdaZip,
@@ -37,6 +43,9 @@ deploymentRouter.post('/from-canvas', authorize(roles.DEVOPS), validateRequest(c
 deploymentRouter.post('/from-diagram/:diagramId', authorize(roles.DEVOPS), validateRequest(createDeploymentSchema), createDeploymentFromDiagram);
 deploymentRouter.post('/:id/apply', authorize(roles.DEVOPS), applyDeployment);
 deploymentRouter.post('/:id/update', authorize(roles.DEVOPS), validateRequest(updateCanvasDeploymentSchema), updateDeploymentFromCanvas);
+deploymentRouter.post('/:id/merge-preview', authorize(roles.DEVOPS), validateRequest(previewMergeDeploymentSchema), previewDeploymentMerge);
+deploymentRouter.post('/:id/merge', authorize(roles.DEVOPS), validateRequest(mergeDeploymentSchema), mergeDeploymentFromCanvas);
+deploymentRouter.post('/:id/rename', authorize(roles.DEVOPS), validateRequest(renameDeploymentSchema), renameDeployment);
 deploymentRouter.post('/:id/queue', authorize(roles.DEVOPS), queueDeployment);
 deploymentRouter.post('/:id/destroy', authorize(roles.DEVOPS), destroyDeployment);
 deploymentRouter.post('/:id/force-destroy', authorize(roles.DEVOPS), forceDestroyDeployment);

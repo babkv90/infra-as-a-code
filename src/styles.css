@@ -1738,6 +1738,10 @@ textarea {
   line-height: 1.5;
 }
 
+.deployment-update-banner__warning {
+  color: #fca5a5;
+}
+
 .deployment-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1870,7 +1874,8 @@ textarea {
   font-size: 12px;
 }
 
-.deployment-target select {
+.deployment-target select,
+.deployment-target input {
   width: 100%;
   min-height: 40px;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -1878,10 +1883,12 @@ textarea {
   background: rgba(2, 6, 23, 0.46);
   color: #f8fafc;
   padding: 0 12px;
+  font: inherit;
   outline: none;
 }
 
-.deployment-target select:focus {
+.deployment-target select:focus,
+.deployment-target input:focus {
   border-color: rgba(34, 211, 238, 0.62);
   box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
 }
@@ -4790,12 +4797,15 @@ button.lp-security-item {
 }
 
 .dash-page--agent {
-  width: 100%;
-  max-width: none;
+  width: min(100%, 840px);
+  max-width: 100%;
+  justify-self: center;
   height: 100%;
   min-height: 0;
   gap: 0;
   overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 20px;
 }
 
 .dash-content:has(.dash-page--builder) {
@@ -4966,17 +4976,20 @@ button.lp-security-item {
 .dash-page--deployments {
   width: 100%;
   max-width: none;
-  height: 100%;
-  min-height: 0;
   gap: 10px;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: auto auto auto auto;
 }
 
+/* Unlike every other dashboard page, this one deliberately scrolls the whole page instead of
+   clipping to one viewport: the deployments table needs to show a fixed number of full rows
+   (see .dash-deploy-table-wrap's min-height below), and that plus the KPI strip and bottom panels
+   routinely add up to more than fits in a single screen. A page-level scrollbar here beats either
+   clipping content or shrinking the table back down to "however many rows happen to fit". */
 .dash-content:has(.dash-page--deployments) {
-  height: calc(100vh - 78px);
+  min-height: calc(100vh - 78px);
   padding: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dash-hero-panel,
@@ -6541,7 +6554,12 @@ button.dash-kpi-card {
 
 .dash-deploy-table-wrap {
   width: 100%;
-  min-height: 0;
+  /* Header (40px) + 10 rows at their tallest real-world height (100px, rows with the "Running Xm"
+     elapsed badge) — measured against live data, not guessed. A cap, not a floor: this is what
+     actually creates "10 rows, then scroll" — the ancestor chain (.deploy-table-panel,
+     .deploy-console-grid, .dash-page--deployments) is all auto-sized now (see those rules), so
+     without a max-height here this element just grows to fit every row instead of scrolling. */
+  max-height: 1040px;
   overflow: auto;
 }
 
@@ -6588,6 +6606,53 @@ button.dash-kpi-card {
 .dash-deploy-template-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dash-diagram-edit-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.dash-diagram-edit-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.dash-diagram-edit-form label > span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dash-diagram-edit-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.58);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.dash-diagram-edit-form input:focus {
+  border-color: rgba(34, 211, 238, 0.54);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.dash-diagram-edit-form__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -9476,8 +9541,6 @@ button.dash-kpi-card {
 .deploy-console-grid {
   display: grid;
   grid-template-columns: 1fr;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .deploy-bottom-panels {
@@ -9489,9 +9552,7 @@ button.dash-kpi-card {
 
 .deploy-table-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
+  grid-template-rows: auto auto;
   padding: 10px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
@@ -10357,15 +10418,15 @@ button.dash-kpi-card {
 
   .dash-content:has(.dash-page--admin),
   .dash-content:has(.dash-page--support),
-  .dash-content:has(.dash-page--deployments),
   .dash-content:has(.dash-page--overview),
   .dash-content:has(.dash-page--resource-info) {
     height: calc(100vh - 78px);
     padding: 10px;
   }
 
-  .dash-page--deployments {
-    grid-template-rows: auto auto minmax(240px, 1fr) auto;
+  .dash-content:has(.dash-page--deployments) {
+    min-height: calc(100vh - 78px);
+    padding: 10px;
   }
 
   .deploy-bottom-panels {
@@ -10717,6 +10778,41 @@ button.dash-kpi-card {
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.1);
   color: #cbd5e1;
+  font-size: 12px;
+}
+
+.dash-merge-target-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.dash-merge-target-option {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.06);
+  color: #cbd5e1;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dash-merge-target-option:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.dash-merge-target-option strong {
+  color: #fff;
+  font-size: 13px;
+}
+
+.dash-merge-target-option span {
+  color: #94a3b8;
   font-size: 12px;
 }
 
@@ -11384,6 +11480,11 @@ button.dash-kpi-card {
 .dash-account-status-pill--failed {
   background: rgba(239, 68, 68, 0.14);
   color: #fca5a5;
+}
+
+.dash-account-status-pill--disconnected {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
 }
 
 .dash-account-actions {
@@ -13122,6 +13223,21 @@ button.dash-kpi-card {
   color: var(--text-secondary);
 }
 
+.app-theme-light .dash-diagram-edit-form {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.app-theme-light .dash-diagram-edit-form label > span {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .dash-diagram-edit-form input {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .app-theme-light .dash-deploy-table th {
   background: var(--bg-surface-hover);
   color: var(--text-secondary);
@@ -13289,6 +13405,20 @@ button.dash-kpi-card {
 
 .app-theme-light .dash-destroy-dialog__meta span {
   background: var(--bg-surface-hover);
+}
+
+.app-theme-light .dash-merge-target-option {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
+}
+
+.app-theme-light .dash-merge-target-option strong {
+  color: var(--text-primary);
+}
+
+.app-theme-light .dash-merge-target-option span {
+  color: var(--text-secondary);
 }
 
 .app-theme-light .dash-destroy-history-dialog {
@@ -13858,7 +13988,8 @@ button.dash-kpi-card {
   background: rgba(var(--warning-rgb), 0.1);
 }
 
-.app-theme-light .deployment-target select {
+.app-theme-light .deployment-target select,
+.app-theme-light .deployment-target input {
   border-color: var(--border-subtle);
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -14161,6 +14292,11 @@ button.dash-kpi-card {
 .app-theme-light .dash-account-status-pill--failed {
   background: rgba(var(--danger-rgb), 0.14);
   color: var(--danger);
+}
+
+.app-theme-light .dash-account-status-pill--disconnected {
+  background: var(--border-subtle);
+  color: var(--text-secondary);
 }
 
 .app-theme-light .dash-deploy-live-table td strong {
@@ -14607,6 +14743,10 @@ button.dash-kpi-card {
   color: var(--warning);
 }
 
+.app-theme-light .deployment-update-banner__warning {
+  color: var(--danger, #dc2626);
+}
+
 .app-theme-light .deployment-stuck-warning > svg {
   color: var(--warning);
 }
@@ -14907,6 +15047,10 @@ button.dash-kpi-card {
   border-color: rgba(var(--warning-rgb), 0.24);
   background: rgba(var(--warning-rgb), 0.09);
   color: var(--warning);
+}
+
+.app-theme-light .dash-page--agent {
+  border-color: var(--border-subtle);
 }
 
 .app-theme-light .dash-page--agent .dash-panel {
@@ -15693,6 +15837,7 @@ button.dash-kpi-card {
 .app-theme-pearl .sidebar__search,
 .app-theme-pearl .rename-input,
 .app-theme-pearl .deployment-target select,
+.app-theme-pearl .deployment-target input,
 .app-theme-pearl .runtime-lab-load select {
   border-color: var(--pearl-border);
   background: var(--pearl-surface-strong);
@@ -15955,6 +16100,10 @@ button.dash-kpi-card {
 
 .app-theme-pearl .diagram-delete-dialog p {
   color: var(--pearl-muted);
+}
+
+.app-theme-pearl .dash-page--agent {
+  border-color: var(--pearl-border);
 }
 
 .app-theme-pearl .dash-page--agent .dash-panel {

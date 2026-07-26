@@ -15,9 +15,18 @@ const deploymentSchema = new mongoose.Schema(
     executor: { type: String, enum: ['local', 'github-actions'], default: 'local' },
     status: {
       type: String,
-      enum: ['draft', 'validating', 'planned', 'approval_required', 'queued', 'deploying', 'deployed', 'destroying', 'destroyed', 'failed', 'cancelled'],
+      // 'merged' is terminal and only ever reached by a SOURCE deployment consumed by a merge (see
+      // mergeDeploymentFromCanvas in deploymentController.js): its nodes were copied into another
+      // deployment's diagram and it must never be independently applied/updated/destroyed again,
+      // since it was never actually applied to AWS itself (only pre-apply deployments are eligible
+      // as a merge source) and doing so would create duplicate resources for the same nodes.
+      enum: ['draft', 'validating', 'planned', 'approval_required', 'queued', 'deploying', 'deployed', 'destroying', 'destroyed', 'failed', 'cancelled', 'merged'],
       default: 'draft',
     },
+    // Set once a deployment is consumed as a merge source. Points at the deployment whose diagram
+    // now contains this deployment's (remapped) nodes. Purely informational/audit — the actual lock
+    // is the 'merged' status.
+    mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'Deployment' },
     resourceCount: { type: Number, default: 0 },
     connectionCount: { type: Number, default: 0 },
     plan: { type: mongoose.Schema.Types.Mixed, default: {} },
