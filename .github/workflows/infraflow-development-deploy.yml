@@ -26,7 +26,7 @@ env:
   ECR_REPOSITORY: react-vue-angular-static-frontend-app
   ECS_CLUSTER: infraflow-cluster
   ECS_SERVICE: react-app-service
-  S3_BUCKET: infraflow-static-20260726092656402600000001
+  S3_BUCKET: infraflow-static-20260726153431179400000001
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
   LAMBDA_FUNCTION: replace-with-lambda-function
   K8S_NAMESPACE: default
