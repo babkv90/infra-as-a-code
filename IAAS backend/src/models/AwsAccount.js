@@ -9,7 +9,7 @@ const awsAccountSchema = new mongoose.Schema(
     roleArn: { type: String, required: true, trim: true },
     externalId: { type: String, trim: true },
     defaultRegion: { type: String, default: 'ap-south-1' },
-    status: { type: String, enum: ['pending', 'connected', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'connected', 'failed', 'disconnected'], default: 'pending' },
     lastSyncAt: Date,
     lastError: String,
     syncSummary: { type: mongoose.Schema.Types.Mixed, default: {} },

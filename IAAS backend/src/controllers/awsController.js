@@ -151,11 +151,19 @@ export const listAccountIamRoles = asyncHandler(async (req, res) => {
   }
 });
 
+// Soft-delete, not a real delete: every Deployment.awsAccount (and AwsAccount, AwsAccount, github
+// pipeline OIDC role, etc.) is an ObjectId reference to this document. Hard-deleting it here would
+// silently orphan every deployment that ever used it — "AWS account not found" on their next
+// destroy/update, with no way to recover the link even though the underlying AWS account is still
+// perfectly fine. Keeping the row (with status flipped) means those references keep resolving, and
+// connectAwsAccount's own findOne({workspace, accountId}) lookup already reuses this exact document
+// (reviving it back to 'connected') if the same AWS account is ever reconnected later.
 export const disconnectAwsAccount = asyncHandler(async (req, res) => {
   const account = await AwsAccount.findOne({ _id: req.params.id, workspace: req.user.workspace });
   if (!account) throw new ApiError(404, 'AWS account not found');
 
-  await AwsAccount.deleteOne({ _id: account._id });
+  account.status = 'disconnected';
+  await account.save();
   await auditLog(req, 'aws.disconnect', 'AwsAccount', account._id, {
     accountId: account.accountId,
     name: account.name,

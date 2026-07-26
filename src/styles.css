@@ -4966,17 +4966,20 @@ button.lp-security-item {
 .dash-page--deployments {
   width: 100%;
   max-width: none;
-  height: 100%;
-  min-height: 0;
   gap: 10px;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: auto auto auto auto;
 }
 
+/* Unlike every other dashboard page, this one deliberately scrolls the whole page instead of
+   clipping to one viewport: the deployments table needs to show a fixed number of full rows
+   (see .dash-deploy-table-wrap's min-height below), and that plus the KPI strip and bottom panels
+   routinely add up to more than fits in a single screen. A page-level scrollbar here beats either
+   clipping content or shrinking the table back down to "however many rows happen to fit". */
 .dash-content:has(.dash-page--deployments) {
-  height: calc(100vh - 78px);
+  min-height: calc(100vh - 78px);
   padding: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dash-hero-panel,
@@ -6542,10 +6545,11 @@ button.dash-kpi-card {
 .dash-deploy-table-wrap {
   width: 100%;
   /* Header (40px) + 10 rows at their tallest real-world height (100px, rows with the "Running Xm"
-     elapsed badge) — measured against live data, not guessed. A floor, not a fixed height: shorter
-     rows (no elapsed badge) show more than 10, taller viewports can still grow this further via the
-     grid-template-rows: minmax(0, 1fr) on .deploy-table-panel. */
-  min-height: 1040px;
+     elapsed badge) — measured against live data, not guessed. A cap, not a floor: this is what
+     actually creates "10 rows, then scroll" — the ancestor chain (.deploy-table-panel,
+     .deploy-console-grid, .dash-page--deployments) is all auto-sized now (see those rules), so
+     without a max-height here this element just grows to fit every row instead of scrolling. */
+  max-height: 1040px;
   overflow: auto;
 }
 
@@ -9480,8 +9484,6 @@ button.dash-kpi-card {
 .deploy-console-grid {
   display: grid;
   grid-template-columns: 1fr;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .deploy-bottom-panels {
@@ -9493,9 +9495,7 @@ button.dash-kpi-card {
 
 .deploy-table-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
+  grid-template-rows: auto auto;
   padding: 10px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
@@ -10361,15 +10361,15 @@ button.dash-kpi-card {
 
   .dash-content:has(.dash-page--admin),
   .dash-content:has(.dash-page--support),
-  .dash-content:has(.dash-page--deployments),
   .dash-content:has(.dash-page--overview),
   .dash-content:has(.dash-page--resource-info) {
     height: calc(100vh - 78px);
     padding: 10px;
   }
 
-  .dash-page--deployments {
-    grid-template-rows: auto auto minmax(240px, 1fr) auto;
+  .dash-content:has(.dash-page--deployments) {
+    min-height: calc(100vh - 78px);
+    padding: 10px;
   }
 
   .deploy-bottom-panels {
@@ -11388,6 +11388,11 @@ button.dash-kpi-card {
 .dash-account-status-pill--failed {
   background: rgba(239, 68, 68, 0.14);
   color: #fca5a5;
+}
+
+.dash-account-status-pill--disconnected {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
 }
 
 .dash-account-actions {
@@ -14165,6 +14170,11 @@ button.dash-kpi-card {
 .app-theme-light .dash-account-status-pill--failed {
   background: rgba(var(--danger-rgb), 0.14);
   color: var(--danger);
+}
+
+.app-theme-light .dash-account-status-pill--disconnected {
+  background: var(--border-subtle);
+  color: var(--text-secondary);
 }
 
 .app-theme-light .dash-deploy-live-table td strong {
