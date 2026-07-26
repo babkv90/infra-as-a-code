@@ -65,5 +65,5 @@ Recommended secrets by target:
 
 - Type: s3-cloudfront
 - Region: ap-south-1
-- ECR repository: current-visual-infrastructure-deployment-app
+- ECR repository: react-vue-angular-static-frontend-app
 - Service: react-app-service
