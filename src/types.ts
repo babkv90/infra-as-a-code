@@ -45,6 +45,32 @@ export type DiagramViewMode = 'topology' | 'dependencies' | 'security';
 
 export type EdgeConnectionType = 'data' | 'event' | 'security' | 'monitoring';
 
+export type InfrastructureRelationshipType =
+  | 'contains'
+  | 'deployed_in'
+  | 'routes_to'
+  | 'attached_to'
+  | 'targets'
+  | 'depends_on';
+
+export type NodeVisualState = {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+};
+
+export type NodeInfrastructureState = {
+  resourceType?: string;
+  boundaryKind?: GroupKind;
+  parentId?: string;
+  boundaryId?: string;
+  regionId?: string;
+  vpcId?: string;
+  availabilityZoneId?: string;
+  subnetId?: string;
+};
+
 export type NodeBindingTargetKind = 'env' | 'property' | 'iam' | 'connection';
 
 export type NodeBindingSourceKind = 'secret' | 'ssm' | 'variable' | 'local' | 'resourceAttr' | 'output';
@@ -85,6 +111,8 @@ export type AwsNodeData = {
   resourceCount?: number;
   generated?: boolean;
   bindings?: NodeBinding[];
+  visual?: NodeVisualState;
+  infrastructure?: NodeInfrastructureState;
 };
 
 export type AwsEdgeData = {
@@ -100,6 +128,8 @@ export type AwsNode = Node<AwsNodeData>;
 export type AwsEdge = Edge<AwsEdgeData>;
 
 export type DiagramSnapshot = {
+  schemaVersion?: number;
+  activeRegion?: string;
   nodes: AwsNode[];
   edges: AwsEdge[];
 };

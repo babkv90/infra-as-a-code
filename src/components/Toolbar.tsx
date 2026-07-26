@@ -22,6 +22,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { useMemo, useRef } from 'react';
+import { useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import { useReactFlow, useViewport } from 'reactflow';
 import { groupKinds } from '../data/awsServices';
@@ -55,6 +56,7 @@ function Toolbar({
   saveDiagramTitle?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [boundaryKind, setBoundaryKind] = useState('');
   const flow = useReactFlow();
   const viewport = useViewport();
   const {
@@ -188,15 +190,19 @@ function Toolbar({
         <select
           className="toolbar-select"
           title="Boundary type"
-          onChange={(event) => addGroupNode(event.target.value as GroupKind)}
-          defaultValue=""
+          value={boundaryKind}
+          onChange={(event) => {
+            const nextKind = event.target.value as GroupKind;
+            setBoundaryKind('');
+            addGroupNode(nextKind);
+          }}
         >
           <option value="" disabled>
             Boundary
           </option>
           {groupKinds.map((kind) => (
             <option value={kind} key={kind}>
-              {kind}
+              {boundaryLabel(kind)}
             </option>
           ))}
         </select>
@@ -309,6 +315,15 @@ function Toolbar({
     </header>
     </>
   );
+}
+
+function boundaryLabel(kind: GroupKind): string {
+  if (kind === 'VPC') return 'VPC boundary';
+  if (kind === 'Public Subnet') return 'Public subnet boundary';
+  if (kind === 'Private Subnet') return 'Private subnet boundary';
+  if (kind === 'Security Group') return 'Security group boundary';
+  if (kind === 'Availability Zone') return 'Availability zone boundary';
+  return kind;
 }
 
 function hasConfigUpdates(currentNodes: AwsNode[], nextNodes: AwsNode[]): boolean {

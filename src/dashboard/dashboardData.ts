@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { MarkerType } from 'reactflow';
 import { serviceById } from '../data/awsServices';
-import type { AwsEdge, AwsNode, DiagramSnapshot, EdgeConnectionType } from '../types';
+import type { AwsEdge, AwsNode, DiagramSnapshot, EdgeConnectionType, GroupKind } from '../types';
 
 // Change dashboard navigation items here.
 export type DashboardPage =
@@ -209,6 +209,13 @@ export const deployments: { app: string; env: string; status: string; resources:
 
 export const commonDeploymentTemplates = [
   {
+    id: 'deployable-vpc-starter',
+    name: 'Deployable VPC starter with boundaries',
+    compatibility: 'Small AWS starter architecture, public EC2 workloads, boundary-aware visual-builder demos',
+    infrastructure: 'VPC boundary, public subnet boundary, VPC, public subnet, internet gateway, route table, security group, EC2',
+    deploymentPath: 'Deploys a compact VPC-based EC2 starter stack; use it as the smallest boundary-aware Terraform-ready diagram.',
+  },
+  {
     id: 'react-spa-production',
     name: 'React free-tier static site on S3',
     compatibility: 'Vite React, Create React App, static React dashboards, admin portals',
@@ -314,6 +321,16 @@ type TemplateNodeInput = {
   config?: Record<string, string | number>;
 };
 
+type TemplateGroupInput = {
+  id: string;
+  kind: GroupKind;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 type TemplateEdgeInput = {
   source: string;
   target: string;
@@ -358,15 +375,64 @@ function templateEdge({ source, target, label, connectionType = 'data', protocol
   };
 }
 
-function templateSnapshot(nodes: TemplateNodeInput[], edges: TemplateEdgeInput[]): DiagramSnapshot {
+function templateGroup({ id, kind, label, x, y, width, height }: TemplateGroupInput): AwsNode {
   return {
-    nodes: nodes.map(templateNode),
+    id,
+    type: 'groupBox',
+    position: { x, y },
+    width,
+    height,
+    style: { width, height },
+    zIndex: -1,
+    selectable: true,
+    draggable: true,
+    data: {
+      serviceName: kind,
+      label,
+      region: 'ap-south-1',
+      arn: '',
+      status: 'unknown',
+      color: '#2563eb',
+      icon: 'BoxSelect',
+      subLabel: 'boundary',
+      ports: { inputs: [], outputs: [] },
+      config: { region: 'ap-south-1', status: 'unknown' },
+      groupKind: kind,
+    },
+  };
+}
+
+function templateSnapshot(nodes: TemplateNodeInput[], edges: TemplateEdgeInput[], groups: TemplateGroupInput[] = []): DiagramSnapshot {
+  return {
+    nodes: [...groups.map(templateGroup), ...nodes.map(templateNode)],
     edges: edges.map(templateEdge),
   };
 }
 
 export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTemplates.map((template) => {
   const snapshots: Record<string, DiagramSnapshot> = {
+    'deployable-vpc-starter': templateSnapshot(
+      [
+        { id: 'tpl-starter-vpc', serviceId: 'vpc', label: 'Starter VPC', x: 90, y: 120, config: { cidr_block: '10.20.0.0/16', enable_dns_hostnames: 'true', enable_dns_support: 'true' } },
+        { id: 'tpl-starter-subnet', serviceId: 'subnet', label: 'Public subnet A', x: 340, y: 210, config: { cidr_block: '10.20.1.0/24', availability_zone: 'ap-south-1a', map_public_ip_on_launch: 'true' } },
+        { id: 'tpl-starter-igw', serviceId: 'igw', label: 'Internet gateway', x: 90, y: 330, config: {} },
+        { id: 'tpl-starter-rt', serviceId: 'route-table', label: 'Public route table', x: 580, y: 210, config: {} },
+        { id: 'tpl-starter-sg', serviceId: 'security-group', label: 'Web security group', x: 580, y: 350, config: { description: 'Allow SSH and HTTP to the starter EC2 instance', ingress_ports: '22,80', ingress_cidr_blocks: '0.0.0.0/0', egress_cidr_blocks: '0.0.0.0/0' } },
+        { id: 'tpl-starter-ec2', serviceId: 'ec2', label: 'Web server', x: 340, y: 350, config: { name: 'starter-web-server', instance_type: 't3.micro', associate_public_ip_address: 'true' } },
+      ],
+      [
+        { source: 'tpl-starter-vpc', target: 'tpl-starter-subnet', label: 'contains', protocol: 'VPC' },
+        { source: 'tpl-starter-vpc', target: 'tpl-starter-igw', label: 'attached to', protocol: 'VPC' },
+        { source: 'tpl-starter-vpc', target: 'tpl-starter-rt', label: 'routes', protocol: 'VPC' },
+        { source: 'tpl-starter-vpc', target: 'tpl-starter-sg', label: 'security scope', connectionType: 'security', protocol: 'VPC' },
+        { source: 'tpl-starter-subnet', target: 'tpl-starter-ec2', label: 'hosts', protocol: 'VPC' },
+        { source: 'tpl-starter-sg', target: 'tpl-starter-ec2', label: 'protects', connectionType: 'security', protocol: 'VPC' },
+      ],
+      [
+        { id: 'tpl-starter-vpc-boundary', kind: 'VPC', label: 'VPC boundary: starter network', x: 40, y: 70, width: 800, height: 470 },
+        { id: 'tpl-starter-public-subnet-boundary', kind: 'Public Subnet', label: 'Public subnet boundary', x: 290, y: 170, width: 470, height: 300 },
+      ],
+    ),
     'react-spa-production': templateSnapshot(
       [
         {

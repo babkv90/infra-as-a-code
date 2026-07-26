@@ -7,6 +7,7 @@ const diagramSchema = new mongoose.Schema(
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     name: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
+    schemaVersion: { type: Number, default: 1 },
     activeRegion: { type: String, default: 'ap-south-1' },
     nodes: { type: [mongoose.Schema.Types.Mixed], default: [] },
     edges: { type: [mongoose.Schema.Types.Mixed], default: [] },

@@ -12,6 +12,8 @@ import {
 import { create } from 'zustand';
 import { serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsEdgeData, AwsNode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
+import { normalizeDiagramSnapshot } from '../utils/diagramSchema';
+import { canContainNode, withTopologySemantics } from '../utils/topologySemantics';
 import { validateDiagram, type ValidationIssue } from '../utils/validate';
 
 type DiagramStore = {
@@ -119,12 +121,17 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       focusNodeIds: [],
     }));
   },
-  addGroupNode: (kind, position = { x: 120, y: 120 }) => {
+  addGroupNode: (kind, position) => {
     pushHistory(set, get);
+    const groupCount = get().nodes.filter((node) => node.type === 'groupBox').length;
+    const nextPosition = position ?? {
+      x: 120 + (groupCount % 2) * 620,
+      y: 120 + Math.floor(groupCount / 2) * 420,
+    };
     const node: AwsNode = {
       id: `group-${Date.now()}`,
       type: 'groupBox',
-      position,
+      position: nextPosition,
       width: 520,
       height: 340,
       style: { width: 520, height: 340 },
@@ -145,7 +152,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         groupKind: kind,
       },
     };
-    set((state) => ({ nodes: [...state.nodes, node], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [node.id] }));
+    set((state) => ({ nodes: [...state.nodes, withTopologySemantics(node)], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [] }));
   },
   addLabelNode: (position = { x: 240, y: 180 }) => {
     pushHistory(set, get);
@@ -166,7 +173,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         config: {},
       },
     };
-    set((state) => ({ nodes: [...state.nodes, node], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [node.id] }));
+    set((state) => ({ nodes: [...state.nodes, withTopologySemantics(node)], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [node.id] }));
   },
   onNodesChange: (changes) => {
     set((state) => {
@@ -433,39 +440,49 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   },
   importDiagram: (snapshot) => {
     pushHistory(set, get);
+    const normalized = normalizeDiagramSnapshot(snapshot);
     // Loading a diagram (a demo, a template, or the user's own saved one) isn't itself an
     // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory
     // just set — only edits made *after* this point should count as dirty.
-    set((state) => ({ nodes: snapshot.nodes, edges: snapshot.edges, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
+    set((state) => ({ nodes: normalized.nodes, edges: normalized.edges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
   },
   markSaved: () => set({ lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isDirty: false }),
   checkpoint: () => pushHistory(set, get),
   attachNodeToContainingGroup: (nodeId) => {
     const { nodes } = get();
     const node = nodes.find((candidate) => candidate.id === nodeId);
-    if (!node || node.type === 'groupBox' || node.parentNode) return;
-    const group = nodes.find((candidate) => {
-      if (candidate.type !== 'groupBox') return false;
+    if (!node || node.type === 'groupBox') return;
+    const parentNode = node.parentNode ? nodes.find((candidate) => candidate.id === node.parentNode) : undefined;
+    const absolutePosition = {
+      x: node.position.x + (parentNode?.position.x ?? 0),
+      y: node.position.y + (parentNode?.position.y ?? 0),
+    };
+    const nodeWidth = Number(node.width ?? node.style?.width ?? 238);
+    const nodeHeight = Number(node.height ?? node.style?.height ?? 130);
+    const centerX = absolutePosition.x + nodeWidth / 2;
+    const centerY = absolutePosition.y + nodeHeight / 2;
+    const group = nodes
+      .filter((candidate) => canContainNode(candidate, node))
+      .map((candidate) => {
       const width = Number(candidate.width ?? candidate.style?.width ?? 520);
       const height = Number(candidate.height ?? candidate.style?.height ?? 340);
-      const centerX = node.position.x + Number(node.width ?? 238) / 2;
-      const centerY = node.position.y + Number(node.height ?? 130) / 2;
-      return centerX >= candidate.position.x && centerX <= candidate.position.x + width && centerY >= candidate.position.y && centerY <= candidate.position.y + height;
-    });
-    if (!group) return;
+        return { node: candidate, width, height, area: width * height };
+      })
+      .filter(({ node: candidate, width, height }) => centerX >= candidate.position.x && centerX <= candidate.position.x + width && centerY >= candidate.position.y && centerY <= candidate.position.y + height)
+      .sort((left, right) => left.area - right.area)[0]?.node;
     set({
       nodes: nodes.map((candidate) =>
-        candidate.id === nodeId
-          ? {
-              ...candidate,
-              parentNode: group.id,
-              extent: 'parent',
-              position: {
-                x: candidate.position.x - group.position.x,
-                y: candidate.position.y - group.position.y,
-              },
-            }
-          : candidate,
+        candidate.id === nodeId ? withTopologySemantics({
+          ...candidate,
+          parentNode: group?.id,
+          extent: undefined,
+          position: group
+            ? {
+                x: absolutePosition.x - group.position.x,
+                y: absolutePosition.y - group.position.y,
+              }
+            : absolutePosition,
+        }, group) : candidate,
       ),
     });
   },
@@ -479,7 +496,7 @@ function pushHistory(set: (partial: Partial<DiagramStore>) => void, get: () => D
 function createNode(serviceId: string, position: XYPosition, id?: string): AwsNode {
   const service = serviceById[serviceId];
   const nodeId = id ?? `${serviceId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  return {
+  return withTopologySemantics({
     id: nodeId,
     type: 'awsService',
     position,
@@ -496,7 +513,7 @@ function createNode(serviceId: string, position: XYPosition, id?: string): AwsNo
       ports: service.ports,
       config: service.defaultConfig,
     },
-  };
+  });
 }
 
 function inferEdgeData(sourceHandle?: string | null): AwsEdgeData {

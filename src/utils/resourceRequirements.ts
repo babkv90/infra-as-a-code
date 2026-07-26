@@ -1,5 +1,6 @@
 import { serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsNode } from '../types';
+import { edgeResolvableFieldsForService, getResourceRegistryEntry, outputAttributesForService } from './resourceRegistry';
 import type { ValidationIssue } from './validate';
 
 type ConditionalRequirement = {
@@ -152,11 +153,21 @@ const serviceRequirements: Record<string, ServiceRequirement> = {
 };
 
 export function getServiceRequirement(serviceId?: string): ServiceRequirement {
-  return serviceId ? serviceRequirements[serviceId] ?? { required: [] } : { required: [] };
+  const registry = getResourceRegistryEntry(serviceId);
+  const local = serviceId ? serviceRequirements[serviceId] : undefined;
+
+  return {
+    required: registry?.required ?? local?.required ?? [],
+    recommended: registry?.recommended ?? local?.recommended,
+    sensitive: registry?.sensitive ?? local?.sensitive,
+    conditional: local?.conditional,
+    outputs: registry?.outputs ?? local?.outputs,
+    connectivity: local?.connectivity,
+  };
 }
 
 export function expectedOutputsForService(serviceId?: string) {
-  return getServiceRequirement(serviceId).outputs ?? ['id', 'arn'];
+  return outputAttributesForService(serviceId);
 }
 
 export function validateResourceRequirements(nodes: AwsNode[], edges: AwsEdge[] = []): ValidationIssue[] {
@@ -307,24 +318,8 @@ function hasValue(value: unknown) {
 // Terraform generator's connection-based auto-resolution (e.g. a subnet connected to a vpc node
 // gets its vpc_id filled in automatically), so the diagram builder's validation doesn't block
 // deployment on fields the generator will actually resolve from the drawn connections.
-const edgeResolvableFieldsByServiceId: Record<string, Record<string, string>> = {
-  subnet: { vpc_id: 'vpc' },
-  igw: { vpc_id: 'vpc' },
-  'route-table': { vpc_id: 'vpc' },
-  route: { route_table_id: 'route-table', gateway_id: 'igw' },
-  'route-association': { subnet_id: 'subnet', route_table_id: 'route-table' },
-  'security-group': { vpc_id: 'vpc' },
-  alb: { subnets: 'subnet' },
-  'lb-target-group': { vpc_id: 'vpc' },
-  'lb-listener': { load_balancer_arn: 'alb', target_group_arn: 'lb-target-group' },
-  'docdb-subnet-group': { subnet_ids: 'subnet' },
-  'docdb-instance': { cluster_identifier: 'docdb' },
-  lambda: { role_arn: 'iam' },
-  iam: { assume_role_policy: 'lambda' },
-};
-
 function isResolvableViaConnection(node: AwsNode, nodes: AwsNode[], edges: AwsEdge[], key: string) {
-  const requiredServiceId = edgeResolvableFieldsByServiceId[node.data.serviceId ?? '']?.[key];
+  const requiredServiceId = edgeResolvableFieldsForService(node.data.serviceId)?.[key];
   if (!requiredServiceId) return false;
 
   const nodeById = Object.fromEntries(nodes.map((candidate) => [candidate.id, candidate]));

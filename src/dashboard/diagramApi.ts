@@ -5,6 +5,7 @@ const diagramRequest = <T,>(path: string, init?: RequestInit) => sharedApiReques
 
 export type SavedDiagram = {
   _id: string;
+  schemaVersion?: number;
   name: string;
   description?: string;
   activeRegion?: string;
@@ -17,6 +18,7 @@ export type SavedDiagram = {
 };
 
 export type SaveDiagramPayload = {
+  schemaVersion?: number;
   name: string;
   description?: string;
   activeRegion?: string;

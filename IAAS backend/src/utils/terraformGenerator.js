@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { storage } from '../storage/index.js';
+import { deployableServiceIds, outputAttributesForService, terraformTypeForService } from './resourceRegistry.js';
 
 const terraformTypeByServiceId = {
   alb: 'aws_lb',
@@ -48,7 +49,7 @@ const terraformTypeByServiceId = {
   xray: 'aws_xray_group',
 };
 
-const deployableServices = new Set(Object.keys(terraformTypeByServiceId));
+const deployableServices = new Set(deployableServiceIds());
 export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
 
 const outputAttributesByServiceId = {
@@ -972,15 +973,15 @@ function connectedServiceNode(node, nodes, edges, serviceId) {
 function connectedRef(node, nodes, edges, names, serviceId, attr = 'id') {
   const other = connectedServiceNode(node, nodes, edges, serviceId);
   if (!other || !names[other.id]) return '';
-  const terraformType = terraformTypeByServiceId[other.data?.serviceId];
+  const terraformType = terraformTypeForService(other.data?.serviceId);
   if (!terraformType) return '';
   return `${terraformType}.${names[other.id]}.${attr}`;
 }
 
 function connectedRefList(node, nodes, edges, names, serviceId, attr = 'id') {
   return connectedServiceNodes(node, nodes, edges, serviceId)
-    .filter((other) => names[other.id] && terraformTypeByServiceId[other.data?.serviceId])
-    .map((other) => `${terraformTypeByServiceId[other.data.serviceId]}.${names[other.id]}.${attr}`);
+    .filter((other) => names[other.id] && terraformTypeForService(other.data?.serviceId))
+    .map((other) => `${terraformTypeForService(other.data.serviceId)}.${names[other.id]}.${attr}`);
 }
 
 // Resolves a list-typed field (subnets, security_groups, ...). If the config value is itself a
@@ -1014,7 +1015,7 @@ function connectedServiceNodes(node, nodes, edges, serviceId) {
 }
 
 function genericResourceBlock(node, name, suffix) {
-  const terraformType = terraformTypeByServiceId[node.data?.serviceId];
+  const terraformType = terraformTypeForService(node.data?.serviceId);
   if (!terraformType) return [];
 
   const config = { ...(node.data?.config ?? {}) };
@@ -1036,10 +1037,10 @@ function genericResourceBlock(node, name, suffix) {
 function resourceOutputBlock(nodes, names) {
   const hasManagedEc2Keys = nodes.some(shouldCreateManagedEc2KeyPair);
   const entries = nodes
-    .filter((node) => terraformTypeByServiceId[node.data?.serviceId] && names[node.id])
+    .filter((node) => terraformTypeForService(node.data?.serviceId) && names[node.id])
     .map((node) => {
       const serviceId = node.data.serviceId;
-      const terraformType = terraformTypeByServiceId[serviceId];
+      const terraformType = terraformTypeForService(serviceId);
       const resourceName = names[node.id];
       const outputs = outputAttributesForNode(node);
       const attrs = outputs.map((attr) => outputAttributeExpression(node, terraformType, resourceName, attr)).join('\n');
@@ -1083,7 +1084,7 @@ function outputAttributeExpression(node, terraformType, resourceName, attr) {
 }
 
 function outputAttributesForNode(node) {
-  const outputs = outputAttributesByServiceId[node.data?.serviceId] ?? ['id', 'arn'];
+  const outputs = outputAttributesForService(node.data?.serviceId);
   if (node.data?.serviceId === 's3' && configString(node.data?.config, 'website_index_document')) {
     return [...outputs, 'website_endpoint', 'website_domain'];
   }
