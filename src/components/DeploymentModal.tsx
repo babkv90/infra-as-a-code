@@ -1,11 +1,11 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, Download, Eye, Rocket, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, Download, Eye, Rocket, Save, ShieldAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { createDeploymentPlan } from '../utils/deploymentPlan';
 import { useDeploymentMonitorStore } from '../store/deploymentMonitorStore';
-import { createCanvasDeployment, forceDestroyDeployment, getDeployment, updateDeployment, type DeploymentRecord } from '../utils/deploymentApi';
+import { createCanvasDeployment, forceDestroyDeployment, getDeployment, mergeDeployment, updateDeployment, type DeploymentRecord } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
@@ -24,13 +24,29 @@ type DeploymentModalProps = {
   onClose: () => void;
   onValidate: () => ValidationIssue[];
   updateDeploymentId?: string;
+  // When set, this deploy is a MERGE: updateDeploymentId is the target deployment being merged
+  // into, mergeSourceDeploymentId is the deployment whose (already id-remapped, already loaded onto
+  // this canvas) nodes are being imported, and mergeImportedNodeIds identifies which of the current
+  // `nodes` are the imported ones — used to require a connecting edge before allowing the merge.
+  mergeSourceDeploymentId?: string;
+  mergeImportedNodeIds?: string[];
+  // Seeds the editable "Deployment name" field for a fresh deploy (ignored in update/merge mode,
+  // where the name is already fixed to whatever the target deployment was called). Falls back to
+  // the generic plan name below when not provided.
+  defaultName?: string;
 };
 
-function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDeploymentId }: DeploymentModalProps) {
+function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDeploymentId, mergeSourceDeploymentId, mergeImportedNodeIds, defaultName }: DeploymentModalProps) {
   const user = getStoredUser();
-  const isUpdateMode = Boolean(updateDeploymentId);
+  const isMergeMode = Boolean(mergeSourceDeploymentId);
+  const isUpdateMode = Boolean(updateDeploymentId) && !isMergeMode;
+  // Merges behave like updates for account-locking/"already deployed" purposes — both apply against
+  // an existing deployment's Terraform state instead of creating a fresh one.
+  const isUpdateLikeMode = isUpdateMode || isMergeMode;
   const watchDeployment = useDeploymentMonitorStore((state) => state.watchDeployment);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus>('idle');
+  const [deploymentName, setDeploymentName] = useState(() => defaultName?.trim() || 'Current visual infrastructure');
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [currentIssues, setCurrentIssues] = useState(issues);
   const [accounts, setAccounts] = useState<AwsAccountRecord[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -56,7 +72,25 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
   const canDeploy = plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
-  const isAlreadyDeployed = !isUpdateMode && (deploymentStatus === 'success' || queuedDeployment?.status === 'deployed');
+  const isAlreadyDeployed = !isUpdateLikeMode && (deploymentStatus === 'success' || queuedDeployment?.status === 'deployed');
+  // Only a fresh deploy actually sends this name anywhere — update/merge apply against a deployment
+  // that's already named, so the field (and this check) only matters outside isUpdateLikeMode.
+  const isNameValid = isUpdateLikeMode || deploymentName.trim().length >= 2;
+  // Saving as a draft doesn't run Terraform, so unlike canDeploy it doesn't require blockers === 0
+  // — you can save a work-in-progress diagram and come back to fix validation issues before Apply.
+  const canSaveDraft = !isUpdateLikeMode && plan.resourceCount > 0 && Boolean(selectedAccountId) && isNameValid;
+  // A merge is only ever allowed to proceed once the imported nodes are actually wired to the
+  // existing stack — mirrors the server's own strict check in mergeDeploymentFromCanvas so the user
+  // gets this feedback before submitting, not just as a 409 after the fact.
+  const hasMergeConnection = useMemo(() => {
+    if (!isMergeMode) return true;
+    const importedIds = new Set(mergeImportedNodeIds ?? []);
+    if (!importedIds.size) return false;
+    return edges.some((edge) => {
+      if (!edge.source || !edge.target) return false;
+      return importedIds.has(edge.source) !== importedIds.has(edge.target);
+    });
+  }, [edges, isMergeMode, mergeImportedNodeIds]);
   const runnerLogs = useMemo(() => {
     const logs = queuedDeployment?.logs ?? [];
     const statusLog: RunnerLog[] = queuedDeployment
@@ -85,7 +119,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
       .then((data) => {
         if (!isMounted) return;
         setAccounts(data);
-        if (!isUpdateMode) {
+        if (!isUpdateLikeMode) {
           const firstConnected = data.find((account) => account.status === 'connected');
           setSelectedAccountId(firstConnected?._id ?? '');
         }
@@ -189,10 +223,39 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     window.location.href = `/dashboard?view=resource-info&deployment=${encodeURIComponent(queuedDeployment._id)}`;
   }
 
+  // Creates the deployment record (and its underlying diagram) WITHOUT running Terraform —
+  // autoApply: false is what keeps the backend from queuing a run, so it lands in 'draft' status
+  // instead of 'deployed'/'queued'. A draft can be applied later from the Deployments page ("Apply"
+  // button), or picked as a merge source into an already-deployed stack.
+  async function saveAsDraft() {
+    if (!canSaveDraft || isSavingDraft) return;
+
+    setIsSavingDraft(true);
+    setRequestError('');
+    setShowDeploymentSuccess(false);
+
+    try {
+      const deployment = await createCanvasDeployment({
+        name: deploymentName.trim(),
+        awsAccountId: (selectedAccount as AwsAccountRecord)._id,
+        activeRegion: plan.regions[0] ?? (selectedAccount as AwsAccountRecord).defaultRegion,
+        nodes,
+        edges,
+        autoApply: false,
+      });
+      setQueuedDeployment(deployment);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Unable to save this draft.');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }
+
   async function deployToAws() {
-    if (isUpdateMode) {
+    if (isUpdateLikeMode) {
       if (!updateDeploymentId || plan.resourceCount === 0 || plan.blockers > 0 || deploymentStatus === 'running') return;
-    } else if (!canDeploy || !selectedAccount || isAlreadyDeployed) {
+      if (isMergeMode && !hasMergeConnection) return;
+    } else if (!canDeploy || !selectedAccount || isAlreadyDeployed || !isNameValid) {
       return;
     }
 
@@ -202,36 +265,50 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     const latestEffectiveIssues = [...latestIssues, ...latestTerraformIssues, ...latestAccessIssues];
     setCurrentIssues(latestIssues);
     if (latestEffectiveIssues.some((issue) => issue.severity === 'error')) {
-      setRequestError(isUpdateMode ? 'Update blocked. Fix all required resource fields and validation errors, then retry.' : 'Deployment blocked. Fix all required resource fields and validation errors, then retry.');
+      setRequestError(
+        isMergeMode
+          ? 'Merge blocked. Fix all required resource fields and validation errors, then retry.'
+          : isUpdateMode
+            ? 'Update blocked. Fix all required resource fields and validation errors, then retry.'
+            : 'Deployment blocked. Fix all required resource fields and validation errors, then retry.',
+      );
       return;
     }
 
     setDeploymentStatus('running');
     setRequestError('');
-    if (!isUpdateMode) setQueuedDeployment(null);
+    if (!isUpdateLikeMode) setQueuedDeployment(null);
     setShowDeploymentSuccess(false);
 
     try {
-      const deployment = isUpdateMode
-        ? await updateDeployment(updateDeploymentId as string, {
-            activeRegion: plan.regions[0],
-            nodes,
-            edges,
-          })
-        : await createCanvasDeployment({
-            name: plan.name,
-            awsAccountId: (selectedAccount as AwsAccountRecord)._id,
-            activeRegion: plan.regions[0] ?? (selectedAccount as AwsAccountRecord).defaultRegion,
-            nodes,
-            edges,
-            autoApply: true,
-          });
+      const deployment = isMergeMode
+        ? (
+            await mergeDeployment(updateDeploymentId as string, {
+              sourceDeploymentId: mergeSourceDeploymentId as string,
+              nodes,
+              edges,
+            })
+          ).target
+        : isUpdateMode
+          ? await updateDeployment(updateDeploymentId as string, {
+              activeRegion: plan.regions[0],
+              nodes,
+              edges,
+            })
+          : await createCanvasDeployment({
+              name: deploymentName.trim(),
+              awsAccountId: (selectedAccount as AwsAccountRecord)._id,
+              activeRegion: plan.regions[0] ?? (selectedAccount as AwsAccountRecord).defaultRegion,
+              nodes,
+              edges,
+              autoApply: true,
+            });
       setQueuedDeployment(deployment);
       setDeploymentStatus(['deployed'].includes(deployment.status) ? 'success' : 'running');
       if (['queued', 'deploying'].includes(deployment.status)) watchDeployment(deployment._id);
     } catch (error) {
       setDeploymentStatus('error');
-      setRequestError(error instanceof Error ? error.message : isUpdateMode ? 'Update request failed.' : 'Deployment request failed.');
+      setRequestError(error instanceof Error ? error.message : isMergeMode ? 'Merge request failed.' : isUpdateMode ? 'Update request failed.' : 'Deployment request failed.');
     }
   }
 
@@ -240,7 +317,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     <section className="deployment-page">
       <header className="deployment-modal__header">
         <div>
-          <span>{isUpdateMode ? 'Update deployed infrastructure' : 'Deploy drawn infrastructure'}</span>
+          <span>{isMergeMode ? 'Merge into deployed infrastructure' : isUpdateMode ? 'Update deployed infrastructure' : 'Deploy drawn infrastructure'}</span>
           <h3>{queuedDeployment?.name ?? plan.name}</h3>
         </div>
         <button className="text-button" onClick={onClose}>
@@ -248,6 +325,16 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           Back to builder
         </button>
       </header>
+      {isMergeMode && (
+        <div className="deployment-update-banner">
+          Merging another diagram's resources into this already-deployed infrastructure. The imported nodes are highlighted on the canvas —
+          draw a connection from one of them to an existing resource, then deploy. Terraform will apply only the new resources against this
+          deployment's existing state; the source diagram will be locked once the merge is submitted so it can't be deployed a second time.
+          {!hasMergeConnection && (
+            <strong className="deployment-update-banner__warning"> No connection to the existing infrastructure yet — deploy is disabled until you add one.</strong>
+          )}
+        </div>
+      )}
       {isUpdateMode && (
         <div className="deployment-update-banner">
           Editing an already-deployed infrastructure. Deploying now will run Terraform against the resources already in AWS and apply only
@@ -323,19 +410,41 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           <Eye size={16} />
           View Resource Info
         </button>
-        <button className="deployment-primary" disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed} onClick={deployToAws}>
+        {!isUpdateLikeMode && (
+          <button
+            className="text-button"
+            disabled={!canSaveDraft || isSavingDraft || Boolean(queuedDeployment)}
+            onClick={() => void saveAsDraft()}
+            title="Save this diagram as a deployment record without running Terraform yet. Apply it later, or merge it into an already-deployed stack."
+            type="button"
+          >
+            <Save size={16} />
+            {isSavingDraft ? 'Saving...' : Boolean(queuedDeployment) ? 'Saved' : 'Save as Draft'}
+          </button>
+        )}
+        <button
+          className="deployment-primary"
+          disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
+          onClick={deployToAws}
+        >
           <Rocket size={16} />
           {deploymentStatus === 'running'
-            ? isUpdateMode
-              ? 'Updating...'
-              : 'Deploying...'
-            : deploymentStatus === 'success'
-              ? isUpdateMode
-                ? 'Updated'
-                : 'Deployed'
+            ? isMergeMode
+              ? 'Merging...'
               : isUpdateMode
-                ? 'Update Infrastructure'
-                : 'Deploy to AWS'}
+                ? 'Updating...'
+                : 'Deploying...'
+            : deploymentStatus === 'success'
+              ? isMergeMode
+                ? 'Merged'
+                : isUpdateMode
+                  ? 'Updated'
+                  : 'Deployed'
+              : isMergeMode
+                ? 'Merge Infrastructure'
+                : isUpdateMode
+                  ? 'Update Infrastructure'
+                  : 'Deploy to AWS'}
         </button>
       </div>
 
@@ -361,12 +470,25 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
         <aside className="deployment-page__side">
           <section className="deployment-panel deployment-target">
             <div className="deployment-panel__title">AWS deployment target</div>
+            {!isUpdateLikeMode && (
+              <label>
+                <span>Deployment name</span>
+                <input
+                  value={deploymentName}
+                  onChange={(event) => setDeploymentName(event.target.value)}
+                  disabled={deploymentStatus === 'running' || Boolean(queuedDeployment)}
+                  maxLength={120}
+                  placeholder="Name this deployment"
+                  type="text"
+                />
+              </label>
+            )}
             <label>
               <span>Connected account</span>
             <select
               value={selectedAccountId}
               onChange={(event) => setSelectedAccountId(event.target.value)}
-              disabled={isLoadingAccounts || deploymentStatus === 'running' || isUpdateMode}
+              disabled={isLoadingAccounts || deploymentStatus === 'running' || isUpdateLikeMode}
             >
               <option value="">{isLoadingAccounts ? 'Loading accounts...' : 'Select AWS account'}</option>
               {connectedAccounts.map((account) => (
@@ -376,8 +498,8 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
               ))}
             </select>
           </label>
-          {isUpdateMode && <p className="deployment-note">The AWS account is fixed to whichever account this infrastructure was originally deployed to.</p>}
-          {!isUpdateMode && !isLoadingAccounts && connectedAccounts.length === 0 && (
+          {isUpdateLikeMode && <p className="deployment-note">The AWS account is fixed to whichever account this infrastructure was originally deployed to.</p>}
+          {!isUpdateLikeMode && !isLoadingAccounts && connectedAccounts.length === 0 && (
             <p className="deployment-note">Connect an AWS account from the dashboard before deploying infrastructure.</p>
           )}
           </section>

@@ -11,10 +11,13 @@ import {
   CloudCog,
   Copy,
   Database,
+  Edit3,
   ExternalLink,
   Eye,
   FilePlus2,
+  FolderOpen,
   GitBranch,
+  GitMerge,
   Github,
   History,
   LogOut,
@@ -51,7 +54,15 @@ import { useDiagramStore } from '../store/diagramStore';
 import { normalizeTerraformFiles } from '../utils/importDiagram';
 import { DeploymentLiveMonitor } from './components/DeploymentLiveMonitor';
 import { EmptyState, Panel } from './components/DashPrimitives';
-import { createSavedDiagram, deleteSavedDiagram, listSavedDiagrams, updateSavedDiagram, type SavedDiagram } from './diagramApi';
+import {
+  createSavedDiagram,
+  deleteSavedDiagram,
+  getSavedDiagram,
+  listSavedDiagrams,
+  updateSavedDiagram,
+  updateSavedDiagramMeta,
+  type SavedDiagram,
+} from './diagramApi';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 import {
   activeDiagrams,
@@ -103,10 +114,15 @@ import {
   type GithubRepository,
 } from '../github/githubApi';
 import {
+  applyDeployment,
   destroyDeployment,
   forceDestroyDeployment,
   getDeployment,
   listDeployments,
+  MERGE_SOURCE_ELIGIBLE_STATUSES,
+  MERGE_TARGET_ELIGIBLE_STATUSES,
+  previewDeploymentMerge,
+  renameDeployment,
   verifyDeploymentResources,
   type DeploymentRecord,
   type ResourceVerificationResult,
@@ -128,9 +144,15 @@ type RuntimeLabDetail = {
 
 const dashboardPageIds = new Set<DashboardPage>(dashboardNavItems.map((item) => item.id));
 
+// Hidden for every user regardless of role/plan — no nav entry, and a direct/bookmarked
+// ?view=terraform or ?view=security deep link falls back to Overview instead of rendering the
+// page. Kept as a filter (not removed from DashboardPage/dashboardNavItems/renderPage) so the
+// pages themselves stay intact and this is a one-line revert if they need to come back.
+const hiddenDashboardPages = new Set<DashboardPage>(['terraform', 'security']);
+
 function getInitialDashboardPage(): DashboardPage {
   const page = new URLSearchParams(window.location.search).get('view') as DashboardPage | null;
-  return page && dashboardPageIds.has(page) ? page : 'overview';
+  return page && dashboardPageIds.has(page) && !hiddenDashboardPages.has(page) ? page : 'overview';
 }
 
 function getDashboardUrl(page: DashboardPage) {
@@ -159,6 +181,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const visibleNavItems = useMemo(
     () =>
       dashboardNavItems.filter((item) => {
+        if (hiddenDashboardPages.has(item.id)) return false;
         if (item.id === 'ai-agent') return canUseAiAgent(currentUser);
         if (item.id === 'app-pipeline') return canUseApplicationPipelines(currentUser);
         if (item.id === 'super-admin') return currentUser?.role === 'superadmin';
@@ -175,6 +198,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   // entirely. The matching popstate listener below is what makes the back/forward buttons
   // actually update activePage instead of just changing the URL underneath a stale page.
   function goToDashboardPage(page: DashboardPage) {
+    if (hiddenDashboardPages.has(page)) return;
     setActivePage(page);
     window.history.pushState(null, '', getDashboardUrl(page));
   }
@@ -416,6 +440,8 @@ function renderPage(
   switch (activePage) {
     case 'builder':
       return <VisualBuilderPage theme={theme} onToggleTheme={onToggleTheme} />;
+    case 'diagrams':
+      return <DiagramsPage />;
     case 'terraform':
       return <TerraformPage />;
     case 'ai-agent':
@@ -623,6 +649,8 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(false);
   const [isDeploymentPageOpen, setIsDeploymentPageOpen] = useState(false);
   const [updateDeploymentId, setUpdateDeploymentId] = useState<string>();
+  const [mergeSourceDeploymentId, setMergeSourceDeploymentId] = useState<string>();
+  const [mergeImportedNodeIds, setMergeImportedNodeIds] = useState<string[]>();
   const [demoDiagrams, setDemoDiagrams] = useState<SavedDiagram[]>([]);
   const [savedDiagrams, setSavedDiagrams] = useState<SavedDiagram[]>([]);
   const [currentDiagramId, setCurrentDiagramId] = useState<string>();
@@ -638,7 +666,10 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const canDeleteDiagrams = canRoleDeleteDiagrams(user?.role);
   const accessTier = serviceAccessTierForUser(user);
   const directoryDiagrams = useMemo(() => [...demoDiagrams, ...savedDiagrams], [demoDiagrams, savedDiagrams]);
-  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || directoryDiagrams.length > 0;
+  // Only templates + demo diagrams are offered from this dropdown — user-saved diagrams live on
+  // their own management page (DiagramsPage) instead, so "hasOpenableDiagrams" (and the select's
+  // disabled/placeholder state) only needs to reflect what's actually rendered in it below.
+  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || demoDiagrams.length > 0;
   const isCurrentTemplateDiagram = currentDiagramId?.startsWith(templateDiagramPrefix) ?? false;
 
   function fitFullDiagram() {
@@ -712,6 +743,58 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       })
       .catch((error) => {
         setDirectoryMessage(error instanceof Error ? error.message : 'Unable to load that deployment for updating.');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Merge entry point: ?mergeInto=<target deployment id>&mergeSource=<source deployment id>, set by
+  // the "Merge into..." action in DeploymentsPage below. Loads the server-computed merge preview
+  // (target's nodes/edges plus the source's, id-remapped) onto the canvas and focuses the imported
+  // nodes so the user can see exactly what needs a connecting edge drawn to the existing
+  // infrastructure before the merge can be submitted (see DeploymentModal's merge mode).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetDeploymentId = params.get('mergeInto');
+    const sourceDeploymentId = params.get('mergeSource');
+    if (!targetDeploymentId || !sourceDeploymentId) return;
+
+    window.history.replaceState(null, '', '/dashboard?view=builder');
+
+    previewDeploymentMerge(targetDeploymentId, sourceDeploymentId)
+      .then((preview) => {
+        importDiagram({ nodes: preview.nodes, edges: preview.edges });
+        setCurrentDiagramId(undefined);
+        setCurrentDiagramName('Merged infrastructure');
+        setUpdateDeploymentId(preview.targetDeploymentId);
+        setMergeSourceDeploymentId(preview.sourceDeploymentId);
+        setMergeImportedNodeIds(preview.importedNodeIds);
+        setIsDeploymentPageOpen(true);
+        fitFullDiagram();
+      })
+      .catch((error) => {
+        setDirectoryMessage(error instanceof Error ? error.message : 'Unable to prepare that merge.');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Opened from the "Saved Diagrams" management page (DiagramsPage below), which lists every saved
+  // diagram on its own page instead of cramming them into the "Open" dropdown here. Fetches the
+  // diagram directly by id rather than depending on directoryDiagrams having finished loading yet.
+  useEffect(() => {
+    const diagramId = new URLSearchParams(window.location.search).get('openDiagram');
+    if (!diagramId) return;
+
+    window.history.replaceState(null, '', '/dashboard?view=builder');
+
+    getSavedDiagram(diagramId)
+      .then((diagram) => {
+        importDiagram({ nodes: diagram.nodes ?? [], edges: diagram.edges ?? [] });
+        setCurrentDiagramId(diagram._id);
+        setCurrentDiagramName(diagram.name);
+        fitFullDiagram();
+      })
+      .catch((error) => {
+        setDirectoryMessage(error instanceof Error ? error.message : 'Unable to open that diagram.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -862,9 +945,14 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           issues={issues}
           onValidate={validate}
           updateDeploymentId={updateDeploymentId}
+          mergeSourceDeploymentId={mergeSourceDeploymentId}
+          mergeImportedNodeIds={mergeImportedNodeIds}
+          defaultName={currentDiagramId && currentDiagramName !== 'Untitled diagram' ? currentDiagramName : undefined}
           onClose={() => {
             setIsDeploymentPageOpen(false);
             setUpdateDeploymentId(undefined);
+            setMergeSourceDeploymentId(undefined);
+            setMergeImportedNodeIds(undefined);
           }}
         />
       </div>
@@ -893,9 +981,9 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                     ))}
                   </optgroup>
                 )}
-                {directoryDiagrams.length > 0 && (
-                  <optgroup label="Saved diagrams">
-                    {directoryDiagrams.map((diagram) => (
+                {demoDiagrams.length > 0 && (
+                  <optgroup label="Demo diagrams">
+                    {demoDiagrams.map((diagram) => (
                       <option value={diagram._id} key={diagram._id}>
                         {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
                       </option>
@@ -907,6 +995,17 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
             <button className="dash-secondary-action" onClick={startBlankDiagram} type="button">
               <FilePlus2 size={15} />
               New blank
+            </button>
+            <button
+              className="dash-secondary-action"
+              onClick={() => {
+                window.location.href = '/dashboard?view=diagrams';
+              }}
+              title="Browse, rename, and edit every saved diagram on its own page."
+              type="button"
+            >
+              <FolderOpen size={15} />
+              Manage saved diagrams
             </button>
             <button className="dash-secondary-action" disabled={isLoadingDirectory} onClick={() => void refreshDiagramDirectory()} type="button">
               <RefreshCw size={15} />
@@ -1009,6 +1108,260 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   );
 }
 
+// Lists every saved diagram (excluding read-only demo diagrams and application templates, which
+// stay in the builder's "Open" dropdown) with inline editing for name/description/region/tags —
+// replaces cramming the full list into that dropdown.
+function DiagramsPage() {
+  const [diagrams, setDiagrams] = useState<SavedDiagram[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [editingDiagramId, setEditingDiagramId] = useState<string>();
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editRegion, setEditRegion] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [pendingDeleteDiagram, setPendingDeleteDiagram] = useState<SavedDiagram | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function refresh() {
+    setIsLoading(true);
+    setError('');
+    try {
+      setDiagrams(await listSavedDiagrams());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load saved diagrams.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function startEditing(diagram: SavedDiagram) {
+    setEditingDiagramId(diagram._id);
+    setEditName(diagram.name);
+    setEditDescription(diagram.description ?? '');
+    setEditRegion(diagram.activeRegion ?? '');
+    setEditTags((diagram.tags ?? []).join(', '));
+    setMessage('');
+    setError('');
+  }
+
+  function cancelEditing() {
+    setEditingDiagramId(undefined);
+  }
+
+  async function saveEditing(diagram: SavedDiagram) {
+    const trimmedName = editName.trim();
+    if (trimmedName.length < 2) {
+      setError('Name must be at least 2 characters.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+    try {
+      const updated = await updateSavedDiagramMeta(diagram._id, {
+        name: trimmedName,
+        description: editDescription.trim(),
+        activeRegion: editRegion.trim() || undefined,
+        tags: editTags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      });
+      setDiagrams((items) => items.map((item) => (item._id === updated._id ? updated : item)));
+      setMessage(`Saved "${updated.name}".`);
+      setEditingDiagramId(undefined);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save changes.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDelete(diagram: SavedDiagram) {
+    setIsDeleting(true);
+    setError('');
+    try {
+      await deleteSavedDiagram(diagram._id);
+      setDiagrams((items) => items.filter((item) => item._id !== diagram._id));
+      setPendingDeleteDiagram(null);
+      setMessage(`Deleted "${diagram.name}".`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete this diagram.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  function openInBuilder(diagram: SavedDiagram) {
+    window.location.href = `/dashboard?view=builder&openDiagram=${encodeURIComponent(diagram._id)}`;
+  }
+
+  return (
+    <div className="dash-page dash-page--diagrams">
+      <header className="pipeline-console-header">
+        <div>
+          <span className="dash-eyebrow">Diagram directory</span>
+          <h2>Saved diagrams</h2>
+        </div>
+        <div className="pipeline-header-badges">
+          <button className="dash-secondary-action" disabled={isLoading} onClick={() => void refresh()} type="button">
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+          <button
+            className="pipeline-primary-compact"
+            onClick={() => {
+              window.location.href = '/dashboard?view=builder';
+            }}
+            type="button"
+          >
+            <FilePlus2 size={14} />
+            New diagram
+          </button>
+        </div>
+      </header>
+      {error && <div className="dash-global-error">{error}</div>}
+      {message && <div className="dash-global-success">{message}</div>}
+      <section className="deploy-table-panel">
+        <header>
+          <strong>Saved diagrams</strong>
+          <span>{diagrams.length} shown</span>
+        </header>
+        <div className="dash-deploy-table-wrap">
+          {diagrams.length ? (
+            <table className="dash-deploy-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Region</th>
+                  <th>Tags</th>
+                  <th>Resources</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diagrams.map((diagram) => {
+                  const isEditing = editingDiagramId === diagram._id;
+                  return (
+                    <Fragment key={diagram._id}>
+                      <tr className="dash-deploy-table-row">
+                        <td>
+                          <button className="dash-deploy-name-button" onClick={() => openInBuilder(diagram)} type="button">
+                            <strong>{diagram.name}</strong>
+                            <span>{diagram.description || 'No description'}</span>
+                          </button>
+                        </td>
+                        <td>{diagram.activeRegion ?? 'region unknown'}</td>
+                        <td>{(diagram.tags ?? []).join(', ') || '—'}</td>
+                        <td>{diagram.nodes?.length ?? 0}</td>
+                        <td>{diagram.updatedAt ? new Date(diagram.updatedAt).toLocaleString() : '—'}</td>
+                        <td>
+                          <div className="dash-deploy-table-actions">
+                            <button className="dash-secondary-action" onClick={() => openInBuilder(diagram)} type="button">
+                              <Workflow size={15} />
+                              Open
+                            </button>
+                            <button className="dash-secondary-action" onClick={() => (isEditing ? cancelEditing() : startEditing(diagram))} type="button">
+                              <Edit3 size={15} />
+                              {isEditing ? 'Cancel' : 'Edit'}
+                            </button>
+                            <button className="dash-secondary-action dash-danger-action" onClick={() => setPendingDeleteDiagram(diagram)} type="button">
+                              <Trash2 size={15} />
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isEditing && (
+                        <tr className="dash-deploy-table-detail-row">
+                          <td colSpan={6}>
+                            <div className="dash-diagram-edit-form">
+                              <label>
+                                <span>Name</span>
+                                <input value={editName} onChange={(event) => setEditName(event.target.value)} />
+                              </label>
+                              <label>
+                                <span>Description</span>
+                                <input value={editDescription} onChange={(event) => setEditDescription(event.target.value)} />
+                              </label>
+                              <label>
+                                <span>Region</span>
+                                <input value={editRegion} onChange={(event) => setEditRegion(event.target.value)} placeholder="e.g. ap-south-1" />
+                              </label>
+                              <label>
+                                <span>Tags (comma separated)</span>
+                                <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="prod, backend" />
+                              </label>
+                              <div className="dash-diagram-edit-form__actions">
+                                <button className="dash-secondary-action" disabled={isSaving} onClick={cancelEditing} type="button">
+                                  Cancel
+                                </button>
+                                <button className="deployment-primary" disabled={isSaving} onClick={() => void saveEditing(diagram)} type="button">
+                                  {isSaving ? 'Saving...' : 'Save changes'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyState>No saved diagrams yet. Save one from the visual builder to see it here.</EmptyState>
+          )}
+        </div>
+      </section>
+      {pendingDeleteDiagram && (
+        <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !isDeleting && setPendingDeleteDiagram(null)}>
+          <section
+            aria-labelledby="dash-diagram-delete-title"
+            aria-modal="true"
+            className="dash-destroy-dialog"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <span>
+                <Trash2 size={22} />
+              </span>
+              <button aria-label="Close delete confirmation" className="dash-icon-button" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="dash-destroy-dialog__body">
+              <h2 id="dash-diagram-delete-title">Delete this diagram?</h2>
+              <p>
+                This permanently deletes <strong>{pendingDeleteDiagram.name}</strong>. This cannot be undone. If a deployment was created from this
+                diagram, it will lose the ability to be Updated or Merged into afterward — its existing AWS resources are not affected.
+              </p>
+            </div>
+            <footer>
+              <button className="dash-secondary-action" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
+                Cancel
+              </button>
+              <button className="dash-secondary-action dash-danger-action" disabled={isDeleting} onClick={() => void handleDelete(pendingDeleteDiagram)} type="button">
+                <Trash2 size={15} />
+                {isDeleting ? 'Deleting...' : 'Delete diagram'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeploymentsPage({
   insights,
   isSyncingAws,
@@ -1027,6 +1380,9 @@ function DeploymentsPage({
   const [pendingDestroyDeployment, setPendingDestroyDeployment] = useState<DeploymentRecord | null>(null);
   const [forceDestroyingDeploymentId, setForceDestroyingDeploymentId] = useState<string>();
   const [pendingForceDestroyDeployment, setPendingForceDestroyDeployment] = useState<DeploymentRecord | null>(null);
+  const [pendingMergeSourceDeployment, setPendingMergeSourceDeployment] = useState<DeploymentRecord | null>(null);
+  const [renamingDeploymentId, setRenamingDeploymentId] = useState<string>();
+  const [applyingDeploymentId, setApplyingDeploymentId] = useState<string>();
   const [expandedDeploymentId, setExpandedDeploymentId] = useState<string>();
   const [destroyHistoryDeployment, setDestroyHistoryDeployment] = useState<DeploymentRecord | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState(commonDeploymentTemplates[0]?.id ?? '');
@@ -1052,6 +1408,40 @@ function DeploymentsPage({
       setError(loadError instanceof Error ? loadError.message : 'Unable to load deployments.');
     } finally {
       setIsLoadingDeployments(false);
+    }
+  }
+
+  async function handleRename(deployment: DeploymentRecord) {
+    const nextName = window.prompt('Rename deployment', deployment.name);
+    const trimmed = (nextName ?? '').trim();
+    if (!trimmed || trimmed === deployment.name) return;
+
+    setMessage('');
+    setError('');
+    setRenamingDeploymentId(deployment._id);
+    try {
+      const updatedDeployment = await renameDeployment(deployment._id, trimmed);
+      setDeploymentRecords((records) => records.map((item) => (item._id === updatedDeployment._id ? updatedDeployment : item)));
+      setMessage(`Renamed to "${updatedDeployment.name}".`);
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : 'Unable to rename this deployment.');
+    } finally {
+      setRenamingDeploymentId(undefined);
+    }
+  }
+
+  async function handleApply(deployment: DeploymentRecord) {
+    setMessage('');
+    setError('');
+    setApplyingDeploymentId(deployment._id);
+    try {
+      const updatedDeployment = await applyDeployment(deployment._id);
+      setDeploymentRecords((records) => records.map((item) => (item._id === updatedDeployment._id ? updatedDeployment : item)));
+      setMessage(`Apply started for "${updatedDeployment.name}".`);
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : 'Unable to apply this deployment.');
+    } finally {
+      setApplyingDeploymentId(undefined);
     }
   }
 
@@ -1208,6 +1598,28 @@ function DeploymentsPage({
                               <RefreshCw size={15} />
                               Refresh
                             </button>
+                            {deployment.status === 'draft' && (
+                              <button
+                                className="dash-secondary-action"
+                                disabled={applyingDeploymentId === deployment._id}
+                                onClick={() => void handleApply(deployment)}
+                                title="Run Terraform apply for this saved draft against its selected AWS account."
+                                type="button"
+                              >
+                                <Rocket size={15} />
+                                {applyingDeploymentId === deployment._id ? 'Applying...' : 'Apply'}
+                              </button>
+                            )}
+                            <button
+                              className="dash-secondary-action"
+                              disabled={renamingDeploymentId === deployment._id}
+                              onClick={() => void handleRename(deployment)}
+                              title="Change this deployment's display name. Doesn't touch its diagram, Terraform config, or AWS resources."
+                              type="button"
+                            >
+                              <Edit3 size={15} />
+                              {renamingDeploymentId === deployment._id ? 'Renaming...' : 'Rename'}
+                            </button>
                             <button
                               className="dash-secondary-action"
                               disabled={!['deployed', 'failed'].includes(deployment.status)}
@@ -1220,6 +1632,18 @@ function DeploymentsPage({
                               <PencilLine size={15} />
                               Update
                             </button>
+                            {MERGE_SOURCE_ELIGIBLE_STATUSES.includes(deployment.status) && (
+                              <button
+                                className="dash-secondary-action dash-nowrap-action"
+                                disabled={!deploymentRecords.some((candidate) => MERGE_TARGET_ELIGIBLE_STATUSES.includes(candidate.status) && candidate._id !== deployment._id)}
+                                onClick={() => setPendingMergeSourceDeployment(deployment)}
+                                title="Attach this not-yet-deployed diagram onto an already-deployed infrastructure's stack, instead of deploying it as a separate stack."
+                                type="button"
+                              >
+                                <GitMerge size={15} />
+                                Merge into...
+                              </button>
+                            )}
                             {FORCE_DESTROY_STATUSES.includes(deployment.status) ? (
                               <button
                                 className="dash-secondary-action dash-danger-action dash-nowrap-action"
@@ -1429,6 +1853,66 @@ function DeploymentsPage({
               >
                 <AlertTriangle size={15} />
                 {forceDestroyingDeploymentId === pendingForceDestroyDeployment._id ? 'Forcing destroy...' : 'Force destroy'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {pendingMergeSourceDeployment && (
+        <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => setPendingMergeSourceDeployment(null)}>
+          <section
+            aria-labelledby="dash-merge-dialog-title"
+            aria-modal="true"
+            className="dash-destroy-dialog"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <span>
+                <GitMerge size={22} />
+              </span>
+              <button aria-label="Close merge picker" className="dash-icon-button" onClick={() => setPendingMergeSourceDeployment(null)} type="button">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="dash-destroy-dialog__body">
+              <h2 id="dash-merge-dialog-title">Merge "{pendingMergeSourceDeployment.name}" into...</h2>
+              <p>
+                This diagram hasn't been applied to AWS yet, so its resources can be attached directly onto an already-deployed stack instead of
+                becoming a separate deployment. Pick which deployment to merge into, then draw a connection from an imported resource to an
+                existing one before applying.
+              </p>
+              {(() => {
+                const eligibleTargets = deploymentRecords.filter(
+                  (candidate) => MERGE_TARGET_ELIGIBLE_STATUSES.includes(candidate.status) && candidate._id !== pendingMergeSourceDeployment._id,
+                );
+                if (!eligibleTargets.length) {
+                  return <p className="deployment-note">No deployed (or previously failed) infrastructure is available to merge into yet.</p>;
+                }
+                return (
+                  <div className="dash-merge-target-list">
+                    {eligibleTargets.map((target) => (
+                      <button
+                        className="dash-merge-target-option"
+                        key={target._id}
+                        onClick={() => {
+                          window.location.href = `/dashboard?view=builder&mergeSource=${encodeURIComponent(pendingMergeSourceDeployment._id)}&mergeInto=${encodeURIComponent(target._id)}`;
+                        }}
+                        type="button"
+                      >
+                        <strong>{target.name}</strong>
+                        <span>
+                          {deploymentStatusLabel(target.status)} - {target.diagram?.activeRegion ?? 'region unknown'} - {target.resourceCount} resources
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <footer>
+              <button className="dash-secondary-action" onClick={() => setPendingMergeSourceDeployment(null)} type="button">
+                Cancel
               </button>
             </footer>
           </section>
