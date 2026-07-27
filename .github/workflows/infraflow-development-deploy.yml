@@ -1,4 +1,4 @@
-name: "ProductionLog development CI/CD"
+name: "ProductionLambda development CI/CD"
 
 on:
   push:
