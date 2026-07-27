@@ -2392,12 +2392,13 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 12;
+  isolation: isolate;
   justify-content: flex-end;
   flex-wrap: wrap;
   padding: 10px 16px;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.98);
+  background: #0f172a;
   box-shadow: 0 12px 26px rgba(2, 6, 23, 0.24);
 }
 
@@ -14176,7 +14177,7 @@ button.dash-kpi-card {
 }
 
 .app-theme-light .deployment-page__actions {
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--bg-surface);
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
 }
 
@@ -16240,7 +16241,7 @@ button.dash-kpi-card {
 
 .app-theme-pearl .deployment-page__actions {
   border-color: rgba(8, 145, 178, 0.18);
-  background: rgba(255, 252, 246, 0.96);
+  background: #fffcf6;
   box-shadow: 0 12px 26px rgba(20, 33, 61, 0.1);
 }
 

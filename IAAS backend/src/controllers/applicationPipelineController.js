@@ -445,7 +445,7 @@ export const getPipelineTemplates = asyncHandler(async (req, res) => {
       { id: 'node-container', name: 'Node.js container to ECS Fargate', target: 'ecs' },
       { id: 'python-api', name: 'Python API container to ECS Fargate', target: 'ecs' },
       { id: 'java-service', name: 'Java service container to ECS Fargate', target: 'ecs' },
-      { id: 'serverless-api', name: 'Serverless API to Lambda', target: 'lambda' },
+      { id: 'serverless-api', name: 'Node.js API to AWS Lambda', target: 'lambda' },
       { id: 'kubernetes-service', name: 'Container service to EKS', target: 'eks' },
     ],
   });
@@ -469,7 +469,7 @@ function inferPipelineTarget(appType, deployment, overrides) {
     serviceName: overrides.serviceName || firstConfig(nodes, ['name', 'function_name']) || safeName(`${appType}-service`),
     clusterName: overrides.clusterName || firstConfig(nodes, ['cluster']) || 'infraflow-cluster',
     bucketName: overrides.bucketName || firstConfig(nodes, ['bucket']) || firstOutputForService(deployment, 'S3', ['id']) || 'replace-with-s3-bucket',
-    lambdaFunctionName: overrides.lambdaFunctionName || firstConfig(nodes, ['function_name']) || 'replace-with-lambda-function',
+    lambdaFunctionName: overrides.lambdaFunctionName || firstConfig(nodes, ['function_name']) || firstOutputForService(deployment, 'Lambda', ['function_name']) || 'replace-with-lambda-function',
     namespace: overrides.namespace || 'default',
   };
 
@@ -512,7 +512,7 @@ function defaultCommandsForApp(appType, overrides) {
     'node-container': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
     'python-api': { install: 'pip install -r requirements.txt', test: 'pytest', build: 'python -m compileall .', start: 'uvicorn app.main:app --host 0.0.0.0 --port 8080' },
     'java-service': { install: './mvnw -B dependency:go-offline', test: './mvnw test', build: './mvnw -B package', start: 'java -jar target/app.jar' },
-    'serverless-api': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
+    'serverless-api': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build --if-present', start: 'npm start' },
     'kubernetes-service': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
   }[appType];
 
@@ -705,8 +705,11 @@ function deployStepsFor(target) {
   }
 
   if (target.type === 'lambda') {
-    return `      - name: Package Lambda artifact
-        run: zip -r lambda.zip . -x ".git/*" "node_modules/.cache/*"
+    return `      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Package Lambda artifact
+        run: zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
 
       - name: Deploy Lambda function
         run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://lambda.zip
@@ -942,7 +945,11 @@ function pipelineChecklist(targetType) {
     'Connect GitHub repository and sync generated files (this also auto-provisions the AWS OIDC deploy role when a deployment is linked).',
     'Check the "AWS deploy role" status on this pipeline — if it says Skipped or Failed, follow deploy/README.md to set it up manually.',
     'Confirm target infrastructure exists from the selected infraflow deployment.',
-    targetType === 's3-cloudfront' ? 'Confirm S3 bucket and optional CloudFront distribution secret.' : 'Confirm ECR repository and runtime target names.',
+    targetType === 's3-cloudfront'
+      ? 'Confirm S3 bucket and optional CloudFront distribution secret.'
+      : targetType === 'lambda'
+        ? 'Confirm Lambda function name and AWS region.'
+        : 'Confirm ECR repository and runtime target names.',
     'Push to the configured branch to trigger automated deployment.',
   ];
 }

@@ -51,6 +51,10 @@ const terraformTypeByServiceId = {
 
 const deployableServices = new Set(deployableServiceIds());
 export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
+const defaultApiGatewayCorsOrigins = [
+  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
+  'https://d3pgg5abvvdatt.cloudfront.net',
+];
 
 const outputAttributesByServiceId = {
   ec2: ['id', 'arn', 'public_ip', 'private_ip', 'public_dns', 'private_dns', 'availability_zone', 'key_pair_name', 'ssh_private_key_pem'],
@@ -427,6 +431,11 @@ ${subnetGroupLine}${sgLine}}`,
         `resource "aws_apigatewayv2_api" "${name}" {
   name          = ${formatValue(uniqueName)}
   protocol_type = ${formatValue(configString(config, 'protocol_type') || 'HTTP')}
+${apiGatewayCorsConfigurationBlock()}
+
+  lifecycle {
+    ignore_changes = [cors_configuration]
+  }
 }`,
       ];
     case 'cloudwatch':
@@ -584,6 +593,10 @@ ${packageLines}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
   timeout          = ${formatNumber(config.timeout)}
+
+  lifecycle {
+    ignore_changes = [environment]
+  }
 }`,
       ];
     }
@@ -1483,6 +1496,19 @@ function formatListExpression(value) {
 
 function formatStringList(values) {
   return `[${values.map((value) => formatValue(value)).join(', ')}]`;
+}
+
+function apiGatewayCorsConfigurationBlock() {
+  const origins = Array.from(new Set([...(env.CLIENT_ORIGINS ?? []), ...defaultApiGatewayCorsOrigins].filter(Boolean)));
+
+  return `
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["content-type", "authorization", "x-requested-with"]
+    allow_methods     = ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"]
+    allow_origins     = ${formatStringList(origins)}
+    max_age           = 86400
+  }`;
 }
 
 // Like formatStringList, but leaves Terraform resource references (aws_x.y.id) unquoted instead

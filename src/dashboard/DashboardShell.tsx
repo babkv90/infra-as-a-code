@@ -178,6 +178,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
   const currentUser = getStoredUser();
   const visibleNavItems = useMemo(
     () =>
@@ -308,6 +309,19 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!isNotificationsOpen) return undefined;
+
+    function handleOutsidePointerDown(event: PointerEvent) {
+      if (!notificationsRef.current?.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [isNotificationsOpen]);
+
   return (
     <div className="dash-shell">
       <aside className="dash-sidebar">
@@ -354,7 +368,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
                 <small>{activeAwsAccount ? `${activeAwsAccount.status}${activeAwsAccount.lastSyncAt ? ` - synced` : ''}` : connectedAccount.syncStatus}</small>
               </div>
             </div>
-            <div className="dash-notifications">
+            <div className="dash-notifications" ref={notificationsRef}>
               <button className="dash-icon-button" onClick={() => void openNotifications()} title="Notifications" type="button">
                 <Bell size={17} />
                 {unreadNotificationCount > 0 && <span className="dash-notification-badge">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>}
@@ -829,6 +843,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     importDiagram({ nodes: diagram.nodes ?? [], edges: diagram.edges ?? [] });
     setCurrentDiagramId(diagram._id);
     setCurrentDiagramName(diagram.name);
+    clearDeploymentEditContext();
     setDirectoryMessage(`Opened ${diagram.name}`);
     fitFullDiagram();
   }
@@ -840,6 +855,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     importDiagram(template.snapshot);
     setCurrentDiagramId(templateDiagramId(template.id));
     setCurrentDiagramName(template.name);
+    clearDeploymentEditContext();
     setDirectoryMessage(`Loaded ${template.name} template.`);
     fitFullDiagram();
   }
@@ -858,6 +874,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     importDiagram({ nodes: [], edges: [] });
     setCurrentDiagramId(undefined);
     setCurrentDiagramName('Untitled diagram');
+    clearDeploymentEditContext();
     setDirectoryMessage('Started a new unsaved diagram.');
   }
 
@@ -871,6 +888,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       importDiagram(snapshot);
       setCurrentDiagramId(undefined);
       setCurrentDiagramName(terraformFilesToRead.length === 1 ? terraformFilesToRead[0].name.replace(/\.(tf|hcl|tfvars|json|ya?ml|env)$/i, '') : `Terraform import (${terraformFilesToRead.length} files)`);
+      clearDeploymentEditContext();
       setDirectoryMessage(terraformImportMessage(terraformFilesToRead));
       fitFullDiagram();
     } catch (error) {
@@ -937,6 +955,12 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     }
   }
 
+  function clearDeploymentEditContext() {
+    setUpdateDeploymentId(undefined);
+    setMergeSourceDeploymentId(undefined);
+    setMergeImportedNodeIds(undefined);
+  }
+
   if (isDeploymentPageOpen) {
     return (
       <div className="dash-page dash-page--builder dash-page--deployment">
@@ -951,9 +975,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           defaultName={currentDiagramId && currentDiagramName !== 'Untitled diagram' ? currentDiagramName : undefined}
           onClose={() => {
             setIsDeploymentPageOpen(false);
-            setUpdateDeploymentId(undefined);
-            setMergeSourceDeploymentId(undefined);
-            setMergeImportedNodeIds(undefined);
           }}
         />
       </div>
@@ -2043,7 +2064,7 @@ const pipelineAppTypes = [
   { id: 'python-api', label: 'Python API' },
   { id: 'java-service', label: 'Java service' },
   { id: 'static-spa', label: 'Static SPA' },
-  { id: 'serverless-api', label: 'Serverless API' },
+  { id: 'serverless-api', label: 'Node.js Lambda API' },
   { id: 'kubernetes-service', label: 'Kubernetes service' },
 ];
 
@@ -2067,6 +2088,8 @@ function ApplicationPipelinePage() {
   const [testCommand, setTestCommand] = useState('npm test -- --watch=false');
   const [buildCommand, setBuildCommand] = useState('npm run build');
   const [startCommand, setStartCommand] = useState('npm start');
+  const [targetRegion, setTargetRegion] = useState('ap-south-1');
+  const [lambdaFunctionName, setLambdaFunctionName] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -2173,10 +2196,20 @@ function ApplicationPipelinePage() {
     } else {
       setInstallCommand('npm ci');
       setTestCommand('npm test -- --watch=false');
-      setBuildCommand('npm run build');
+      setBuildCommand(appType === 'serverless-api' ? 'npm run build --if-present' : 'npm run build');
       setStartCommand(appType === 'static-spa' ? 'npm run preview -- --host 0.0.0.0' : 'npm start');
     }
   }, [appType]);
+
+  useEffect(() => {
+    if (selectedDeployment?.diagram?.activeRegion) {
+      setTargetRegion(selectedDeployment.diagram.activeRegion);
+    }
+    if (appType === 'serverless-api') {
+      const inferredLambdaName = lambdaFunctionNameFromDeployment(selectedDeployment);
+      if (inferredLambdaName) setLambdaFunctionName(inferredLambdaName);
+    }
+  }, [appType, selectedDeployment]);
 
   useEffect(() => {
     if (!selectedPipeline?.generatedFiles.length) {
@@ -2241,6 +2274,10 @@ function ApplicationPipelinePage() {
           test: testCommand,
           build: buildCommand,
           start: startCommand,
+        },
+        target: {
+          region: targetRegion,
+          lambdaFunctionName: appType === 'serverless-api' ? lambdaFunctionName : undefined,
         },
       });
       await refreshPipelineData();
@@ -2543,6 +2580,18 @@ function ApplicationPipelinePage() {
                   ))}
                 </select>
               </label>
+              {appType === 'serverless-api' && (
+                <>
+                  <label className="pipeline-field">
+                    <span>AWS region</span>
+                    <input value={targetRegion} onChange={(event) => setTargetRegion(event.target.value)} placeholder="ap-south-1" />
+                  </label>
+                  <label className="pipeline-field">
+                    <span>Lambda function</span>
+                    <input value={lambdaFunctionName} onChange={(event) => setLambdaFunctionName(event.target.value)} placeholder="my-existing-lambda" />
+                  </label>
+                </>
+              )}
             </div>
           </section>
 
@@ -3055,6 +3104,20 @@ function buildPipelineValidationChecks({
       status: selectedPipeline?.repository.lastSyncedAt ? 'success' : 'warning',
     },
   ];
+}
+
+function lambdaFunctionNameFromDeployment(deployment?: DeploymentRecord): string {
+  const outputValues = deployment?.outputs && typeof deployment.outputs === 'object' ? Object.values(deployment.outputs) : [];
+  for (const output of outputValues) {
+    if (!output || typeof output !== 'object') continue;
+    const record = output as Record<string, unknown>;
+    if (String(record.service ?? '').toLowerCase() === 'lambda' && record.function_name) {
+      return String(record.function_name);
+    }
+  }
+
+  const lambdaNode = deployment?.diagram?.nodes?.find((node) => node.data?.serviceId === 'lambda');
+  return String(lambdaNode?.data?.config?.function_name ?? '').trim();
 }
 
 function awsDeployRoleLabel(status?: string) {

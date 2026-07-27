@@ -9,22 +9,11 @@ import { env } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
+import { isAllowedCorsOrigin } from './utils/cors.js';
 
 export const app = express();
 
 app.set('trust proxy', 1);
-
-const allowedCorsOrigins = new Set([
-  ...env.CLIENT_ORIGINS,
-  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
-  'https://d3pgg5abvvdatt.cloudfront.net',
-]);
-
-function isAllowedCorsOrigin(origin) {
-  if (!origin) return true;
-  if (allowedCorsOrigins.has(origin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(origin);
-}
 
 app.use(helmet());
 app.use(compression());
