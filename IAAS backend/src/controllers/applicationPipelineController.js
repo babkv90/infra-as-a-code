@@ -593,6 +593,8 @@ function resolvePipelineRepository(pipeline, source = {}) {
 
 function githubWorkflow({ name, appType, environment, branch, commands, target }) {
   const deploy = deployStepsFor(target);
+  const lambdaAppDirectoryStep = target.type === 'lambda' ? lambdaAppDirectoryWorkflowStep() : '';
+  const workingDirectory = target.type === 'lambda' ? `\n        working-directory: \${{ env.LAMBDA_APP_DIR }}` : '';
   return `name: ${escapeYaml(`${name} ${environment} CI/CD`)}
 
 on:
@@ -634,12 +636,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+${lambdaAppDirectoryStep}
       - name: Setup Node.js
         if: contains('${appType}', 'react') || contains('${appType}', 'node') || contains('${appType}', 'static') || contains('${appType}', 'serverless') || contains('${appType}', 'kubernetes')
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            IAAS backend/package-lock.json
 
       - name: Setup Python
         if: contains('${appType}', 'python')
@@ -655,11 +661,13 @@ jobs:
           java-version: '21'
 
       - name: Install dependencies
+${workingDirectory}
         run: ${commands.install}
 
-${testStepFor(appType, commands)}
+${testStepFor(appType, commands, workingDirectory)}
 
       - name: Build application
+${workingDirectory}
         run: ${commands.build}
 
       - name: Configure AWS credentials with OIDC
@@ -669,6 +677,21 @@ ${testStepFor(appType, commands)}
           aws-region: \${{ env.AWS_REGION }}
 
 ${deploy}`;
+}
+
+function lambdaAppDirectoryWorkflowStep() {
+  return `      - name: Resolve Lambda app directory
+        run: |
+          if [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
+          elif [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          else
+            echo "::error::No package.json found at repository root or IAAS backend/. Set the Lambda project as the repository root, or keep the backend in IAAS backend."
+            exit 1
+          fi
+
+`;
 }
 
 function deployStepsFor(target) {
@@ -706,13 +729,28 @@ function deployStepsFor(target) {
 
   if (target.type === 'lambda') {
     return `      - name: Prune dev dependencies
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
         run: npm prune --omit=dev
 
+      - name: Verify Lambda handler file
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
+        run: |
+          LAMBDA_HANDLER="$(aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
+          HANDLER_MODULE="\${LAMBDA_HANDLER%.*}"
+          echo "Lambda handler configured in AWS: $LAMBDA_HANDLER"
+          if [ ! -f "$HANDLER_MODULE.js" ] && [ ! -f "$HANDLER_MODULE.mjs" ] && [ ! -f "$HANDLER_MODULE.cjs" ]; then
+            echo "::error::AWS expects handler module '$HANDLER_MODULE' at the Lambda zip root, but it was not found in $PWD."
+            echo "Add $HANDLER_MODULE.js, change the Lambda handler in AWS/Terraform, or move the workflow's Lambda app directory to the folder that contains it."
+            find . -maxdepth 3 -type f \\( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \\) | sort | head -80
+            exit 1
+          fi
+
       - name: Package Lambda artifact
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
         run: zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
 
       - name: Deploy Lambda function
-        run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://lambda.zip
+        run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"\${{ env.LAMBDA_APP_DIR }}/lambda.zip"
 `;
   }
 
@@ -764,9 +802,10 @@ function deployStepsFor(target) {
 `;
 }
 
-function testStepFor(appType, commands) {
+function testStepFor(appType, commands, workingDirectory = '') {
   if (['react-app', 'static-spa', 'node-container', 'serverless-api', 'kubernetes-service'].includes(appType)) {
     return `      - name: Run tests
+${workingDirectory}
         run: |
           if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
             echo "No npm test script found; skipping test step."
@@ -777,6 +816,7 @@ function testStepFor(appType, commands) {
   }
 
   return `      - name: Run tests
+${workingDirectory}
         run: ${commands.test}
 `;
 }
