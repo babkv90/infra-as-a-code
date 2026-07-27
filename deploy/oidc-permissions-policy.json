@@ -8,7 +8,7 @@
         "lambda:UpdateFunctionCode",
         "lambda:GetFunction"
       ],
-      "Resource": "arn:aws:lambda:ap-south-1:897722687806:function:iaasLambdaFunc"
+      "Resource": "arn:aws:lambda:ap-south-1:<ACCOUNT_ID>:function:iaasLambdaFunc"
     }
   ]
 }
