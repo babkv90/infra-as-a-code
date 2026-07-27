@@ -142,10 +142,23 @@ export const createApplicationPipeline = asyncHandler(async (req, res) => {
 
 export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
-  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('deployment', 'awsAccount').populate('deployment.awsAccount', 'accountId');
   if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
   const token = req.validated.body.token || await githubTokenForUser(req.user._id);
   if (!token) throw new ApiError(409, 'Connect GitHub before syncing generated pipeline files.');
+  const syncRepository = {
+    url: `https://github.com/${req.validated.body.owner}/${req.validated.body.repo}`,
+    branch: req.validated.body.branch,
+  };
+  pipeline.generatedFiles = generatePipelineFiles({
+    name: pipeline.name,
+    appType: pipeline.appType,
+    environment: pipeline.environment,
+    repository: syncRepository,
+    commands: pipeline.commands,
+    target: pipeline.target,
+    accountId: pipeline.deployment?.awsAccount?.accountId,
+  });
 
   const result = await syncFilesToGithub({
     token,
@@ -156,7 +169,7 @@ export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => 
     files: pipeline.generatedFiles,
   });
 
-  pipeline.repository.url = `https://github.com/${req.validated.body.owner}/${req.validated.body.repo}`;
+  pipeline.repository.url = syncRepository.url;
   pipeline.repository.branch = req.validated.body.branch;
   pipeline.repository.lastSyncedAt = new Date();
   pipeline.repository.lastSyncCommit = result.commitSha;
@@ -682,14 +695,19 @@ ${deploy}`;
 function lambdaAppDirectoryWorkflowStep() {
   return `      - name: Resolve Lambda app directory
         run: |
-          if [ -f package.json ]; then
+          if [ -f "IAAS backend/lambda.js" ] && [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f lambda.js ] && [ -f package.json ]; then
             echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
           elif [ -f "IAAS backend/package.json" ]; then
             echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
           else
-            echo "::error::No package.json found at repository root or IAAS backend/. Set the Lambda project as the repository root, or keep the backend in IAAS backend."
+            echo "::error::No Lambda app found. Expected lambda.js plus package.json at repository root or IAAS backend/."
             exit 1
           fi
+          echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
 
 `;
 }
