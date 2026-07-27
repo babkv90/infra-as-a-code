@@ -1,4 +1,4 @@
-name: "LambdaErrorResolver development CI/CD"
+name: "ProductionLog development CI/CD"
 
 on:
   push:
@@ -39,12 +39,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve Lambda app directory
+        run: |
+          if [ -f "IAAS backend/lambda.js" ] && [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f lambda.js ] && [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
+          elif [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
+          else
+            echo "::error::No Lambda app found. Expected lambda.js plus package.json at repository root or IAAS backend/."
+            exit 1
+          fi
+          echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
+
+
       - name: Setup Node.js
         if: contains('serverless-api', 'react') || contains('serverless-api', 'node') || contains('serverless-api', 'static') || contains('serverless-api', 'serverless') || contains('serverless-api', 'kubernetes')
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            IAAS backend/package-lock.json
 
       - name: Setup Python
         if: contains('serverless-api', 'python')
@@ -60,9 +80,13 @@ jobs:
           java-version: '21'
 
       - name: Install dependencies
+
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: npm ci
 
       - name: Run tests
+
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: |
           if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
             echo "No npm test script found; skipping test step."
@@ -72,6 +96,8 @@ jobs:
 
 
       - name: Build application
+
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: npm run build --if-present
 
       - name: Configure AWS credentials with OIDC
@@ -81,10 +107,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Prune dev dependencies
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: npm prune --omit=dev
 
+      - name: Verify Lambda handler file
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
+        run: |
+          LAMBDA_HANDLER="$(aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
+          HANDLER_MODULE="${LAMBDA_HANDLER%.*}"
+          echo "Lambda handler configured in AWS: $LAMBDA_HANDLER"
+          if [ ! -f "$HANDLER_MODULE.js" ] && [ ! -f "$HANDLER_MODULE.mjs" ] && [ ! -f "$HANDLER_MODULE.cjs" ]; then
+            echo "::error::AWS expects handler module '$HANDLER_MODULE' at the Lambda zip root, but it was not found in $PWD."
+            echo "Add $HANDLER_MODULE.js, change the Lambda handler in AWS/Terraform, or move the workflow's Lambda app directory to the folder that contains it."
+            find . -maxdepth 3 -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort | head -80
+            exit 1
+          fi
+
       - name: Package Lambda artifact
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
 
       - name: Deploy Lambda function
-        run: aws lambda update-function-code --function-name ${{ env.LAMBDA_FUNCTION }} --zip-file fileb://lambda.zip
+        run: aws lambda update-function-code --function-name ${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"${{ env.LAMBDA_APP_DIR }}/lambda.zip"
