@@ -1,4 +1,4 @@
-name: "awslambda development CI/CD"
+name: "Production application pipeline development CI/CD"
 
 on:
   push:
