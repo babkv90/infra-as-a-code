@@ -1,4 +1,4 @@
-name: "noddeLambdachange development CI/CD"
+name: "LambdaErrorResolver development CI/CD"
 
 on:
   push:
