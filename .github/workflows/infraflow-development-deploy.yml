@@ -1,4 +1,4 @@
-name: "gffdvd development CI/CD"
+name: "awslambda development CI/CD"
 
 on:
   push:
