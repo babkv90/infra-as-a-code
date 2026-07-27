@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67de362648f8ba5831cc8b",
+  "pipelineName": "nbp",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T23:08:48.954Z",
+  "source": "infraflow"
+}
