@@ -1708,7 +1708,7 @@ textarea {
   background: #0f172a;
   color: #e2e8f0;
   box-shadow: 0 18px 56px rgba(15, 23, 42, 0.28);
-  overflow: hidden;
+  overflow: auto;
 }
 
 .deployment-modal__header,
@@ -2389,10 +2389,16 @@ textarea {
 }
 
 .deployment-page__actions {
+  position: sticky;
+  top: 0;
+  z-index: 12;
   justify-content: flex-end;
   flex-wrap: wrap;
-  padding: 0 16px 14px;
-  border-bottom: 0;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.24);
 }
 
 .deployment-primary {
@@ -14164,8 +14170,14 @@ button.dash-kpi-card {
 }
 
 .app-theme-light .deployment-modal__header,
-.app-theme-light .deployment-actions {
+.app-theme-light .deployment-actions,
+.app-theme-light .deployment-page__actions {
   border-color: var(--border-subtle);
+}
+
+.app-theme-light .deployment-page__actions {
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
 }
 
 .app-theme-light .deployment-modal__header h3,
@@ -16224,6 +16236,12 @@ button.dash-kpi-card {
     radial-gradient(circle at 86% 12%, rgba(225, 29, 72, 0.1), transparent 28%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(246, 241, 232, 0.92));
   color: var(--pearl-ink);
+}
+
+.app-theme-pearl .deployment-page__actions {
+  border-color: rgba(8, 145, 178, 0.18);
+  background: rgba(255, 252, 246, 0.96);
+  box-shadow: 0 12px 26px rgba(20, 33, 61, 0.1);
 }
 
 .app-theme-pearl .deployment-log-line {

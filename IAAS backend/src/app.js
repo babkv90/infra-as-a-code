@@ -14,6 +14,18 @@ export const app = express();
 
 app.set('trust proxy', 1);
 
+const allowedCorsOrigins = new Set([
+  ...env.CLIENT_ORIGINS,
+  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
+  'https://d3pgg5abvvdatt.cloudfront.net',
+]);
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  if (allowedCorsOrigins.has(origin)) return true;
+  return /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(origin);
+}
+
 app.use(helmet());
 app.use(compression());
 app.use(cookieParser());
@@ -21,7 +33,9 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: env.CLIENT_ORIGINS,
+    origin(origin, callback) {
+      callback(null, isAllowedCorsOrigin(origin));
+    },
     credentials: true,
   }),
 );

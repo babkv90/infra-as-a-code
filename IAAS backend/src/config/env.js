@@ -50,7 +50,10 @@ export const env = {
   JWT_REFRESH_SECRET: readString('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
   JWT_ACCESS_EXPIRES_IN: readString('JWT_ACCESS_EXPIRES_IN', '15m'),
   JWT_REFRESH_EXPIRES_IN: readString('JWT_REFRESH_EXPIRES_IN', '7d'),
-  CLIENT_ORIGINS: readList('CLIENT_ORIGIN', 'http://127.0.0.1:5173,http://localhost:5173'),
+  CLIENT_ORIGINS: readList(
+    'CLIENT_ORIGIN',
+    'http://127.0.0.1:5173,http://localhost:5173,https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com,https://d3pgg5abvvdatt.cloudfront.net',
+  ),
   BCRYPT_ROUNDS: readNumber('BCRYPT_ROUNDS', 12),
   RATE_LIMIT_WINDOW_MS: readNumber('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
   RATE_LIMIT_MAX: readNumber('RATE_LIMIT_MAX', 300),
