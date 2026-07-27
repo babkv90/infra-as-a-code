@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67aaca818d17cf7f99cb11",
+  "pipelineName": "noddeLambdachange",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T19:00:47.177Z",
+  "source": "infraflow"
+}
