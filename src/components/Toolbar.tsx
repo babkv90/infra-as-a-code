@@ -25,6 +25,7 @@ import { useMemo, useRef } from 'react';
 import { useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import { useReactFlow, useViewport } from 'reactflow';
+import { PageAlert } from './PageAlert';
 import { groupKinds } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
 import { exportTerraform } from '../utils/exportTerraform';
@@ -57,6 +58,7 @@ function Toolbar({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [boundaryKind, setBoundaryKind] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
   const flow = useReactFlow();
   const viewport = useViewport();
   const {
@@ -97,10 +99,10 @@ function Toolbar({
     { mode: 'label', label: 'Label', icon: Tags },
   ];
 
-  const views: Array<{ view: DiagramViewMode; label: string; icon: typeof Network }> = [
-    { view: 'topology', label: 'Topology', icon: Network },
-    { view: 'dependencies', label: 'Dependencies', icon: TerminalSquare },
-    { view: 'security', label: 'Security', icon: ShieldCheck },
+  const views: Array<{ view: DiagramViewMode; label: string }> = [
+    { view: 'topology', label: 'Topology' },
+    { view: 'dependencies', label: 'Dependencies' },
+    { view: 'security', label: 'Security' },
   ];
 
   function download(name: string, content: string, type: string) {
@@ -143,13 +145,13 @@ function Toolbar({
         requestAnimationFrame(() => flow.fitView({ padding: 0.16 }));
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to import this JSON file.';
-        window.alert(message);
+        setAlertMessage(message);
       } finally {
         if (fileRef.current) fileRef.current.value = '';
       }
     };
     reader.onerror = () => {
-      window.alert('Unable to read this JSON file.');
+      setAlertMessage('Unable to read this JSON file.');
       if (fileRef.current) fileRef.current.value = '';
     };
     reader.readAsText(file);
@@ -171,12 +173,13 @@ function Toolbar({
       console.info(result.message);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to send terraform payload.';
-      window.alert(message);
+      setAlertMessage(message);
     }
   }
 
   return (
     <>
+    {alertMessage && <PageAlert message={alertMessage} tone="error" onDismiss={() => setAlertMessage('')} />}
     <header className="toolbar">
       <div className="toolbar__section">
         {tools.map((tool) => {
@@ -238,23 +241,19 @@ function Toolbar({
         </button>
       </div>
       <div className="toolbar__section toolbar__section--grow">
-        <div className="view-switcher" aria-label="Diagram view">
-          {views.map((view) => {
-            const Icon = view.icon;
-            return (
-              <button
-                className={activeView === view.view ? 'active' : ''}
-                key={view.view}
-                onClick={() => setActiveView(view.view)}
-                title={`${view.label} view`}
-                type="button"
-              >
-                <Icon size={15} />
-                {view.label}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          aria-label="Diagram view"
+          className="toolbar-select toolbar-select--view"
+          title="Diagram view"
+          value={activeView}
+          onChange={(event) => setActiveView(event.target.value as DiagramViewMode)}
+        >
+          {views.map((view) => (
+            <option key={view.view} value={view.view}>
+              {view.label}
+            </option>
+          ))}
+        </select>
         <button className="text-button" onClick={autoLayout}>
           Auto-layout
         </button>

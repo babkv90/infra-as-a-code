@@ -1,6 +1,7 @@
 import { getStoredToken } from '../auth/authClient';
+import { API_BASE_URL } from './apiBaseUrl';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+export { API_BASE_URL };
 
 async function unwrap<T>(response: Response, fallbackMessage: string): Promise<T> {
   const result = await response.json().catch(() => null);

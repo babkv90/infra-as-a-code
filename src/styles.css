@@ -14,7 +14,11 @@ body {
 }
 
 body:has(.app-theme-light) {
-  background: #F5F6F8;
+  background: #F8FAFC;
+}
+
+body:has(.app-theme-pearl) {
+  background: #fbfaf6;
 }
 
 html:has(.dash-shell),
@@ -479,6 +483,10 @@ textarea {
 .toolbar-select {
   height: 34px;
   padding: 0 8px;
+}
+
+.toolbar-select--view {
+  min-width: 132px;
 }
 
 .zoom-readout {
@@ -6021,6 +6029,10 @@ button.dash-kpi-card {
   padding-right: 8px;
 }
 
+.dash-page--builder .toolbar__section--grow {
+  flex: 0 1 auto;
+}
+
 .dash-page--builder .icon-button,
 .dash-page--builder .text-button,
 .dash-page--builder .toolbar-select {
@@ -7345,6 +7357,62 @@ button.dash-kpi-card {
   border-color: rgba(248, 113, 113, 0.3);
   background: rgba(239, 68, 68, 0.1);
   color: #fecaca;
+}
+
+.page-alert {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 3000;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  border-radius: 8px;
+  background: rgba(5, 46, 22, 0.94);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.24);
+  color: #dcfce7;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  animation: page-alert-lifetime 5s ease forwards;
+}
+
+.page-alert svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.page-alert--error {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(69, 10, 10, 0.94);
+  color: #fee2e2;
+}
+
+.page-alert ~ .page-alert {
+  top: 84px;
+}
+
+.page-alert ~ .page-alert ~ .page-alert {
+  top: 150px;
+}
+
+@keyframes page-alert-lifetime {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  8%,
+  88% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }
 
 .pipeline-stepper {
@@ -12545,32 +12613,196 @@ button.dash-kpi-card {
 }
 
 .app-theme-light {
-  --bg-app: #F5F6F8;
+  --bg-app: #F8FAFC;
   --bg-surface: #FFFFFF;
-  --bg-surface-hover: #F9FAFB;
-  --border-subtle: #E4E7EC;
-  --border-strong: #D0D5DD;
-  --text-primary: #1A1F36;
-  --text-secondary: #5B6473;
-  --text-disabled: #98A2B3;
-  --accent-primary: #4F46E5;
-  --accent-primary-hover: #4338CA;
-  --focus-ring: #C7D2FE;
-  --success: #12B76A;
-  --warning: #F79009;
-  --danger: #F04438;
-  --info: #2E90FA;
-  --accent-primary-rgb: 79, 70, 229;
-  --text-primary-rgb: 26, 31, 54;
-  --success-rgb: 18, 183, 106;
-  --warning-rgb: 247, 144, 9;
-  --danger-rgb: 240, 68, 56;
-  --info-rgb: 46, 144, 250;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-modal: 0 4px 8px rgba(16, 24, 40, 0.08);
+  --bg-surface-hover: #F1F5F9;
+  --border-subtle: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-disabled: #5B6678;
+  --accent-primary: #2563EB;
+  --accent-primary-hover: #1D4ED8;
+  --focus-ring: #BFDBFE;
+  --success: #047857;
+  --warning: #B45309;
+  --danger: #B91C1C;
+  --info: #0369A1;
+  --accent-primary-rgb: 37, 99, 235;
+  --text-primary-rgb: 17, 24, 39;
+  --success-rgb: 4, 120, 87;
+  --warning-rgb: 180, 83, 9;
+  --danger-rgb: 185, 28, 28;
+  --info-rgb: 3, 105, 161;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 32px;
+  --font-size-display: 48px;
+  --line-height-xs: 1.45;
+  --line-height-sm: 1.5;
+  --line-height-md: 1.55;
+  --line-height-lg: 1.4;
+  --line-height-xl: 1.25;
+  --line-height-2xl: 1.15;
+  --line-height-display: 1.05;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 32px rgba(15, 23, 42, 0.04);
+  --shadow-modal: 0 24px 70px rgba(15, 23, 42, 0.14);
 
   background: var(--bg-app);
   color: var(--text-primary);
+}
+
+.app-theme-light:not(.app-theme-pearl) .lp-hero h1 {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-bold);
+}
+
+.app-theme-light:not(.app-theme-pearl) .settings-heading h1,
+.app-theme-light:not(.app-theme-pearl) .auth-panel h1,
+.app-theme-light:not(.app-theme-pearl) .dash-topbar h1,
+.app-theme-light:not(.app-theme-pearl) .dash-hero-panel h2,
+.app-theme-light:not(.app-theme-pearl) .dash-page-intro h2,
+.app-theme-light:not(.app-theme-pearl) .route-guard-page h1 {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-2xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.app-theme-light:not(.app-theme-pearl) .lp-section-heading h2,
+.app-theme-light:not(.app-theme-pearl) .lp-split-section h2,
+.app-theme-light:not(.app-theme-pearl) .lp-security h2,
+.app-theme-light:not(.app-theme-pearl) .lp-final-cta h2,
+.app-theme-light:not(.app-theme-pearl) .auth-card h2,
+.app-theme-light:not(.app-theme-pearl) .dash-panel h2,
+.app-theme-light:not(.app-theme-pearl) .pipeline-console-header h2,
+.app-theme-light:not(.app-theme-pearl) .deployment-success-popup h2 {
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-theme-light:not(.app-theme-pearl) .lp-info-card h3,
+.app-theme-light:not(.app-theme-pearl) .lp-step-card h3,
+.app-theme-light:not(.app-theme-pearl) .lp-pricing-card h3,
+.app-theme-light:not(.app-theme-pearl) .dash-feature-card h3,
+.app-theme-light:not(.app-theme-pearl) .dash-cost-card h3,
+.app-theme-light:not(.app-theme-pearl) .dash-finding h3,
+.app-theme-light:not(.app-theme-pearl) .ticket-detail-header h3,
+.app-theme-light:not(.app-theme-pearl) .deployment-modal__header h3,
+.app-theme-light:not(.app-theme-pearl) .runtime-lab-detail-modal h3,
+.app-theme-light:not(.app-theme-pearl) .runtime-lab-detail-body h4 {
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-theme-light:not(.app-theme-pearl) .lp-primary-button,
+.app-theme-light:not(.app-theme-pearl) .lp-secondary-button,
+.app-theme-light:not(.app-theme-pearl) .lp-link-button,
+.app-theme-light:not(.app-theme-pearl) .lp-reference-nav-button,
+.app-theme-light:not(.app-theme-pearl) .auth-submit,
+.app-theme-light:not(.app-theme-pearl) .auth-secondary-submit,
+.app-theme-light:not(.app-theme-pearl) .dash-primary-action,
+.app-theme-light:not(.app-theme-pearl) .dash-secondary-action,
+.app-theme-light:not(.app-theme-pearl) .dash-danger-action,
+.app-theme-light:not(.app-theme-pearl) .deployment-primary,
+.app-theme-light:not(.app-theme-pearl) .pipeline-primary-compact,
+.app-theme-light:not(.app-theme-pearl) .pipeline-link-button,
+.app-theme-light:not(.app-theme-pearl) .ticket-filter-tabs button,
+.app-theme-light:not(.app-theme-pearl) .dash-nav button {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.app-theme-light:not(.app-theme-pearl) .auth-field input,
+.app-theme-light:not(.app-theme-pearl) .dash-search input,
+.app-theme-light:not(.app-theme-pearl) .dash-role-form input,
+.app-theme-light:not(.app-theme-pearl) .dash-role-form select,
+.app-theme-light:not(.app-theme-pearl) .deployment-target select,
+.app-theme-light:not(.app-theme-pearl) .deployment-target input,
+.app-theme-light:not(.app-theme-pearl) .pipeline-field input,
+.app-theme-light:not(.app-theme-pearl) .pipeline-field select,
+.app-theme-light:not(.app-theme-pearl) .ticket-reply-form textarea,
+.app-theme-light:not(.app-theme-pearl) .ticket-form-grid textarea,
+.app-theme-light:not(.app-theme-pearl) .ticket-status-select,
+.app-theme-light:not(.app-theme-pearl) .field input,
+.app-theme-light:not(.app-theme-pearl) .field select,
+.app-theme-light:not(.app-theme-pearl) .field textarea {
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-md);
+  font-weight: var(--font-weight-regular);
+}
+
+.app-theme-light:not(.app-theme-pearl) .auth-panel p,
+.app-theme-light:not(.app-theme-pearl) .auth-card p,
+.app-theme-light:not(.app-theme-pearl) .settings-heading p,
+.app-theme-light:not(.app-theme-pearl) .lp-hero p,
+.app-theme-light:not(.app-theme-pearl) .lp-split-section p,
+.app-theme-light:not(.app-theme-pearl) .lp-security p,
+.app-theme-light:not(.app-theme-pearl) .lp-final-cta p,
+.app-theme-light:not(.app-theme-pearl) .dash-hero-panel p,
+.app-theme-light:not(.app-theme-pearl) .dash-page-intro p,
+.app-theme-light:not(.app-theme-pearl) .dash-feature-card p,
+.app-theme-light:not(.app-theme-pearl) .ticket-message p,
+.app-theme-light:not(.app-theme-pearl) .deployment-success-popup p {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  font-weight: var(--font-weight-regular);
+}
+
+.app-theme-light:not(.app-theme-pearl) .dash-kpi-card strong,
+.app-theme-light:not(.app-theme-pearl) .dash-list-row strong,
+.app-theme-light:not(.app-theme-pearl) .dash-resource-table strong,
+.app-theme-light:not(.app-theme-pearl) .dash-event-row strong,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-card strong,
+.app-theme-light:not(.app-theme-pearl) .admin-kpi-card strong,
+.app-theme-light:not(.app-theme-pearl) .admin-users-table strong,
+.app-theme-light:not(.app-theme-pearl) .deploy-kpi-card strong,
+.app-theme-light:not(.app-theme-pearl) .pipeline-section > header strong,
+.app-theme-light:not(.app-theme-pearl) .pipeline-code-pane header strong,
+.app-theme-light:not(.app-theme-pearl) .pipeline-check strong,
+.app-theme-light:not(.app-theme-pearl) .pipeline-live-run strong,
+.app-theme-light:not(.app-theme-pearl) .resource-info-card__header strong {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-theme-light:not(.app-theme-pearl) .dash-eyebrow,
+.app-theme-light:not(.app-theme-pearl) .lp-kicker,
+.app-theme-light:not(.app-theme-pearl) .lp-section-eyebrow,
+.app-theme-light:not(.app-theme-pearl) .auth-eyebrow,
+.app-theme-light:not(.app-theme-pearl) .dash-kpi-card span,
+.app-theme-light:not(.app-theme-pearl) .dash-list-row span,
+.app-theme-light:not(.app-theme-pearl) .dash-resource-table span,
+.app-theme-light:not(.app-theme-pearl) .dash-event-row span,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-card span,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-card small,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-table th,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-table td,
+.app-theme-light:not(.app-theme-pearl) .admin-users-table thead th,
+.app-theme-light:not(.app-theme-pearl) .admin-users-table td,
+.app-theme-light:not(.app-theme-pearl) .ticket-status-pill,
+.app-theme-light:not(.app-theme-pearl) .admin-status-pill,
+.app-theme-light:not(.app-theme-pearl) .dash-deploy-status-pill,
+.app-theme-light:not(.app-theme-pearl) .dash-account-status-pill,
+.app-theme-light:not(.app-theme-pearl) .pipeline-badge,
+.app-theme-light:not(.app-theme-pearl) .pipeline-stepper-item,
+.app-theme-light:not(.app-theme-pearl) .pipeline-muted,
+.app-theme-light:not(.app-theme-pearl) .pipeline-result-summary span,
+.app-theme-light:not(.app-theme-pearl) .resource-info__summary span {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .app-theme-light .auth-page {

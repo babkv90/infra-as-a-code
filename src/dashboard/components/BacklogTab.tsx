@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import { PageAlert } from '../../components/PageAlert';
 import { EmptyState } from './DashPrimitives';
 import {
   BACKLOG_SEVERITIES,
@@ -120,6 +121,9 @@ export function BacklogTab() {
 
   return (
     <div className="backlog-tab">
+      {submitError && <PageAlert message={submitError} tone="error" onDismiss={() => setSubmitError('')} />}
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {loadError && <PageAlert message={loadError} tone="error" onDismiss={() => setLoadError('')} />}
       <div className="backlog-grid">
         <form className="backlog-form" onSubmit={submit}>
           <header>
@@ -172,9 +176,6 @@ export function BacklogTab() {
             </select>
           </Field>
 
-          {submitError && <div className="pipeline-notice pipeline-notice--error">{submitError}</div>}
-          {message && <div className="pipeline-notice">{message}</div>}
-
           <button className="pipeline-primary-compact" disabled={isSubmitting} type="submit">
             {isSubmitting ? 'Adding…' : 'Add item'}
           </button>
@@ -207,8 +208,6 @@ export function BacklogTab() {
               </select>
             </div>
           </header>
-
-          {loadError && <div className="pipeline-notice pipeline-notice--error">{loadError}</div>}
 
           <div className="backlog-table-wrap">
             <table className="backlog-table">

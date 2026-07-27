@@ -2,6 +2,7 @@ import { ArrowRight, FilePlus2, Sparkles } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
+import { PageAlert } from '../../components/PageAlert';
 import { canUseAiAgent } from '../../utils/accessControl';
 import { createAgentConversation, sendAgentMessage, type AgentConversation } from '../agentApi';
 import { EmptyState, Panel } from '../components/DashPrimitives';
@@ -75,6 +76,7 @@ export function AgentPage() {
 
   return (
     <div className="dash-page dash-page--agent">
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-agent-layout">
         <Panel title="AWS Well-Architected RAG agent" action="Live RAG">
           <div className="dash-agent-question-suggestions" aria-label="Suggested questions">
@@ -115,7 +117,6 @@ export function AgentPage() {
             )}
             <div ref={chatEndRef} />
           </div>
-          {error && <div className="dash-form-error">{error}</div>}
           <form className="dash-chat-input" onSubmit={handleSubmit}>
             <input
               disabled={isSending}

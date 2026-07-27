@@ -44,6 +44,7 @@ import Canvas from '../components/Canvas';
 import AppLogo from '../components/AppLogo';
 import DeploymentModal from '../components/DeploymentModal';
 import PropertiesPanel from '../components/PropertiesPanel';
+import { PageAlert } from '../components/PageAlert';
 import ResourceInfoViewer from '../components/ResourceInfoViewer';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
@@ -401,8 +402,8 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             </button>
           </div>
         </header>
-        {awsDataError && <div className="dash-global-error">{awsDataError}</div>}
-        {awsDataMessage && <div className="dash-global-success">{awsDataMessage}</div>}
+        {awsDataError && <PageAlert message={awsDataError} tone="error" onDismiss={() => setAwsDataError('')} />}
+        {awsDataMessage && <PageAlert message={awsDataMessage} onDismiss={() => setAwsDataMessage('')} />}
         <div className="dash-content">
           {renderPage(activePage, goToDashboardPage, {
             awsAccounts,
@@ -1205,6 +1206,8 @@ function DiagramsPage() {
 
   return (
     <div className="dash-page dash-page--diagrams">
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
       <header className="pipeline-console-header">
         <div>
           <span className="dash-eyebrow">Diagram directory</span>
@@ -1227,8 +1230,6 @@ function DiagramsPage() {
           </button>
         </div>
       </header>
-      {error && <div className="dash-global-error">{error}</div>}
-      {message && <div className="dash-global-success">{message}</div>}
       <section className="deploy-table-panel">
         <header>
           <strong>Saved diagrams</strong>
@@ -1496,6 +1497,8 @@ function DeploymentsPage({
 
   return (
     <div className="dash-page dash-page--deployments">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-page-head-group">
         <header className="pipeline-console-header">
           <div>
@@ -1512,8 +1515,6 @@ function DeploymentsPage({
             </button>
           </div>
         </header>
-        {message && <div className="pipeline-notice">{message}</div>}
-        {error && <div className="pipeline-notice pipeline-notice--error">{error}</div>}
       </div>
 
       <section className="admin-kpi-strip">
@@ -1974,6 +1975,7 @@ function ResourceInfoPage() {
 
   return (
     <div className="dash-page dash-page--resource-info">
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-page-head-group">
         <header className="pipeline-console-header">
           <div>
@@ -1987,7 +1989,6 @@ function ResourceInfoPage() {
             </button>
           </div>
         </header>
-        {error && <div className="pipeline-notice pipeline-notice--error">{error}</div>}
       </div>
 
       <div className="resource-info-console-grid">
@@ -2473,6 +2474,8 @@ function ApplicationPipelinePage() {
 
   return (
     <div className="dash-page dash-page--pipeline">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <header className="pipeline-console-header">
         <div>
           <span className="dash-eyebrow">CI/CD pipeline builder</span>
@@ -2490,13 +2493,6 @@ function ApplicationPipelinePage() {
           </button>
         </div>
       </header>
-
-      {(message || error) && (
-        <div className={`pipeline-notice ${error ? 'pipeline-notice--error' : 'pipeline-notice--success'}`}>
-          {error || message}
-        </div>
-      )}
-
       <nav className="pipeline-stepper" aria-label="Pipeline steps">
         {buildPipelineSteps(validationChecks, selectedPipeline).map((step, index) => (
           <div className={`pipeline-stepper-item pipeline-stepper-item--${step.status}`} key={step.label}>
@@ -3633,7 +3629,7 @@ function DestroyHistoryModal({ deployment, onClose }: { deployment: DeploymentRe
             </button>
           </div>
 
-          {verifyError && <div className="pipeline-notice pipeline-notice--error">{verifyError}</div>}
+          {verifyError && <PageAlert message={verifyError} tone="error" onDismiss={() => setVerifyError('')} />}
 
           {verification && (
             <div className="dash-verify-resources__results">

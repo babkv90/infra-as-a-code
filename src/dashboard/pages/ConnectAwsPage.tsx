@@ -1,6 +1,7 @@
 import { Plug, RefreshCw, Trash2 } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useState } from 'react';
+import { PageAlert } from '../../components/PageAlert';
 import { connectAwsAccount, disconnectAwsAccount, syncAwsAccount, type AwsAccountRecord } from '../awsApi';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { awsConnectionSteps } from '../dashboardData';
@@ -82,6 +83,8 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
 
   return (
     <div className="dash-page">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-connect-layout">
         <Panel title="Connection steps" action="IAM setup">
           <div className="dash-connect-steps">
@@ -126,8 +129,6 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
                 ))}
               </select>
             </label>
-            {message && <div className="dash-form-success">{message}</div>}
-            {error && <div className="dash-form-error">{error}</div>}
             <div className="dash-role-form-actions">
               <button className="dash-secondary-action" disabled={isConnecting}>
                 <Plug size={16} />

@@ -1,6 +1,7 @@
 import { BadgeDollarSign, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
+import { PageAlert } from '../../components/PageAlert';
 import { BacklogTab } from '../components/BacklogTab';
 import { ChangeLogTab } from '../components/ChangeLogTab';
 import { EmptyState, Panel } from '../components/DashPrimitives';
@@ -117,6 +118,8 @@ export function SuperAdminPage() {
 
   return (
     <div className="dash-page dash-page--admin">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-page-head-group">
         <header className="pipeline-console-header">
           <div>
@@ -131,8 +134,6 @@ export function SuperAdminPage() {
             </button>
           </div>
         </header>
-        {message && <div className="pipeline-notice">{message}</div>}
-        {error && <div className="pipeline-notice pipeline-notice--error">{error}</div>}
       </div>
 
       <nav className="admin-tab-bar" role="tablist">
