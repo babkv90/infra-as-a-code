@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67d3ea70b1bce17b3ada8a",
+  "pipelineName": "Production application pipeline",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T21:56:13.558Z",
+  "source": "infraflow"
+}
