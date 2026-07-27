@@ -4,6 +4,7 @@ import { validateStoredSession } from '../auth/authClient';
 import AppLogo from '../components/AppLogo';
 import { DASHBOARD_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
+import { API_BASE_URL } from '../utils/apiBaseUrl';
 
 type ReferenceDoc = {
   id: string;
@@ -21,7 +22,7 @@ const referenceDocs: ReferenceDoc[] = [
     subtitle: 'Processes, workers, CPU cores, clusters',
     description: 'Learn how this app demonstrates worker threads, child processes, cluster workers, CPU usage, memory, and safe background execution.',
     example: 'Use this when studying why Terraform generation, AWS sync, or heavy architecture validation should run outside the main API request path.',
-    url: '/api/v1/reference-docs/node-runtime-lab',
+    url: `${API_BASE_URL}/reference-docs/node-runtime-lab`,
   },
   {
     id: 'infraflow-architecture',
@@ -29,7 +30,7 @@ const referenceDocs: ReferenceDoc[] = [
     subtitle: 'Frontend, backend, MongoDB, AWS HLD/LLD',
     description: 'Study the React, Node, MongoDB, and AWS architecture for scaling this application toward millions of users.',
     example: 'Use this when learning how the landing page, dashboard, backend routes, MongoDB persistence, AWS integrations, and deployment architecture fit together.',
-    url: '/api/v1/reference-docs/infraflow-architecture',
+    url: `${API_BASE_URL}/reference-docs/infraflow-architecture`,
   },
 ];
 

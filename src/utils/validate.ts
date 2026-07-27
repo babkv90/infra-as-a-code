@@ -1,4 +1,6 @@
 import type { AwsEdge, AwsNode } from '../types';
+import { validateNetworkTopology } from './networkTopology';
+import { validateRelationshipGraph } from './relationshipGraph';
 import { isValidArn, looksLikeTerraformExpression, validateResourceRequirements } from './resourceRequirements';
 
 export type ValidationIssue = {
@@ -9,7 +11,11 @@ export type ValidationIssue = {
 };
 
 export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[], activeRegion?: string): ValidationIssue[] {
-  const issues: ValidationIssue[] = [...validateResourceRequirements(nodes, edges)];
+  const issues: ValidationIssue[] = [
+    ...validateResourceRequirements(nodes, edges),
+    ...validateRelationshipGraph(nodes, edges),
+    ...validateNetworkTopology(nodes, edges),
+  ];
   const serviceIds = new Set(nodes.map((node) => node.data.serviceId));
   const nodeIds = new Set(nodes.map((node) => node.id));
   const connectedPairs = edges.map((edge) => [nodes.find((node) => node.id === edge.source), nodes.find((node) => node.id === edge.target)] as const);
@@ -86,6 +92,7 @@ export function validateDiagram(nodes: AwsNode[], edges: AwsEdge[], activeRegion
 
   for (const edge of edges) {
     if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      if (issues.some((issue) => issue.edgeId === edge.id && issue.severity === 'error')) continue;
       issues.push({ edgeId: edge.id, severity: 'error', message: 'Connection references a node that no longer exists in the diagram.' });
     }
 

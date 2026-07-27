@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { normalizeDiagramSnapshot } from '../utils/diagramSchema.js';
 import { latestAmazonLinux2023Ami } from '../utils/terraformGenerator.js';
 
 export const receiveTerraformPayloadSchema = z.object({
@@ -11,7 +12,7 @@ export const receiveTerraformPayloadSchema = z.object({
 });
 
 export const receiveTerraformPayload = asyncHandler(async (req, res) => {
-  const { nodes, edges, activeRegion } = req.validated.body;
+  const { nodes, edges, activeRegion } = normalizeDiagramSnapshot(req.validated.body);
   const populatedNodes = nodes.map((node) => populateEc2Config(node, nodes, edges));
 
   res.json({

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import { PageAlert } from '../../components/PageAlert';
 import { EmptyState } from './DashPrimitives';
 import { PerformanceChart } from './PerformanceChart';
 import {
@@ -113,6 +114,9 @@ export function ChangeLogTab() {
 
   return (
     <div className="changelog-tab">
+      {submitError && <PageAlert message={submitError} tone="error" onDismiss={() => setSubmitError('')} />}
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {loadError && <PageAlert message={loadError} tone="error" onDismiss={() => setLoadError('')} />}
       <PerformanceChart series={series} />
 
       <div className="changelog-grid">
@@ -183,9 +187,6 @@ export function ChangeLogTab() {
             </Field>
           )}
 
-          {submitError && <div className="pipeline-notice pipeline-notice--error">{submitError}</div>}
-          {message && <div className="pipeline-notice">{message}</div>}
-
           <button className="pipeline-primary-compact" disabled={isSubmitting} type="submit">
             {isSubmitting ? 'Logging…' : 'Log change'}
           </button>
@@ -196,7 +197,6 @@ export function ChangeLogTab() {
             <strong>Change history</strong>
             <span>{entries.length} entries</span>
           </header>
-          {loadError && <div className="pipeline-notice pipeline-notice--error">{loadError}</div>}
           {isLoading && !entries.length ? (
             <EmptyState>Loading change log…</EmptyState>
           ) : entries.length ? (

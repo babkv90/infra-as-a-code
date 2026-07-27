@@ -1,13 +1,15 @@
 import { generateTerraform, lambdaZipUploadIdsFromNodes } from './terraformGenerator.js';
+import { normalizeDiagramSnapshot } from './diagramSchema.js';
 import { validateDiagram } from './diagramValidator.js';
 import { validateGeneratedTerraform } from './terraformValidator.js';
 import { validateTerraformWithCli } from '../services/terraformCliValidator.js';
 
 export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend = false } = {}) {
-  const nodes = diagram.nodes ?? [];
-  const edges = diagram.edges ?? [];
+  const snapshot = normalizeDiagramSnapshot(diagram);
+  const nodes = snapshot.nodes;
+  const edges = snapshot.edges;
   const terraform = generateTerraform(nodes, edges, {
-    region: diagram.activeRegion,
+    region: snapshot.activeRegion ?? diagram.activeRegion,
     suffix: diagram._id?.toString?.() ?? diagram.name,
     remoteStateBackend,
     deploymentId,

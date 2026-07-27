@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRo
 import type React from 'react';
 import { useMemo, useState } from 'react';
 import AppLogo from '../components/AppLogo';
+import { PageAlert } from '../components/PageAlert';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
 import { forgotPassword, login, register, resetPassword } from './authClient';
@@ -111,6 +112,8 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
   return (
     <main className="auth-page">
+      {forgotPasswordMessage && <PageAlert message={forgotPasswordMessage} onDismiss={() => setForgotPasswordMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <section className="auth-panel">
         <a className="auth-back-link" href="/">
           <ArrowLeft size={16} />
@@ -225,7 +228,6 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                     {isRequestingReset ? 'Sending...' : 'Get reset token'}
                     <Mail size={16} />
                   </button>
-                  {forgotPasswordMessage && <div className="auth-success">{forgotPasswordMessage}</div>}
                   {forgotPasswordToken && (
                     <div className="auth-reset-token">
                       <span>Development reset token</span>
@@ -267,8 +269,6 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
               )}
             </div>
           )}
-
-          {error && <div className="auth-error">{error}</div>}
 
           <button className="auth-submit" disabled={!canSubmit || isSubmitting} type="submit">
             {isSubmitting ? 'Please wait...' : isRegister ? 'Create account' : 'Login'}

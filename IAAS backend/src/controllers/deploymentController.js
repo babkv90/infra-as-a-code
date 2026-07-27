@@ -9,6 +9,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { assertDiagramServiceAccess } from '../utils/accessControl.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
+import { normalizeDiagramPayload } from '../utils/diagramSchema.js';
 import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
 import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
 import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
@@ -145,16 +146,18 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
   if (!awsAccount) throw new ApiError(404, 'Connected AWS account not found');
 
   const diagramName = req.validated.body.name ?? `Canvas deployment ${new Date().toISOString().slice(0, 10)}`;
+  const diagramPayload = normalizeDiagramPayload(req.validated.body, { activeRegion: awsAccount.defaultRegion });
   const workspace = await Workspace.findById(req.user.workspace);
-  assertDiagramServiceAccess({ user: req.user, workspace, nodes: req.validated.body.nodes });
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagramPayload.nodes });
   const diagram = await Diagram.create({
     workspace: req.user.workspace,
     createdBy: req.user._id,
     updatedBy: req.user._id,
     name: diagramName,
-    activeRegion: req.validated.body.activeRegion ?? awsAccount.defaultRegion,
-    nodes: req.validated.body.nodes,
-    edges: req.validated.body.edges,
+    schemaVersion: diagramPayload.schemaVersion,
+    activeRegion: diagramPayload.activeRegion ?? awsAccount.defaultRegion,
+    nodes: diagramPayload.nodes,
+    edges: diagramPayload.edges,
   });
 
   const deploymentId = new mongoose.Types.ObjectId();
@@ -179,7 +182,7 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     plan: plan.plan,
     terraform: plan.terraform,
     validationIssues: plan.validationIssues,
-    lambdaZipUploadIds: lambdaZipUploadIdsFromNodes(req.validated.body.nodes),
+    lambdaZipUploadIds: lambdaZipUploadIdsFromNodes(diagramPayload.nodes),
     logs: [
       {
         message: hasBlockers
@@ -269,11 +272,13 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   if (!diagram) throw new ApiError(404, 'Underlying diagram not found');
 
   const workspace = await Workspace.findById(req.user.workspace);
-  assertDiagramServiceAccess({ user: req.user, workspace, nodes: req.validated.body.nodes });
+  const diagramPayload = normalizeDiagramPayload(req.validated.body, diagram);
+  assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagramPayload.nodes });
 
-  diagram.nodes = req.validated.body.nodes;
-  diagram.edges = req.validated.body.edges;
-  if (req.validated.body.activeRegion) diagram.activeRegion = req.validated.body.activeRegion;
+  diagram.schemaVersion = diagramPayload.schemaVersion;
+  diagram.nodes = diagramPayload.nodes;
+  diagram.edges = diagramPayload.edges;
+  if (diagramPayload.activeRegion) diagram.activeRegion = diagramPayload.activeRegion;
   diagram.updatedBy = req.user._id;
   await diagram.save();
 
@@ -289,7 +294,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   deployment.plan = plan.plan;
   deployment.terraform = plan.terraform;
   deployment.validationIssues = plan.validationIssues;
-  deployment.lambdaZipUploadIds = lambdaZipUploadIdsFromNodes(req.validated.body.nodes);
+  deployment.lambdaZipUploadIds = lambdaZipUploadIdsFromNodes(diagramPayload.nodes);
 
   if (hasBlockers) {
     deployment.logs.push({ message: 'Update rejected: the edited diagram has blocking validation errors.', level: 'error' });

@@ -3,6 +3,7 @@ import { Diagram } from '../models/Diagram.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
+import { normalizeDiagramPayload, normalizeDiagramSnapshot } from '../utils/diagramSchema.js';
 import { generateTerraform } from '../utils/terraformGenerator.js';
 import { validateDiagram } from '../utils/diagramValidator.js';
 
@@ -26,8 +27,9 @@ export const listDiagrams = asyncHandler(async (req, res) => {
 });
 
 export const createDiagram = asyncHandler(async (req, res) => {
+  const payload = normalizeDiagramPayload(req.validated.body);
   const diagram = await Diagram.create({
-    ...req.validated.body,
+    ...payload,
     workspace: req.user.workspace,
     createdBy: req.user._id,
     updatedBy: req.user._id,
@@ -44,7 +46,8 @@ export const getDiagram = asyncHandler(async (req, res) => {
 
 export const updateDiagram = asyncHandler(async (req, res) => {
   const diagram = await findWorkspaceDiagram(req);
-  Object.assign(diagram, req.validated.body, { updatedBy: req.user._id });
+  const payload = normalizeDiagramPayload(req.validated.body, diagram);
+  Object.assign(diagram, payload, { updatedBy: req.user._id });
   await diagram.save();
 
   await auditLog(req, 'diagram.update', 'Diagram', diagram._id);
@@ -61,7 +64,8 @@ export const deleteDiagram = asyncHandler(async (req, res) => {
 
 export const validateDiagramById = asyncHandler(async (req, res) => {
   const diagram = await findWorkspaceDiagram(req);
-  const issues = validateDiagram(diagram.nodes, diagram.edges, diagram.activeRegion);
+  const snapshot = normalizeDiagramSnapshot(diagram);
+  const issues = validateDiagram(snapshot.nodes, snapshot.edges, snapshot.activeRegion ?? diagram.activeRegion);
   diagram.validationIssues = issues;
   diagram.lastValidatedAt = new Date();
   await diagram.save();
@@ -71,11 +75,12 @@ export const validateDiagramById = asyncHandler(async (req, res) => {
 
 export const exportTerraformById = asyncHandler(async (req, res) => {
   const diagram = await findWorkspaceDiagram(req);
+  const snapshot = normalizeDiagramSnapshot(diagram);
   res.json({
     success: true,
     data: {
       filename: `${slug(diagram.name)}.tf`,
-      terraform: generateTerraform(diagram.nodes, diagram.edges),
+      terraform: generateTerraform(snapshot.nodes, snapshot.edges, { region: snapshot.activeRegion ?? diagram.activeRegion }),
     },
   });
 });

@@ -1,5 +1,9 @@
+import { edgeResolvableFieldsForService, getResourceRegistryEntry } from './resourceRegistry.js';
+import { validateNetworkTopology } from './networkTopology.js';
+import { validateRelationshipGraph } from './relationshipGraph.js';
+
 export function validateDiagram(nodes = [], edges = [], region) {
-  const issues = [];
+  const issues = [...validateRelationshipGraph(nodes, edges), ...validateNetworkTopology(nodes, edges)];
   const serviceIds = new Set(nodes.map((node) => node?.data?.serviceId).filter(Boolean));
   const serviceNodes = nodes.filter((node) => node?.type === 'awsService' && node?.data?.serviceId);
   const nodeIds = new Set(nodes.map((node) => node?.id));
@@ -66,6 +70,7 @@ export function validateDiagram(nodes = [], edges = [], region) {
     if (!edge.source || !edge.target) {
       issues.push({ severity: 'error', edgeId: edge.id, message: 'Connection is missing source or target.' });
     } else if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      if (issues.some((issue) => issue.edgeId === edge.id && issue.severity === 'error')) continue;
       issues.push({ severity: 'error', edgeId: edge.id, message: 'Connection references a node that no longer exists in the diagram.' });
     }
   }
@@ -150,7 +155,8 @@ const edgeResolvableFieldsByServiceId = {
 };
 
 function requiredKeysForNode(node, nodes = [], edges = []) {
-  const keys = [...(requiredByServiceId[node.data?.serviceId] ?? [])];
+  const registry = getResourceRegistryEntry(node.data?.serviceId);
+  const keys = [...(registry?.required ?? requiredByServiceId[node.data?.serviceId] ?? [])];
   const config = node.data?.config ?? {};
 
   if (node.data?.serviceId === 'nat' && config.connectivity_type === 'public') keys.push('allocation_id');
@@ -178,7 +184,7 @@ function isResolvableViaNewRole(node, key) {
 }
 
 function isResolvableViaConnection(node, nodes, edges, key) {
-  const requiredServiceId = edgeResolvableFieldsByServiceId[node.data?.serviceId]?.[key];
+  const requiredServiceId = edgeResolvableFieldsForService(node.data?.serviceId)?.[key];
   if (!requiredServiceId) return false;
 
   const nodeById = Object.fromEntries(nodes.map((candidate) => [candidate.id, candidate]));

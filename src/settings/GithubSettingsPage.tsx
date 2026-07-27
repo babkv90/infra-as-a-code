@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Github, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
 import AppLogo from '../components/AppLogo';
+import { PageAlert } from '../components/PageAlert';
 import { clearAuthSession, getStoredUser } from '../auth/authClient';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
@@ -74,6 +75,8 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
 
   return (
     <main className="settings-page">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <header className="settings-topbar">
         <a href="/dashboard" aria-label="Dashboard">
           <AppLogo className="app-logo--dashboard" />
@@ -99,9 +102,6 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
           <h1>Connected accounts</h1>
           <p>{user?.email}</p>
         </div>
-
-        {message && <div className="dash-global-success">{message}</div>}
-        {error && <div className="dash-global-error">{error}</div>}
 
         <article className="settings-github-card">
           <div className="settings-github-card__main">

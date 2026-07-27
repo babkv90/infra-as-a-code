@@ -1,7 +1,6 @@
 import { getStoredToken } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+import { API_BASE_URL } from './apiBaseUrl';
 
 export type TerraformPayload = {
   nodes: AwsNode[];

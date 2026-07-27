@@ -2,6 +2,7 @@ import { LifeBuoy, Paperclip, Plus, RefreshCw, X } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
+import { PageAlert } from '../../components/PageAlert';
 import {
   TICKET_CATEGORIES,
   TICKET_MAX_ATTACHMENT_BYTES,
@@ -176,6 +177,8 @@ export function SupportPage() {
 
   return (
     <div className="dash-page dash-page--support">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-page-head-group">
         <header className="pipeline-console-header">
           <div>
@@ -193,8 +196,6 @@ export function SupportPage() {
             </button>
           </div>
         </header>
-
-        {(message || error) && <div className={`pipeline-notice ${error ? 'pipeline-notice--error' : 'pipeline-notice--success'}`}>{error || message}</div>}
       </div>
 
       <div className="ticket-console-grid">
