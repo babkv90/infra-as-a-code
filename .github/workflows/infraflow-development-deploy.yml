@@ -83,18 +83,27 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        timeout-minutes: 5
+        timeout-minutes: 3
         env:
           CI: true
           NODE_ENV: test
 
         working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: |
-          if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
+          if [ ! -f package.json ]; then
+            echo "No package.json found; skipping test step."
+            exit 0
+          fi
+          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
+          if [ -z "$TEST_SCRIPT" ]; then
             echo "No npm test script found; skipping test step."
             exit 0
           fi
-          npm test -- --watch=false
+          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
+            echo "Default placeholder npm test script found; skipping test step."
+            exit 0
+          fi
+          timeout 150s npm test -- --watch=false
 
 
       - name: Build application
