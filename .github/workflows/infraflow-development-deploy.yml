@@ -152,6 +152,12 @@ jobs:
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
           CLIENT_ORIGINS: ${{ vars.CLIENT_ORIGINS }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST || vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_SECURE: ${{ vars.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER || vars.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
           STORAGE_MODE: ${{ vars.STORAGE_MODE }}
           STORAGE_S3_BUCKET: ${{ vars.STORAGE_S3_BUCKET }}
           STORAGE_S3_REGION: ${{ vars.STORAGE_S3_REGION }}
@@ -166,13 +172,43 @@ jobs:
           INFRAFLOW_APP_AWS_SESSION_TOKEN: ${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
         run: |
           aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
-          jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             '. + {
+          jq \
+            --arg nodeEnv "production" \
+            --arg jwtAccessSecret "$JWT_ACCESS_SECRET" \
+            --arg jwtRefreshSecret "$JWT_REFRESH_SECRET" \
+            --arg clientOrigins "$CLIENT_ORIGINS" \
+            --arg appBaseUrl "$APP_BASE_URL" \
+            --arg smtpHost "$SMTP_HOST" \
+            --arg smtpPort "$SMTP_PORT" \
+            --arg smtpSecure "$SMTP_SECURE" \
+            --arg smtpUser "$SMTP_USER" \
+            --arg smtpPass "$SMTP_PASS" \
+            --arg emailFrom "$EMAIL_FROM" \
+            --arg storageMode "$STORAGE_MODE" \
+            --arg storageS3Bucket "$STORAGE_S3_BUCKET" \
+            --arg storageS3Region "$STORAGE_S3_REGION" \
+            --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE" \
+            --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR" \
+            --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER" \
+            --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO" \
+            --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH" \
+            --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET" \
+            --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID" \
+            --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY" \
+            --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN" \
+            '. + {
               NODE_ENV: $nodeEnv
             }
             + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
             + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
             + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
             + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
+            + (if $smtpHost == "" then {} else { SMTP_HOST: $smtpHost } end)
+            + (if $smtpPort == "" then {} else { SMTP_PORT: $smtpPort } end)
+            + (if $smtpSecure == "" then {} else { SMTP_SECURE: $smtpSecure } end)
+            + (if $smtpUser == "" then {} else { SMTP_USER: $smtpUser } end)
+            + (if $smtpPass == "" then {} else { SMTP_PASS: $smtpPass } end)
+            + (if $emailFrom == "" then {} else { EMAIL_FROM: $emailFrom } end)
             + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
             + (if $storageS3Bucket == "" then {} else { STORAGE_S3_BUCKET: $storageS3Bucket } end)
             + (if $storageS3Region == "" then {} else { STORAGE_S3_REGION: $storageS3Region } end)
@@ -184,7 +220,8 @@ jobs:
             + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
             + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
             + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
-            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)'             lambda-env.json > lambda-env-updated.json
+            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)' \
+            lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
           aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"

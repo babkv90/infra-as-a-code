@@ -1104,6 +1104,12 @@ function deployStepsFor(target) {
           JWT_REFRESH_SECRET: \${{ secrets.JWT_REFRESH_SECRET }}
           CLIENT_ORIGINS: \${{ vars.CLIENT_ORIGINS }}
           APP_BASE_URL: \${{ vars.APP_BASE_URL }}
+          SMTP_HOST: \${{ secrets.SMTP_HOST || vars.SMTP_HOST }}
+          SMTP_PORT: \${{ vars.SMTP_PORT }}
+          SMTP_SECURE: \${{ vars.SMTP_SECURE }}
+          SMTP_USER: \${{ secrets.SMTP_USER || vars.SMTP_USER }}
+          SMTP_PASS: \${{ secrets.SMTP_PASS }}
+          EMAIL_FROM: \${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
           STORAGE_MODE: \${{ vars.STORAGE_MODE }}
           STORAGE_S3_BUCKET: \${{ vars.STORAGE_S3_BUCKET }}
           STORAGE_S3_REGION: \${{ vars.STORAGE_S3_REGION }}
@@ -1124,6 +1130,12 @@ function deployStepsFor(target) {
             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET" \
             --arg clientOrigins "$CLIENT_ORIGINS" \
             --arg appBaseUrl "$APP_BASE_URL" \
+            --arg smtpHost "$SMTP_HOST" \
+            --arg smtpPort "$SMTP_PORT" \
+            --arg smtpSecure "$SMTP_SECURE" \
+            --arg smtpUser "$SMTP_USER" \
+            --arg smtpPass "$SMTP_PASS" \
+            --arg emailFrom "$EMAIL_FROM" \
             --arg storageMode "$STORAGE_MODE" \
             --arg storageS3Bucket "$STORAGE_S3_BUCKET" \
             --arg storageS3Region "$STORAGE_S3_REGION" \
@@ -1143,6 +1155,12 @@ function deployStepsFor(target) {
             + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
             + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
             + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
+            + (if $smtpHost == "" then {} else { SMTP_HOST: $smtpHost } end)
+            + (if $smtpPort == "" then {} else { SMTP_PORT: $smtpPort } end)
+            + (if $smtpSecure == "" then {} else { SMTP_SECURE: $smtpSecure } end)
+            + (if $smtpUser == "" then {} else { SMTP_USER: $smtpUser } end)
+            + (if $smtpPass == "" then {} else { SMTP_PASS: $smtpPass } end)
+            + (if $emailFrom == "" then {} else { EMAIL_FROM: $emailFrom } end)
             + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
             + (if $storageS3Bucket == "" then {} else { STORAGE_S3_BUCKET: $storageS3Bucket } end)
             + (if $storageS3Region == "" then {} else { STORAGE_S3_REGION: $storageS3Region } end)
