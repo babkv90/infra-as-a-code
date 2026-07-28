@@ -133,18 +133,8 @@ jobs:
             exit 1
           fi
 
-          CURRENT_HANDLER="$(aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
-          echo "Lambda handler configured in AWS: $CURRENT_HANDLER"
-          echo "Lambda handler required by this package: $DESIRED_HANDLER"
-          if [ "$CURRENT_HANDLER" = "$DESIRED_HANDLER" ]; then
-            echo "Lambda handler is already correct."
-            exit 0
-          fi
-
-          aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}" || true
-          echo "Updating Lambda handler from '$CURRENT_HANDLER' to '$DESIRED_HANDLER'."
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --handler "$DESIRED_HANDLER"
-          aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
+          echo "Lambda package contains handler entry: $DESIRED_HANDLER"
+          echo "Leaving the existing AWS Lambda handler configuration unchanged."
 
       - name: Configure Lambda application env
         env:
