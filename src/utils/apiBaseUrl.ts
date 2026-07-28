@@ -1,6 +1,8 @@
 const LOCAL_API_BASE_URL = 'http://127.0.0.1:4001/api/v1';
 const PRODUCTION_API_BASE_URL = 'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com/api/v1';
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? LOCAL_API_BASE_URL : PRODUCTION_API_BASE_URL;
+const CURRENT_API_GATEWAY_HOST = 'v72gcv51pi.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_API_GATEWAY_HOSTS = ['cjgutvxvh2.execute-api.ap-south-1.amazonaws.com'];
 const LEGACY_API_GATEWAY_STAGE_NAMES = ['iaasNodestage'];
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
@@ -12,6 +14,7 @@ function normalizeApiBaseUrl(value: string): string {
     const url = new URL(trimmed);
     const isExecuteApiHost = /\.execute-api\.[^.]+\.amazonaws\.com$/i.test(url.hostname);
     if (!isExecuteApiHost) return trimmed;
+    if (LEGACY_API_GATEWAY_HOSTS.includes(url.hostname)) url.hostname = CURRENT_API_GATEWAY_HOST;
 
     const pathParts = url.pathname.split('/').filter(Boolean);
     const normalizedParts = LEGACY_API_GATEWAY_STAGE_NAMES.includes(pathParts[0] ?? '')
