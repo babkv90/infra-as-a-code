@@ -172,31 +172,7 @@ jobs:
           INFRAFLOW_APP_AWS_SESSION_TOKEN: ${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
         run: |
           aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
-          jq \
-            --arg nodeEnv "production" \
-            --arg jwtAccessSecret "$JWT_ACCESS_SECRET" \
-            --arg jwtRefreshSecret "$JWT_REFRESH_SECRET" \
-            --arg clientOrigins "$CLIENT_ORIGINS" \
-            --arg appBaseUrl "$APP_BASE_URL" \
-            --arg smtpHost "$SMTP_HOST" \
-            --arg smtpPort "$SMTP_PORT" \
-            --arg smtpSecure "$SMTP_SECURE" \
-            --arg smtpUser "$SMTP_USER" \
-            --arg smtpPass "$SMTP_PASS" \
-            --arg emailFrom "$EMAIL_FROM" \
-            --arg storageMode "$STORAGE_MODE" \
-            --arg storageS3Bucket "$STORAGE_S3_BUCKET" \
-            --arg storageS3Region "$STORAGE_S3_REGION" \
-            --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE" \
-            --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR" \
-            --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER" \
-            --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO" \
-            --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH" \
-            --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET" \
-            --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID" \
-            --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY" \
-            --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN" \
-            '. + {
+          jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             '. + {
               NODE_ENV: $nodeEnv
             }
             + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
@@ -220,8 +196,7 @@ jobs:
             + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
             + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
             + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
-            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)' \
-            lambda-env.json > lambda-env-updated.json
+            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)'             lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
           aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
