@@ -3,7 +3,7 @@ import type { AwsEdge, AwsNode, NodeBinding } from '../types';
 import { expectedOutputsForService } from './resourceRequirements';
 
 const defaultApiGatewayCorsOrigins = [
-  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
+  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
   'https://d3pgg5abvvdatt.cloudfront.net',
 ];
 

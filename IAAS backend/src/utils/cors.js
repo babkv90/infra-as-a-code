@@ -2,7 +2,7 @@ import { env } from '../config/env.js';
 
 const allowedCorsOrigins = new Set([
   ...env.CLIENT_ORIGINS.map(normalizeOrigin),
-  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
+  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
   'https://d3pgg5abvvdatt.cloudfront.net',
 ]);
 

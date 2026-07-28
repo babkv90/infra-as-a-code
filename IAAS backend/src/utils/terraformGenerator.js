@@ -52,7 +52,7 @@ const terraformTypeByServiceId = {
 const deployableServices = new Set(deployableServiceIds());
 export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
 const defaultApiGatewayCorsOrigins = [
-  'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
+  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
   'https://d3pgg5abvvdatt.cloudfront.net',
 ];
 
