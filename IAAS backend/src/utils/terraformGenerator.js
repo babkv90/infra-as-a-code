@@ -120,7 +120,7 @@ export function generateTerraform(nodes = [], edges = [], options = {}) {
     ...ec2ManagedKeyPairBlocks(deployableNodes, names, suffix),
     ...ec2InstanceProfileBlocks(deployableNodes, suffix),
     ...deployableNodes.flatMap((node) => resourceBlocksForNode(node, names[node.id], suffix, deployableNodes, edges, names)),
-    ...connectionBlocks(deployableNodes, edges, names),
+    ...connectionBlocks(deployableNodes, edges, names, suffix),
     resourceOutputBlock(deployableNodes, names),
   ]);
 
@@ -583,15 +583,10 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
   source_code_hash = ${packageInfo.sourceCodeHashExpr}`
           : `  filename         = ${formatValue(packageInfo.filenameValue)}
   source_code_hash = ${formatMaybeExpression(packageInfo.sourceCodeHash)}`;
-      const functionName = configString(config, 'function_name') || uniqueName;
       return [
         ...extraBlocks,
-        `resource "aws_cloudwatch_log_group" "${name}_logs" {
-  name              = "/aws/lambda/${functionName}"
-  retention_in_days = 14
-}`,
         `resource "aws_lambda_function" "${name}" {
-  function_name    = ${formatValue(functionName)}
+  function_name    = ${formatValue(configString(config, 'function_name') || uniqueName)}
   role             = ${formatMaybeExpression(roleRef)}
 ${packageLines}
   handler          = ${formatValue(configString(config, 'handler'))}
@@ -602,8 +597,6 @@ ${packageLines}
   lifecycle {
     ignore_changes = [environment]
   }
-
-  depends_on = [aws_cloudwatch_log_group.${name}_logs]
 }`,
       ];
     }
@@ -1111,7 +1104,7 @@ function outputAttributesForNode(node) {
   return outputs;
 }
 
-function connectionBlocks(nodes, edges, names) {
+function connectionBlocks(nodes, edges, names, suffix = 'diagram') {
   const nodeById = Object.fromEntries(nodes.map((node) => [node.id, node]));
   const blocks = [];
 
@@ -1139,7 +1132,7 @@ function connectionBlocks(nodes, edges, names) {
   target    = "integrations/\${aws_apigatewayv2_integration.${edgeName}.id}"
 }`);
       blocks.push(`resource "aws_cloudwatch_log_group" "${edgeName}_apigw_logs" {
-  name              = "/aws/apigateway/infraflow-${edgeName}"
+  name              = "/aws/apigateway/infraflow-${sourceName}-${edgeName}-${suffix}"
   retention_in_days = 14
 }`);
       blocks.push(`resource "aws_apigatewayv2_stage" "${edgeName}" {
