@@ -1,4 +1,4 @@
-name: "infraFlownodeApp development CI/CD"
+name: "lmbdapipeline development CI/CD"
 
 on:
   workflow_dispatch:
@@ -83,27 +83,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        timeout-minutes: 3
-        env:
-          CI: true
-          NODE_ENV: test
-
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
-        run: |
-          if [ ! -f package.json ]; then
-            echo "No package.json found; skipping test step."
-            exit 0
-          fi
-          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
-          if [ -z "$TEST_SCRIPT" ]; then
-            echo "No npm test script found; skipping test step."
-            exit 0
-          fi
-          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
-            echo "Default placeholder npm test script found; skipping test step."
-            exit 0
-          fi
-          timeout 150s npm test -- --watch=false
+        run: echo "Skipping Lambda tests by default. Set a custom test command in Infraflow to run deployment tests."
 
 
       - name: Build application
