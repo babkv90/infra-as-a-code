@@ -217,10 +217,6 @@ ${keyNameLine}${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2Secur
   memory_size      = ${formatNumber(config.memory_size)}
   timeout          = ${formatNumber(config.timeout)}
 ${lambdaEnvironmentBlock(node, allNodes)}
-
-  lifecycle {
-    ignore_changes = [environment]
-  }
 }`,
       ];
     }

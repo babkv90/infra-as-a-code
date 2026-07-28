@@ -593,10 +593,7 @@ ${packageLines}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
   timeout          = ${formatNumber(config.timeout)}
-
-  lifecycle {
-    ignore_changes = [environment]
-  }
+${lambdaEnvironmentBlock(node, nodes)}
 }`,
       ];
     }
@@ -1509,6 +1506,42 @@ function securityGroupIngressBlocks(portsValue, cidrsValue) {
 `,
     )
     .join('');
+}
+
+function lambdaEnvironmentBlock(node, allNodes) {
+  const envBindings = (node.data?.bindings ?? []).filter((binding) => binding.targetKind === 'env');
+  if (!envBindings.length) return '';
+
+  const entries = envBindings
+    .map((binding) => `    ${sanitizeEnvName(binding.targetPath)} = ${bindingExpression(binding, allNodes)}`)
+    .join('\n');
+
+  return `
+  environment {
+    variables = {
+${entries}
+    }
+  }`;
+}
+
+function bindingExpression(binding, allNodes) {
+  if (binding.source?.kind === 'variable') return binding.source.id.startsWith('var.') ? binding.source.id : `var.${sanitizeName(binding.source.id)}`;
+  if (binding.source?.kind === 'local') return binding.source.id.startsWith('local.') ? binding.source.id : `local.${sanitizeName(binding.source.id)}`;
+  if (binding.source?.kind === 'ssm') return `data.aws_ssm_parameter.${sanitizeName(binding.source.id)}.${binding.source.attribute || 'value'}`;
+  if (binding.source?.kind === 'resourceAttr' || binding.source?.kind === 'output') return binding.source.attribute ? `${binding.source.id}.${binding.source.attribute}` : binding.source.id;
+
+  const sourceNode = allNodes.find((candidate) => candidate.id === binding.source?.id);
+  if (sourceNode?.data?.serviceId === 'secrets') return `aws_secretsmanager_secret.${sanitizeName(sourceNode.data.label)}.${binding.source.attribute || 'arn'}`;
+  return `data.aws_secretsmanager_secret.${sanitizeName(binding.source?.id)}.${binding.source?.attribute || 'arn'}`;
+}
+
+function sanitizeEnvName(value) {
+  return String(value)
+    .split('.')
+    .pop()
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^([0-9])/, '_$1')
+    .toUpperCase();
 }
 
 function securityGroupEgressBlock(cidrsValue) {

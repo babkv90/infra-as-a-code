@@ -969,6 +969,29 @@ function deployStepsFor(target) {
           aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --handler "$INFERRED_HANDLER_MODULE.handler"
           aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
 
+      - name: Configure Lambda AWS connection env
+        env:
+          INFRAFLOW_AWS_ACCESS_KEY_ID: \${{ secrets.INFRAFLOW_AWS_ACCESS_KEY_ID }}
+          INFRAFLOW_AWS_SECRET_ACCESS_KEY: \${{ secrets.INFRAFLOW_AWS_SECRET_ACCESS_KEY }}
+          INFRAFLOW_AWS_SESSION_TOKEN: \${{ secrets.INFRAFLOW_AWS_SESSION_TOKEN }}
+        run: |
+          if [ -z "$INFRAFLOW_AWS_ACCESS_KEY_ID" ] || [ -z "$INFRAFLOW_AWS_SECRET_ACCESS_KEY" ]; then
+            echo "INFRAFLOW_AWS_* repository secrets are not set; leaving Lambda AWS connection env unchanged."
+            exit 0
+          fi
+          aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
+          jq \
+            --arg accessKeyId "$INFRAFLOW_AWS_ACCESS_KEY_ID" \
+            --arg secretAccessKey "$INFRAFLOW_AWS_SECRET_ACCESS_KEY" \
+            --arg sessionToken "$INFRAFLOW_AWS_SESSION_TOKEN" \
+            '. + {
+              INFRAFLOW_AWS_ACCESS_KEY_ID: $accessKeyId,
+              INFRAFLOW_AWS_SECRET_ACCESS_KEY: $secretAccessKey
+            } + (if $sessionToken == "" then {} else { INFRAFLOW_AWS_SESSION_TOKEN: $sessionToken } end)' \
+            lambda-env.json > lambda-env-updated.json
+          aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment "Variables=$(jq -c . lambda-env-updated.json)"
+          aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
+
       - name: Package Lambda artifact
         working-directory: \${{ env.LAMBDA_APP_DIR }}
         run: |
@@ -1231,6 +1254,8 @@ AWS account ID. Before running step 3, replace \`<ACCOUNT_ID>\` in
 
 Recommended secrets by target:
 - \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
+- \`INFRAFLOW_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
+- \`INFRAFLOW_AWS_SESSION_TOKEN\` only when the access key is temporary.
 
 ## Target
 
@@ -1249,7 +1274,7 @@ function pipelineChecklist(targetType) {
     targetType === 's3-cloudfront'
       ? 'Confirm S3 bucket and optional CloudFront distribution secret.'
       : targetType === 'lambda'
-        ? 'Confirm Lambda function name and AWS region.'
+        ? 'Confirm Lambda function name, AWS region, and INFRAFLOW_AWS_* repository secrets if this backend connects AWS accounts.'
         : 'Confirm ECR repository and runtime target names.',
     'Use Deploy Application in Infraflow to dispatch the selected environment workflow.',
   ];

@@ -45,13 +45,13 @@ function makeCredentials(stsCredentials) {
 }
 
 function makeEnvCredentials() {
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
-  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() || undefined;
+  const accessKeyId = (process.env.INFRAFLOW_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '').trim();
+  const secretAccessKey = (process.env.INFRAFLOW_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '').trim();
+  const sessionToken = (process.env.INFRAFLOW_AWS_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '').trim() || undefined;
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      'AWS credentials are missing. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your .env file.',
+      'AWS credentials are missing. Please set INFRAFLOW_AWS_ACCESS_KEY_ID and INFRAFLOW_AWS_SECRET_ACCESS_KEY on the backend.',
     );
   }
 
