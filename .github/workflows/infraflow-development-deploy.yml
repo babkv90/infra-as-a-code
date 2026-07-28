@@ -1,4 +1,4 @@
-name: "lmbdapipeline development CI/CD"
+name: "newFlow development CI/CD"
 
 on:
   workflow_dispatch:
@@ -107,12 +107,31 @@ jobs:
           LAMBDA_HANDLER="$(aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
           HANDLER_MODULE="${LAMBDA_HANDLER%.*}"
           echo "Lambda handler configured in AWS: $LAMBDA_HANDLER"
-          if [ ! -f "$HANDLER_MODULE.js" ] && [ ! -f "$HANDLER_MODULE.mjs" ] && [ ! -f "$HANDLER_MODULE.cjs" ]; then
-            echo "::error::AWS expects handler module '$HANDLER_MODULE' at the Lambda zip root, but it was not found in $PWD."
-            echo "Add $HANDLER_MODULE.js, change the Lambda handler in AWS/Terraform, or move the workflow's Lambda app directory to the folder that contains it."
-            find . -maxdepth 3 -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort | head -80
+          if [ -f "$HANDLER_MODULE.js" ] || [ -f "$HANDLER_MODULE.mjs" ] || [ -f "$HANDLER_MODULE.cjs" ]; then
+            echo "Configured Lambda handler module exists in deployment package."
+            exit 0
+          fi
+          echo "Configured handler module '$HANDLER_MODULE' was not found in $PWD. Inferring handler module from common Lambda entry files."
+          INFERRED_HANDLER_MODULE=""
+          for candidate in lambda index handler app server src/lambda src/index src/handler src/app; do
+            for ext in js mjs cjs; do
+              if [ -f "$candidate.$ext" ]; then
+                INFERRED_HANDLER_MODULE="$candidate"
+                break 2
+              fi
+            done
+          done
+          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
+            INFERRED_HANDLER_MODULE="$(find . -maxdepth 3 -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort | sed 's#^./##;s#\.[^.]*$##' | head -1)"
+          fi
+          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
+            echo "::error::No JavaScript Lambda handler module was found in $PWD."
+            find . -maxdepth 3 -type f | sort | head -80
             exit 1
           fi
+          echo "Updating Lambda handler from '$LAMBDA_HANDLER' to '$INFERRED_HANDLER_MODULE.handler'."
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --handler "$INFERRED_HANDLER_MODULE.handler"
+          aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
 
       - name: Package Lambda artifact
         working-directory: ${{ env.LAMBDA_APP_DIR }}
