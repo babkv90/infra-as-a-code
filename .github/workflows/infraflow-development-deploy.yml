@@ -116,33 +116,34 @@ jobs:
       - name: Verify Lambda handler file
         working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: |
-          LAMBDA_HANDLER="$(aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
-          HANDLER_MODULE="${LAMBDA_HANDLER%.*}"
-          echo "Lambda handler configured in AWS: $LAMBDA_HANDLER"
-          if [ -f "$HANDLER_MODULE.js" ] || [ -f "$HANDLER_MODULE.mjs" ] || [ -f "$HANDLER_MODULE.cjs" ]; then
-            echo "Configured Lambda handler module exists in deployment package."
-            exit 0
-          fi
-          echo "Configured handler module '$HANDLER_MODULE' was not found in $PWD. Inferring handler module from common Lambda entry files."
-          INFERRED_HANDLER_MODULE=""
-          for candidate in lambda index handler app server src/lambda src/index src/handler src/app; do
-            for ext in js mjs cjs; do
-              if [ -f "$candidate.$ext" ]; then
-                INFERRED_HANDLER_MODULE="$candidate"
-                break 2
-              fi
-            done
-          done
-          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
-            INFERRED_HANDLER_MODULE="$(find . -maxdepth 3 -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | sort | sed 's#^./##;s#\.[^.]*$##' | head -1)"
-          fi
-          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
-            echo "::error::No JavaScript Lambda handler module was found in $PWD."
+          if [ -f lambda.js ]; then
+            DESIRED_HANDLER="lambda.handler"
+          elif [ -f src/lambda.js ]; then
+            DESIRED_HANDLER="src/lambda.handler"
+          else
+            echo "::error::No Lambda entry file found. Expected lambda.js or src/lambda.js in $PWD."
             find . -maxdepth 3 -type f | sort | head -80
             exit 1
           fi
-          echo "Updating Lambda handler from '$LAMBDA_HANDLER' to '$INFERRED_HANDLER_MODULE.handler'."
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --handler "$INFERRED_HANDLER_MODULE.handler"
+
+          HANDLER_MODULE="${DESIRED_HANDLER%.*}"
+          HANDLER_EXPORT="${DESIRED_HANDLER##*.}"
+          if ! grep -Eq "(^|[^A-Za-z0-9_])$HANDLER_EXPORT([^A-Za-z0-9_]|$)" "$HANDLER_MODULE.js"; then
+            echo "::error::$HANDLER_MODULE.js exists but does not reference handler export '$HANDLER_EXPORT'."
+            exit 1
+          fi
+
+          CURRENT_HANDLER="$(aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
+          echo "Lambda handler configured in AWS: $CURRENT_HANDLER"
+          echo "Lambda handler required by this package: $DESIRED_HANDLER"
+          if [ "$CURRENT_HANDLER" = "$DESIRED_HANDLER" ]; then
+            echo "Lambda handler is already correct."
+            exit 0
+          fi
+
+          aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}" || true
+          echo "Updating Lambda handler from '$CURRENT_HANDLER' to '$DESIRED_HANDLER'."
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --handler "$DESIRED_HANDLER"
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
 
       - name: Configure Lambda application env
