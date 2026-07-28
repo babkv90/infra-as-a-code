@@ -320,10 +320,70 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           <span>{isMergeMode ? 'Merge into deployed infrastructure' : isUpdateMode ? 'Update deployed infrastructure' : 'Deploy drawn infrastructure'}</span>
           <h3>{queuedDeployment?.name ?? plan.name}</h3>
         </div>
-        <button className="text-button" onClick={onClose}>
-          <ArrowLeft size={16} />
-          Back to builder
-        </button>
+        <div className="deployment-modal__header-actions">
+          <div className="deployment-page__actions">
+            <button className="text-button" onClick={rerunValidation} type="button">
+              Re-run validation
+            </button>
+            <button className="text-button" onClick={copyTerraform} type="button">
+              <Copy size={16} />
+              Copy Terraform
+            </button>
+            <button className="text-button" onClick={downloadPlan} type="button">
+              <Download size={16} />
+              Download Plan
+            </button>
+            <button className="text-button" onClick={downloadResourceInfo} type="button">
+              <Download size={16} />
+              Download Resource Info
+            </button>
+            <button className="text-button" disabled={!queuedDeployment} onClick={goToResourceInfoPage} type="button">
+              <Eye size={16} />
+              View Resource Info
+            </button>
+            {!isUpdateLikeMode && (
+              <button
+                className="text-button"
+                disabled={!canSaveDraft || isSavingDraft || Boolean(queuedDeployment)}
+                onClick={() => void saveAsDraft()}
+                title="Save this diagram as a deployment record without running Terraform yet. Apply it later, or merge it into an already-deployed stack."
+                type="button"
+              >
+                <Save size={16} />
+                {isSavingDraft ? 'Saving...' : Boolean(queuedDeployment) ? 'Saved' : 'Save as Draft'}
+              </button>
+            )}
+            <button
+              className="deployment-primary"
+              disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
+              onClick={deployToAws}
+              type="button"
+            >
+              <Rocket size={16} />
+              {deploymentStatus === 'running'
+                ? isMergeMode
+                  ? 'Merging...'
+                  : isUpdateMode
+                    ? 'Updating...'
+                    : 'Deploying...'
+                : deploymentStatus === 'success'
+                  ? isMergeMode
+                    ? 'Merged'
+                    : isUpdateMode
+                      ? 'Updated'
+                      : 'Deployed'
+                  : isMergeMode
+                    ? 'Merge Infrastructure'
+                    : isUpdateMode
+                      ? 'Update Infrastructure'
+                      : 'Deploy to AWS'}
+            </button>
+          </div>
+          <button className="text-button" onClick={onClose} type="button">
+            <ArrowLeft size={16} />
+            Back to builder
+          </button>
+        </div>
       </header>
       {isMergeMode && (
         <div className="deployment-update-banner">
@@ -389,64 +449,6 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           {forceDestroyError && <p className="deployment-stuck-warning__error">{forceDestroyError}</p>}
         </div>
       )}
-
-      <div className="deployment-page__actions">
-        <button className="text-button" onClick={rerunValidation}>
-          Re-run validation
-        </button>
-        <button className="text-button" onClick={copyTerraform}>
-          <Copy size={16} />
-          Copy Terraform
-        </button>
-        <button className="text-button" onClick={downloadPlan}>
-          <Download size={16} />
-          Download Plan
-        </button>
-        <button className="text-button" onClick={downloadResourceInfo}>
-          <Download size={16} />
-          Download Resource Info
-        </button>
-        <button className="text-button" disabled={!queuedDeployment} onClick={goToResourceInfoPage}>
-          <Eye size={16} />
-          View Resource Info
-        </button>
-        {!isUpdateLikeMode && (
-          <button
-            className="text-button"
-            disabled={!canSaveDraft || isSavingDraft || Boolean(queuedDeployment)}
-            onClick={() => void saveAsDraft()}
-            title="Save this diagram as a deployment record without running Terraform yet. Apply it later, or merge it into an already-deployed stack."
-            type="button"
-          >
-            <Save size={16} />
-            {isSavingDraft ? 'Saving...' : Boolean(queuedDeployment) ? 'Saved' : 'Save as Draft'}
-          </button>
-        )}
-        <button
-          className="deployment-primary"
-          disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
-          onClick={deployToAws}
-        >
-          <Rocket size={16} />
-          {deploymentStatus === 'running'
-            ? isMergeMode
-              ? 'Merging...'
-              : isUpdateMode
-                ? 'Updating...'
-                : 'Deploying...'
-            : deploymentStatus === 'success'
-              ? isMergeMode
-                ? 'Merged'
-                : isUpdateMode
-                  ? 'Updated'
-                  : 'Deployed'
-              : isMergeMode
-                ? 'Merge Infrastructure'
-                : isUpdateMode
-                  ? 'Update Infrastructure'
-                  : 'Deploy to AWS'}
-        </button>
-      </div>
 
       <div className="deployment-page__body">
         <section className="deployment-panel deployment-log-panel deployment-log-panel--primary">

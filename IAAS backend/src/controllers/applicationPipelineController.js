@@ -971,7 +971,20 @@ function deployStepsFor(target) {
 
       - name: Package Lambda artifact
         working-directory: \${{ env.LAMBDA_APP_DIR }}
-        run: zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
+        run: |
+          rm -rf shared
+          if [ -d "../shared" ]; then
+            cp -R ../shared shared
+          elif [ -d "../../shared" ]; then
+            cp -R ../../shared shared
+          elif [ -d "$GITHUB_WORKSPACE/shared" ]; then
+            cp -R "$GITHUB_WORKSPACE/shared" shared
+          else
+            echo "::error::Missing shared/resourceRegistry.json. Lambda packaging requires the repository shared/ directory."
+            exit 1
+          fi
+          test -f shared/resourceRegistry.json
+          zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
 
       - name: Deploy Lambda function
         run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"\${{ env.LAMBDA_APP_DIR }}/lambda.zip"
