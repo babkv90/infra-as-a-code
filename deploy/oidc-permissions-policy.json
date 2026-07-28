@@ -2,26 +2,15 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DeployToS3",
+      "Sid": "DeployLambda",
       "Effect": "Allow",
       "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration"
       ],
-      "Resource": [
-        "arn:aws:s3:::infraflow-static-20260726153431179400000001",
-        "arn:aws:s3:::infraflow-static-20260726153431179400000001/*"
-      ]
-    },
-    {
-      "Sid": "InvalidateCloudFront",
-      "Effect": "Allow",
-      "Action": [
-        "cloudfront:CreateInvalidation"
-      ],
-      "Resource": "*"
+      "Resource": "arn:aws:lambda:ap-south-1:<ACCOUNT_ID>:function:iaasLambdaFunc"
     }
   ]
 }

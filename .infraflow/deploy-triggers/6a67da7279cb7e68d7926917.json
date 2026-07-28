@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67da7279cb7e68d7926917",
+  "pipelineName": "nodeA",
+  "environment": "production",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T22:24:03.763Z",
+  "source": "infraflow"
+}
