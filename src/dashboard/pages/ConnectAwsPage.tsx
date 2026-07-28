@@ -1,10 +1,11 @@
 import { Plug, RefreshCw, Trash2 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageAlert } from '../../components/PageAlert';
-import { connectAwsAccount, disconnectAwsAccount, syncAwsAccount, type AwsAccountRecord } from '../awsApi';
+import { connectAwsAccount, disconnectAwsAccount, getDeployerIdentity, syncAwsAccount, type AwsAccountRecord } from '../awsApi';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { awsConnectionSteps } from '../dashboardData';
+import { buildDeployRoleTrustPolicy, deployRolePermissionsPolicy } from '../deployRolePolicy';
 
 export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: AwsAccountRecord[]; regions: string[]; onAwsChanged: () => Promise<void> }) {
   const [name, setName] = useState('');
@@ -13,12 +14,43 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
   const [externalId, setExternalId] = useState('');
   const [defaultRegion, setDefaultRegion] = useState(regions[0] ?? 'ap-south-1');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [deployerIdentity, setDeployerIdentity] = useState<{ arn: string; accountId: string }>();
+  const [isLoadingIdentity, setIsLoadingIdentity] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const trustPolicy = useMemo(
+    () => (deployerIdentity ? JSON.stringify(buildDeployRoleTrustPolicy(deployerIdentity.arn, externalId || undefined), null, 2) : ''),
+    [deployerIdentity, externalId],
+  );
+  const permissionsPolicy = useMemo(() => JSON.stringify(deployRolePermissionsPolicy, null, 2), []);
 
   useEffect(() => {
     if (!regions.includes(defaultRegion) && regions[0]) setDefaultRegion(regions[0]);
   }, [defaultRegion, regions]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingIdentity(true);
+    getDeployerIdentity()
+      .then((identity) => {
+        if (isMounted) setDeployerIdentity(identity);
+      })
+      .catch((identityError: unknown) => {
+        if (isMounted) setError(identityError instanceof Error ? identityError.message : 'Could not resolve infraflow AWS identity.');
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingIdentity(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function copyText(value: string, copiedMessage: string) {
+    void navigator.clipboard?.writeText(value);
+    setMessage(copiedMessage);
+  }
 
   async function handleConnect(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,6 +132,41 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
               );
             })}
           </div>
+        </Panel>
+        <Panel title="AWS role setup" action={isLoadingIdentity ? 'Loading identity' : deployerIdentity ? 'Ready' : 'Missing backend credentials'}>
+          {deployerIdentity ? (
+            <div className="dash-role-setup">
+              <p>
+                Create an IAM role in the AWS account you want to connect. Use this trust policy, attach the permissions policy, then paste the role ARN into the form.
+              </p>
+              <label>
+                Infraflow deployer ARN
+                <input readOnly value={deployerIdentity.arn} />
+              </label>
+              <div className="dash-role-policy-card">
+                <div>
+                  <strong>Trust policy</strong>
+                  <button className="dash-secondary-action" onClick={() => copyText(trustPolicy, 'Trust policy copied.')} type="button">
+                    Copy
+                  </button>
+                </div>
+                <pre>{trustPolicy}</pre>
+              </div>
+              <div className="dash-role-policy-card">
+                <div>
+                  <strong>Permissions policy</strong>
+                  <button className="dash-secondary-action" onClick={() => copyText(permissionsPolicy, 'Permissions policy copied.')} type="button">
+                    Copy
+                  </button>
+                </div>
+                <pre>{permissionsPolicy}</pre>
+              </div>
+            </div>
+          ) : (
+            <EmptyState>
+              Production backend must have AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION set before AWS accounts can connect.
+            </EmptyState>
+          )}
         </Panel>
         <Panel title="Connect AWS account" action="AssumeRole">
           <form className="dash-role-form" onSubmit={handleConnect}>
