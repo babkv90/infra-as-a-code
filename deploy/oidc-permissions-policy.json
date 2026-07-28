@@ -10,7 +10,7 @@
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration"
       ],
-      "Resource": "arn:aws:lambda:ap-south-1:<ACCOUNT_ID>:function:iaasLambdaFunc"
+      "Resource": "arn:aws:lambda:ap-south-1:<ACCOUNT_ID>:function:infraflow-iaasnode-6a687b40b7d910ba"
     }
   ]
 }

@@ -1,4 +1,4 @@
-name: "newFlow development CI/CD"
+name: "LatestInfradeploymentpipeline development CI/CD"
 
 on:
   workflow_dispatch:
@@ -23,10 +23,10 @@ env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: api-gateway-lambda-iam-role-app
   ECS_CLUSTER: infraflow-cluster
-  ECS_SERVICE: iaasLambdaFunc
+  ECS_SERVICE: serverless-api-service
   S3_BUCKET: replace-with-s3-bucket
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-  LAMBDA_FUNCTION: iaasLambdaFunc
+  LAMBDA_FUNCTION: infraflow-iaasnode-6a687b40b7d910ba
   K8S_NAMESPACE: default
 
 jobs:
