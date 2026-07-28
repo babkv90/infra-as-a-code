@@ -39,6 +39,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Normalize Lambda function name
+        run: |
+          CLEAN_LAMBDA_FUNCTION="$(printf '%s' "$LAMBDA_FUNCTION" | tr -d '\r\n' | xargs)"
+          if [ -z "$CLEAN_LAMBDA_FUNCTION" ]; then
+            echo "::error::LAMBDA_FUNCTION is empty. Set GitHub variable LAMBDA_FUNCTION to the Lambda function name."
+            exit 1
+          fi
+          echo "LAMBDA_FUNCTION=$CLEAN_LAMBDA_FUNCTION" >> "$GITHUB_ENV"
+          echo "Deploying Lambda function: $CLEAN_LAMBDA_FUNCTION"
+
       - name: Resolve Lambda app directory
         run: |
           if [ -f "IAAS backend/lambda.js" ] && [ -f "IAAS backend/package.json" ]; then
