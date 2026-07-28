@@ -363,9 +363,10 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
   if (!workflowFile) throw new ApiError(409, 'Generate and sync a workflow file before deploying.');
 
-  const workflowId = workflowFile.path.split('/').pop();
+  let workflowId = workflowFile.path.split('/').pop();
   const dispatchedAt = new Date();
   let dispatchMode = 'workflow_dispatch';
+  let autoSync = null;
   try {
     await dispatchGithubWorkflow({
       token,
@@ -376,11 +377,25 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       inputs: { environment: pipeline.environment },
     });
   } catch (error) {
+    if (isWorkflowDispatchMissingError(error)) {
+      autoSync = await regenerateAndSyncPipelineWorkflow({ pipeline, token, repository });
+      workflowId = workflowPathFor(pipeline.environment).split('/').pop();
+      await dispatchGithubWorkflow({
+        token,
+        owner: repository.owner,
+        repo: repository.repo,
+        workflowId,
+        branch: repository.branch,
+        inputs: { environment: pipeline.environment },
+      });
+    } else
     if (!isGithubIntegrationPermissionError(error)) throw error;
-    throw new ApiError(
-      409,
-      'GitHub workflow dispatch is not accessible with the connected token. Reconnect GitHub and approve repo + workflow access, then sync the selected environment workflow again.',
-    );
+    else {
+      throw new ApiError(
+        409,
+        'GitHub workflow dispatch is not accessible with the connected token. Reconnect GitHub and approve repo + workflow access, then sync the selected environment workflow again.',
+      );
+    }
   }
 
   let run = null;
@@ -408,6 +423,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     workflow: workflowId,
     runId: run?.id,
     dispatchMode,
+    autoSyncCommit: autoSync?.commitSha,
   });
 
   res.status(202).json({
@@ -417,6 +433,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       repository,
       workflowPath: workflowFile.path,
       dispatchMode,
+      autoSync,
       run,
       jobs: [],
       statusUnavailable,
@@ -429,6 +446,47 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     },
   });
 });
+
+async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }) {
+  pipeline.generatedFiles = generatePipelineFiles({
+    name: pipeline.name,
+    appType: pipeline.appType,
+    environment: pipeline.environment,
+    repository: {
+      url: `https://github.com/${repository.owner}/${repository.repo}`,
+      branch: repository.branch,
+    },
+    commands: pipeline.commands,
+    target: pipeline.target,
+    accountId: pipeline.deployment?.awsAccount?.accountId,
+  });
+
+  const result = await syncFilesToGithubCommit({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    branch: repository.branch,
+    message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch`,
+    files: pipeline.generatedFiles,
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+  });
+
+  pipeline.repository.url = `https://github.com/${repository.owner}/${repository.repo}`;
+  pipeline.repository.branch = repository.branch;
+  pipeline.repository.workflowPath = workflowPathFor(pipeline.environment);
+  pipeline.repository.lastSyncedAt = new Date();
+  pipeline.repository.lastSyncCommit = result.commitSha;
+  await pipeline.save();
+
+  return {
+    commitSha: result.commitSha,
+    files: result.files?.map((file) => file.path ?? file) ?? pipeline.generatedFiles.map((file) => file.path),
+  };
+}
+
+function isWorkflowDispatchMissingError(error) {
+  return /workflow does not have 'workflow_dispatch'/i.test(String(error?.message ?? ''));
+}
 
 export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
