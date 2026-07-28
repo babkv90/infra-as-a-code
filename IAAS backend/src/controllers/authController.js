@@ -9,6 +9,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { sendPasswordResetEmail } from '../services/emailService.js';
 
 export const registerSchema = z.object({
   body: z.object({
@@ -118,6 +119,15 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   await auditLog({ user, ip: req.ip }, 'auth.password_reset.requested', 'User', user._id);
+
+  if (env.NODE_ENV === 'production') {
+    try {
+      await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
+    } catch (error) {
+      console.error('Password reset email failed', { email: user.email, message: error.message });
+      throw new ApiError(500, 'Password reset email is not configured or could not be sent. Contact the administrator.');
+    }
+  }
 
   if (env.NODE_ENV !== 'production') {
     responseBody.data = {
