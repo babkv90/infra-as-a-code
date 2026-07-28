@@ -164,7 +164,7 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
             </div>
           ) : (
             <EmptyState>
-              Production backend must have INFRAFLOW_AWS_ACCESS_KEY_ID, INFRAFLOW_AWS_SECRET_ACCESS_KEY, and AWS_REGION set before AWS accounts can connect.
+              Production backend must have INFRAFLOW_APP_AWS_ACCESS_KEY_ID, INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY, and AWS_REGION set before AWS accounts can connect.
             </EmptyState>
           )}
         </Panel>

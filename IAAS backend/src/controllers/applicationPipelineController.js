@@ -25,7 +25,7 @@ import { buildOidcPermissionsPolicy, buildOidcTrustPolicy, provisionOidcDeployRo
 import { githubTokenForUser } from './githubController.js';
 
 const appTypes = ['react-app', 'static-spa', 'node-container', 'python-api', 'java-service', 'serverless-api', 'kubernetes-service'];
-const environments = ['development', 'staging', 'production'];
+const environments = ['development', 'test', 'staging', 'production'];
 const deploymentDispatchLocks = new Map();
 const deploymentDispatchLockTtlMs = 10 * 60 * 1000;
 
@@ -796,6 +796,7 @@ function resolvePipelineRepository(pipeline, source = {}) {
 function githubWorkflow({ name, appType, environment, branch, commands, target }) {
   const deploy = deployStepsFor(target);
   const lambdaAppDirectoryStep = target.type === 'lambda' ? lambdaAppDirectoryWorkflowStep() : '';
+  const frontendApiBaseUrlStep = target.type === 's3-cloudfront' ? frontendApiBaseUrlWorkflowStep() : '';
   const workingDirectory = target.type === 'lambda' ? `\n        working-directory: \${{ env.LAMBDA_APP_DIR }}` : '';
   return `name: ${escapeYaml(`${name} ${environment} CI/CD`)}
 
@@ -809,6 +810,7 @@ on:
         type: choice
         options:
           - development
+          - test
           - staging
           - production
 
@@ -817,21 +819,22 @@ permissions:
   id-token: write
   security-events: write
 
-env:
-  DEPLOY_ENVIRONMENT: ${environment}
-  AWS_REGION: ${target.region}
-  ECR_REPOSITORY: ${target.ecrRepository}
-  ECS_CLUSTER: ${target.clusterName}
-  ECS_SERVICE: ${target.serviceName}
-  S3_BUCKET: ${target.bucketName}
-  CLOUDFRONT_DISTRIBUTION_ID: \${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-  LAMBDA_FUNCTION: ${target.lambdaFunctionName}
-  K8S_NAMESPACE: ${target.namespace}
-
 jobs:
   deploy:
     name: Build, scan, and deploy
     runs-on: ubuntu-latest
+    environment: \${{ inputs.environment }}
+    env:
+      DEPLOY_ENVIRONMENT: \${{ inputs.environment }}
+      AWS_REGION: \${{ vars.AWS_REGION || '${target.region}' }}
+      ECR_REPOSITORY: \${{ vars.ECR_REPOSITORY || '${target.ecrRepository}' }}
+      ECS_CLUSTER: \${{ vars.ECS_CLUSTER || '${target.clusterName}' }}
+      ECS_SERVICE: \${{ vars.ECS_SERVICE || '${target.serviceName}' }}
+      S3_BUCKET: \${{ vars.S3_BUCKET || '${target.bucketName}' }}
+      CLOUDFRONT_DISTRIBUTION_ID: \${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+      LAMBDA_FUNCTION: \${{ vars.LAMBDA_FUNCTION || '${target.lambdaFunctionName}' }}
+      K8S_NAMESPACE: \${{ vars.K8S_NAMESPACE || '${target.namespace}' }}
+      VITE_API_BASE_URL: \${{ vars.VITE_API_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -865,9 +868,12 @@ ${workingDirectory}
         run: ${commands.install}
 
 ${testStepFor(appType, commands, workingDirectory)}
+${frontendApiBaseUrlStep}
 
       - name: Build application
 ${workingDirectory}
+        env:
+          VITE_API_BASE_URL: \${{ env.VITE_API_BASE_URL }}
         run: ${commands.build}
 
       - name: Configure AWS credentials with OIDC
@@ -877,6 +883,17 @@ ${workingDirectory}
           aws-region: \${{ env.AWS_REGION }}
 
 ${deploy}`;
+}
+
+function frontendApiBaseUrlWorkflowStep() {
+  return `
+      - name: Verify frontend API URL
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Set GitHub repository variable VITE_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            exit 1
+          fi
+`;
 }
 
 function lambdaAppDirectoryWorkflowStep() {
@@ -969,25 +986,63 @@ function deployStepsFor(target) {
           aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --handler "$INFERRED_HANDLER_MODULE.handler"
           aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
 
-      - name: Configure Lambda AWS connection env
+      - name: Configure Lambda application env
         env:
-          INFRAFLOW_AWS_ACCESS_KEY_ID: \${{ secrets.INFRAFLOW_AWS_ACCESS_KEY_ID }}
-          INFRAFLOW_AWS_SECRET_ACCESS_KEY: \${{ secrets.INFRAFLOW_AWS_SECRET_ACCESS_KEY }}
-          INFRAFLOW_AWS_SESSION_TOKEN: \${{ secrets.INFRAFLOW_AWS_SESSION_TOKEN }}
+          JWT_ACCESS_SECRET: \${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: \${{ secrets.JWT_REFRESH_SECRET }}
+          CLIENT_ORIGINS: \${{ vars.CLIENT_ORIGINS }}
+          APP_BASE_URL: \${{ vars.APP_BASE_URL }}
+          STORAGE_MODE: \${{ vars.STORAGE_MODE }}
+          STORAGE_S3_BUCKET: \${{ vars.STORAGE_S3_BUCKET }}
+          STORAGE_S3_REGION: \${{ vars.STORAGE_S3_REGION }}
+          STORAGE_DYNAMODB_LOCK_TABLE: \${{ vars.STORAGE_DYNAMODB_LOCK_TABLE }}
+          DEPLOYMENT_EXECUTOR: \${{ vars.DEPLOYMENT_EXECUTOR }}
+          DEPLOYMENT_GITHUB_OWNER: \${{ vars.DEPLOYMENT_GITHUB_OWNER }}
+          DEPLOYMENT_GITHUB_REPO: \${{ vars.DEPLOYMENT_GITHUB_REPO }}
+          DEPLOYMENT_GITHUB_BRANCH: \${{ vars.DEPLOYMENT_GITHUB_BRANCH }}
+          DEPLOYMENT_CALLBACK_SECRET: \${{ secrets.DEPLOYMENT_CALLBACK_SECRET }}
+          INFRAFLOW_APP_AWS_ACCESS_KEY_ID: \${{ secrets.INFRAFLOW_APP_AWS_ACCESS_KEY_ID }}
+          INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: \${{ secrets.INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY }}
+          INFRAFLOW_APP_AWS_SESSION_TOKEN: \${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
         run: |
-          if [ -z "$INFRAFLOW_AWS_ACCESS_KEY_ID" ] || [ -z "$INFRAFLOW_AWS_SECRET_ACCESS_KEY" ]; then
-            echo "INFRAFLOW_AWS_* repository secrets are not set; leaving Lambda AWS connection env unchanged."
-            exit 0
-          fi
           aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
           jq \
-            --arg accessKeyId "$INFRAFLOW_AWS_ACCESS_KEY_ID" \
-            --arg secretAccessKey "$INFRAFLOW_AWS_SECRET_ACCESS_KEY" \
-            --arg sessionToken "$INFRAFLOW_AWS_SESSION_TOKEN" \
+            --arg nodeEnv "production" \
+            --arg jwtAccessSecret "$JWT_ACCESS_SECRET" \
+            --arg jwtRefreshSecret "$JWT_REFRESH_SECRET" \
+            --arg clientOrigins "$CLIENT_ORIGINS" \
+            --arg appBaseUrl "$APP_BASE_URL" \
+            --arg storageMode "$STORAGE_MODE" \
+            --arg storageS3Bucket "$STORAGE_S3_BUCKET" \
+            --arg storageS3Region "$STORAGE_S3_REGION" \
+            --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE" \
+            --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR" \
+            --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER" \
+            --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO" \
+            --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH" \
+            --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET" \
+            --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID" \
+            --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY" \
+            --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN" \
             '. + {
-              INFRAFLOW_AWS_ACCESS_KEY_ID: $accessKeyId,
-              INFRAFLOW_AWS_SECRET_ACCESS_KEY: $secretAccessKey
-            } + (if $sessionToken == "" then {} else { INFRAFLOW_AWS_SESSION_TOKEN: $sessionToken } end)' \
+              NODE_ENV: $nodeEnv
+            }
+            + (if $jwtAccessSecret == "" then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
+            + (if $jwtRefreshSecret == "" then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
+            + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
+            + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
+            + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
+            + (if $storageS3Bucket == "" then {} else { STORAGE_S3_BUCKET: $storageS3Bucket } end)
+            + (if $storageS3Region == "" then {} else { STORAGE_S3_REGION: $storageS3Region } end)
+            + (if $storageDynamodbLockTable == "" then {} else { STORAGE_DYNAMODB_LOCK_TABLE: $storageDynamodbLockTable } end)
+            + (if $deploymentExecutor == "" then {} else { DEPLOYMENT_EXECUTOR: $deploymentExecutor } end)
+            + (if $deploymentGithubOwner == "" then {} else { DEPLOYMENT_GITHUB_OWNER: $deploymentGithubOwner } end)
+            + (if $deploymentGithubRepo == "" then {} else { DEPLOYMENT_GITHUB_REPO: $deploymentGithubRepo } end)
+            + (if $deploymentGithubBranch == "" then {} else { DEPLOYMENT_GITHUB_BRANCH: $deploymentGithubBranch } end)
+            + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
+            + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
+            + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
+            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)' \
             lambda-env.json > lambda-env-updated.json
           aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment "Variables=$(jq -c . lambda-env-updated.json)"
           aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
@@ -1253,9 +1308,10 @@ AWS account ID. Before running step 3, replace \`<ACCOUNT_ID>\` in
   \`arn:aws:iam::<ACCOUNT_ID>:role/${roleName}\`.
 
 Recommended secrets by target:
-- \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
-- \`INFRAFLOW_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
-- \`INFRAFLOW_AWS_SESSION_TOKEN\` only when the access key is temporary.
+- Environment variable \`VITE_API_BASE_URL\` for S3 and CloudFront apps.
+- Environment variable \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
+- Environment secrets \`INFRAFLOW_APP_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
+- Environment secret \`INFRAFLOW_APP_AWS_SESSION_TOKEN\` only when the access key is temporary.
 
 ## Target
 
@@ -1272,9 +1328,9 @@ function pipelineChecklist(targetType) {
     'Check the "AWS deploy role" status on this pipeline — if it says Skipped or Failed, follow deploy/README.md to set it up manually.',
     'Confirm target infrastructure exists from the selected infraflow deployment.',
     targetType === 's3-cloudfront'
-      ? 'Confirm S3 bucket and optional CloudFront distribution secret.'
+      ? 'Confirm selected GitHub Environment has S3_BUCKET, VITE_API_BASE_URL, and optional CLOUDFRONT_DISTRIBUTION_ID variables.'
       : targetType === 'lambda'
-        ? 'Confirm Lambda function name, AWS region, and INFRAFLOW_AWS_* repository secrets if this backend connects AWS accounts.'
+        ? 'Confirm Lambda function name, AWS region, and INFRAFLOW_APP_AWS_* environment secrets if this backend connects AWS accounts.'
         : 'Confirm ECR repository and runtime target names.',
     'Use Deploy Application in Infraflow to dispatch the selected environment workflow.',
   ];

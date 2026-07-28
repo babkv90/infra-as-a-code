@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - development
+          - test
           - staging
           - production
 
@@ -18,21 +19,22 @@ permissions:
   id-token: write
   security-events: write
 
-env:
-  DEPLOY_ENVIRONMENT: development
-  AWS_REGION: ap-south-1
-  ECR_REPOSITORY: react-vue-angular-static-frontend-app
-  ECS_CLUSTER: infraflow-cluster
-  ECS_SERVICE: react-app-service
-  S3_BUCKET: infraflow-static-20260726153431179400000001
-  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-  LAMBDA_FUNCTION: replace-with-lambda-function
-  K8S_NAMESPACE: default
-
 jobs:
   deploy:
     name: Build, scan, and deploy
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'react-vue-angular-static-frontend-app' }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'infraflow-cluster' }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE || 'react-app-service' }}
+      S3_BUCKET: ${{ vars.S3_BUCKET || 'infraflow-static-20260726153431179400000001' }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+      LAMBDA_FUNCTION: replace-with-lambda-function
+      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'default' }}
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,9 +89,17 @@ jobs:
           fi
           timeout 150s npm test -- --watch=false
 
+      - name: Verify frontend API URL
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Set GitHub repository variable VITE_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            exit 1
+          fi
 
       - name: Build application
 
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
         run: npm run build
 
       - name: Configure AWS credentials with OIDC

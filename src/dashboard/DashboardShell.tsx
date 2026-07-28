@@ -2392,7 +2392,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState('');
   const [name, setName] = useState('Production application pipeline');
   const [appType, setAppType] = useState('react-app');
-  const [environment, setEnvironment] = useState<'development' | 'staging' | 'production'>('development');
+  const [environment, setEnvironment] = useState<'development' | 'test' | 'staging' | 'production'>('development');
   const [branch, setBranch] = useState('main');
   const [githubOwner, setGithubOwner] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
@@ -3535,7 +3535,7 @@ function ApplicationPipelinePage() {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState('');
   const [name, setName] = useState('Production application pipeline');
   const [appType, setAppType] = useState('react-app');
-  const [environment, setEnvironment] = useState<'development' | 'staging' | 'production'>('development');
+  const [environment, setEnvironment] = useState<'development' | 'test' | 'staging' | 'production'>('development');
   const [branch, setBranch] = useState('main');
   const [githubOwner, setGithubOwner] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
@@ -4209,6 +4209,7 @@ function ApplicationPipelinePage() {
                 <span>Environment</span>
                 <select value={environment} onChange={(event) => setEnvironment(event.target.value as typeof environment)}>
                   <option value="development">Development</option>
+                  <option value="test">Test</option>
                   <option value="staging">Staging</option>
                   <option value="production">Production</option>
                 </select>

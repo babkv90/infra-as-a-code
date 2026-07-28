@@ -179,7 +179,7 @@ export const getInsights = asyncHandler(async (req, res) => {
 
 function addAwsConnectionHint(message = '') {
   if (String(message).toLowerCase().includes('security token included in the request is invalid')) {
-    return `${message} Check backend env: INFRAFLOW_AWS_ACCESS_KEY_ID and INFRAFLOW_AWS_SECRET_ACCESS_KEY must belong to an active IAM user or valid temporary session that can call STS. If the access key starts with ASIA, INFRAFLOW_AWS_SESSION_TOKEN is required. If you changed env vars, redeploy/restart the backend.`;
+    return `${message} Check backend env: INFRAFLOW_APP_AWS_ACCESS_KEY_ID and INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY must belong to an active IAM user or valid temporary session that can call STS. If the access key starts with ASIA, INFRAFLOW_APP_AWS_SESSION_TOKEN is required. If you changed env vars, redeploy/restart the backend.`;
   }
 
   return message;

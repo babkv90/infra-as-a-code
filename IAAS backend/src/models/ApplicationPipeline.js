@@ -23,7 +23,7 @@ const applicationPipelineSchema = new mongoose.Schema(
     },
     environment: {
       type: String,
-      enum: ['development', 'staging', 'production'],
+      enum: ['development', 'test', 'staging', 'production'],
       default: 'development',
       index: true,
     },

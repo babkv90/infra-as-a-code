@@ -13,7 +13,7 @@ export type ApplicationPipelineRecord = {
   _id: string;
   name: string;
   appType: string;
-  environment: 'development' | 'staging' | 'production';
+  environment: 'development' | 'test' | 'staging' | 'production';
   createdBy?: string | {
     _id?: string;
     name?: string;
@@ -68,7 +68,7 @@ export type ApplicationPipelineRecord = {
 export type CreateApplicationPipelinePayload = {
   name: string;
   appType: string;
-  environment: 'development' | 'staging' | 'production';
+  environment: 'development' | 'test' | 'staging' | 'production';
   deploymentId?: string;
   repository: {
     url?: string;
