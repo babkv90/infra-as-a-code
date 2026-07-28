@@ -59,9 +59,10 @@ AWS account ID. Before running step 3, replace `<ACCOUNT_ID>` in
   `arn:aws:iam::<ACCOUNT_ID>:role/nodeapplicationdep-deploy-role`.
 
 Recommended secrets by target:
-- `CLOUDFRONT_DISTRIBUTION_ID` for S3 and CloudFront apps (leave unset to skip cache invalidation).
-- `INFRAFLOW_AWS_ACCESS_KEY_ID` and `INFRAFLOW_AWS_SECRET_ACCESS_KEY` for Lambda backend apps that need to connect AWS accounts from production.
-- `INFRAFLOW_AWS_SESSION_TOKEN` only when the access key is temporary.
+- Environment variable `VITE_API_BASE_URL` for S3 and CloudFront apps.
+- Environment variable `CLOUDFRONT_DISTRIBUTION_ID` for S3 and CloudFront apps (leave unset to skip cache invalidation).
+- Environment secrets `INFRAFLOW_APP_AWS_ACCESS_KEY_ID` and `INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY` for Lambda backend apps that need to connect AWS accounts from production.
+- Environment secret `INFRAFLOW_APP_AWS_SESSION_TOKEN` only when the access key is temporary.
 
 ## Target
 
