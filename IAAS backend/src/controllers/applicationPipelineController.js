@@ -834,7 +834,7 @@ jobs:
       CLOUDFRONT_DISTRIBUTION_ID: \${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
       LAMBDA_FUNCTION: \${{ vars.LAMBDA_FUNCTION || '${target.lambdaFunctionName}' }}
       K8S_NAMESPACE: \${{ vars.K8S_NAMESPACE || '${target.namespace}' }}
-      VITE_API_BASE_URL: \${{ vars.VITE_API_BASE_URL }}
+      VITE_API_BASE_URL: \${{ vars.VITE_API_BASE_URL || secrets.INFRAFLOW_API_BASE_URL || vars.INFRAFLOW_API_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -897,7 +897,7 @@ function frontendApiBaseUrlWorkflowStep() {
       - name: Verify frontend API URL
         run: |
           if [ -z "$VITE_API_BASE_URL" ]; then
-            echo "::error::Set GitHub repository variable VITE_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            echo "::error::Set GitHub variable VITE_API_BASE_URL or secret/variable INFRAFLOW_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
             exit 1
           fi
 `;
@@ -1315,7 +1315,7 @@ AWS account ID. Before running step 3, replace \`<ACCOUNT_ID>\` in
   \`arn:aws:iam::<ACCOUNT_ID>:role/${roleName}\`.
 
 Recommended secrets by target:
-- Environment variable \`VITE_API_BASE_URL\` for S3 and CloudFront apps.
+- Environment variable \`VITE_API_BASE_URL\` for S3 and CloudFront apps. \`INFRAFLOW_API_BASE_URL\` is accepted as a fallback alias.
 - Environment variable \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
 - Environment secrets \`INFRAFLOW_APP_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
 - Environment secret \`INFRAFLOW_APP_AWS_SESSION_TOKEN\` only when the access key is temporary.
@@ -1335,7 +1335,7 @@ function pipelineChecklist(targetType) {
     'Check the "AWS deploy role" status on this pipeline — if it says Skipped or Failed, follow deploy/README.md to set it up manually.',
     'Confirm target infrastructure exists from the selected infraflow deployment.',
     targetType === 's3-cloudfront'
-      ? 'Confirm selected GitHub Environment has S3_BUCKET, VITE_API_BASE_URL, and optional CLOUDFRONT_DISTRIBUTION_ID variables.'
+      ? 'Confirm selected GitHub Environment has S3_BUCKET, VITE_API_BASE_URL (or INFRAFLOW_API_BASE_URL), and optional CLOUDFRONT_DISTRIBUTION_ID variables.'
       : targetType === 'lambda'
         ? 'Confirm Lambda function name, AWS region, and INFRAFLOW_APP_AWS_* environment secrets if this backend connects AWS accounts.'
         : 'Confirm ECR repository and runtime target names.',

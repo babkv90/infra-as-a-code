@@ -3,7 +3,7 @@ const DEFAULT_API_BASE_URL = import.meta.env.DEV ? LOCAL_API_BASE_URL : '';
 const LEGACY_API_GATEWAY_HOSTS: string[] = [];
 const LEGACY_API_GATEWAY_STAGE_NAMES = ['iaasNodestage'];
 
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.INFRAFLOW_API_BASE_URL)?.trim();
 
 function normalizeApiBaseUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, '');
@@ -30,7 +30,7 @@ function normalizeApiBaseUrl(value: string): string {
 const apiBaseUrl = configuredApiBaseUrl || DEFAULT_API_BASE_URL;
 
 if (!apiBaseUrl) {
-  throw new Error('VITE_API_BASE_URL is required for production builds. Set it to the current API Gateway /api/v1 URL.');
+  throw new Error('VITE_API_BASE_URL or INFRAFLOW_API_BASE_URL is required for production builds. Set it to the current API Gateway /api/v1 URL.');
 }
 
 export const API_BASE_URL = normalizeApiBaseUrl(apiBaseUrl);
