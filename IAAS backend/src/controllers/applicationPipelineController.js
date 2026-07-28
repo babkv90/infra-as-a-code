@@ -1139,8 +1139,8 @@ function deployStepsFor(target) {
             '. + {
               NODE_ENV: $nodeEnv
             }
-            + (if $jwtAccessSecret == "" then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
-            + (if $jwtRefreshSecret == "" then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
+            + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
+            + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
             + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
             + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
             + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)

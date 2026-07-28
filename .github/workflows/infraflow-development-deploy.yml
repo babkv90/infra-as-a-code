@@ -169,8 +169,8 @@ jobs:
           jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             '. + {
               NODE_ENV: $nodeEnv
             }
-            + (if $jwtAccessSecret == "" then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
-            + (if $jwtRefreshSecret == "" then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
+            + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
+            + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
             + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
             + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
             + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
