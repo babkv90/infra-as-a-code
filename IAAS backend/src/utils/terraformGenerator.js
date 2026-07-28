@@ -583,10 +583,15 @@ ${optionalExpressionLine('event_pattern', config.event_pattern)}${optionalLine('
   source_code_hash = ${packageInfo.sourceCodeHashExpr}`
           : `  filename         = ${formatValue(packageInfo.filenameValue)}
   source_code_hash = ${formatMaybeExpression(packageInfo.sourceCodeHash)}`;
+      const functionName = configString(config, 'function_name') || uniqueName;
       return [
         ...extraBlocks,
+        `resource "aws_cloudwatch_log_group" "${name}_logs" {
+  name              = "/aws/lambda/${functionName}"
+  retention_in_days = 14
+}`,
         `resource "aws_lambda_function" "${name}" {
-  function_name    = ${formatValue(configString(config, 'function_name') || uniqueName)}
+  function_name    = ${formatValue(functionName)}
   role             = ${formatMaybeExpression(roleRef)}
 ${packageLines}
   handler          = ${formatValue(configString(config, 'handler'))}
@@ -597,6 +602,8 @@ ${packageLines}
   lifecycle {
     ignore_changes = [environment]
   }
+
+  depends_on = [aws_cloudwatch_log_group.${name}_logs]
 }`,
       ];
     }
@@ -1131,10 +1138,30 @@ function connectionBlocks(nodes, edges, names) {
   route_key = "ANY /{proxy+}"
   target    = "integrations/\${aws_apigatewayv2_integration.${edgeName}.id}"
 }`);
+      blocks.push(`resource "aws_cloudwatch_log_group" "${edgeName}_apigw_logs" {
+  name              = "/aws/apigateway/infraflow-${edgeName}"
+  retention_in_days = 14
+}`);
       blocks.push(`resource "aws_apigatewayv2_stage" "${edgeName}" {
   api_id      = aws_apigatewayv2_api.${sourceName}.id
   name        = "$default"
   auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.${edgeName}_apigw_logs.arn
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      ip                 = "$context.identity.sourceIp"
+      requestTime        = "$context.requestTime"
+      httpMethod         = "$context.httpMethod"
+      routeKey           = "$context.routeKey"
+      status             = "$context.status"
+      protocol           = "$context.protocol"
+      responseLength     = "$context.responseLength"
+      integrationError   = "$context.integrationErrorMessage"
+      authorizerError    = "$context.authorizer.error"
+    })
+  }
 }`);
       blocks.push(`resource "aws_lambda_permission" "${edgeName}" {
   statement_id  = "AllowApiGatewayInvoke${edgeName}"
@@ -1268,7 +1295,24 @@ function lambdaExecutionRoleFromField(config, uniqueName) {
     return { roleRef, extraBlocks: rawBlock ? [rawBlock] : [] };
   }
 
-  return { roleRef: configString(config, 'role_arn'), extraBlocks: [] };
+  const roleRef = configString(config, 'role_arn');
+  const existingRoleName = roleNameFromArn(roleRef);
+  if (!existingRoleName) return { roleRef, extraBlocks: [] };
+
+  const roleResourceName = sanitizeName(existingRoleName);
+  return {
+    roleRef,
+    extraBlocks: [
+      `# Existing Lambda execution role ARN: ${escapeString(roleRef)}
+data "aws_iam_role" "${roleResourceName}_lambda_execution" {
+  name = ${formatValue(existingRoleName)}
+}`,
+      `resource "aws_iam_role_policy_attachment" "${roleResourceName}_lambda_basic_execution" {
+  role       = data.aws_iam_role.${roleResourceName}_lambda_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}`,
+    ],
+  };
 }
 
 // A zip picked via PropertiesPanel's FilePathField gets uploaded to the backend, and its
