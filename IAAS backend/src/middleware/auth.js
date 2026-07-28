@@ -2,6 +2,7 @@ import { User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { verifyAccessToken } from '../utils/tokens.js';
+import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
 
 export const requireAuth = asyncHandler(async (req, _res, next) => {
   const authHeader = req.headers.authorization ?? '';
@@ -18,6 +19,6 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
     throw new ApiError(401, 'Invalid or disabled user');
   }
 
-  req.user = user;
+  req.user = await ensureWorkspaceOwnerRole(user);
   next();
 });

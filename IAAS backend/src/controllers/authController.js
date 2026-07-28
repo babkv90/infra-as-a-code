@@ -9,6 +9,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 
 export const registerSchema = z.object({
@@ -48,8 +49,7 @@ export const register = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'A user with this email already exists');
   }
 
-  const userCount = await User.estimatedDocumentCount();
-  const role = userCount === 0 ? roles.OWNER : roles.VIEWER;
+  const role = roles.OWNER;
   const user = await User.create({ name, email, password, role });
   const workspace = await Workspace.create({
     name: workspaceName ?? `${name}'s workspace`,
@@ -85,6 +85,7 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   user.lastLoginAt = new Date();
+  await ensureWorkspaceOwnerRole(user);
   await user.save();
 
   const tokens = sendAuthTokens(res, user);
