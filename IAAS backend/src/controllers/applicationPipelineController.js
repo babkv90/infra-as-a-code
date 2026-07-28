@@ -13,6 +13,7 @@ import {
   cancelWorkflowRun,
   dispatchGithubWorkflow,
   githubDeploymentErrorMessage,
+  getGithubRepositoryDefaultBranch,
   githubWorkflowRunJobs,
   githubWorkflowRuns,
   isGithubIntegrationPermissionError,
@@ -380,14 +381,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     if (isWorkflowDispatchMissingError(error)) {
       autoSync = await regenerateAndSyncPipelineWorkflow({ pipeline, token, repository });
       workflowId = workflowPathFor(pipeline.environment).split('/').pop();
-      await dispatchGithubWorkflow({
-        token,
-        owner: repository.owner,
-        repo: repository.repo,
-        workflowId,
-        branch: repository.branch,
-        inputs: { environment: pipeline.environment },
-      });
+      await dispatchWorkflowWithRegistrationRetry({ token, repository, workflowId, environment: pipeline.environment });
     } else
     if (!isGithubIntegrationPermissionError(error)) throw error;
     else {
@@ -471,6 +465,30 @@ async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }
     deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
   });
 
+  let defaultBranch = repository.branch;
+  try {
+    defaultBranch = await getGithubRepositoryDefaultBranch({
+      token,
+      owner: repository.owner,
+      repo: repository.repo,
+    });
+  } catch {
+    defaultBranch = repository.branch;
+  }
+
+  let defaultBranchSync = null;
+  if (defaultBranch && defaultBranch !== repository.branch) {
+    defaultBranchSync = await syncFilesToGithubCommit({
+      token,
+      owner: repository.owner,
+      repo: repository.repo,
+      branch: defaultBranch,
+      message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch on default branch`,
+      files: pipeline.generatedFiles,
+      deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+    });
+  }
+
   pipeline.repository.url = `https://github.com/${repository.owner}/${repository.repo}`;
   pipeline.repository.branch = repository.branch;
   pipeline.repository.workflowPath = workflowPathFor(pipeline.environment);
@@ -480,12 +498,40 @@ async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }
 
   return {
     commitSha: result.commitSha,
+    defaultBranch,
+    defaultBranchCommitSha: defaultBranchSync?.commitSha,
     files: result.files?.map((file) => file.path ?? file) ?? pipeline.generatedFiles.map((file) => file.path),
   };
 }
 
+async function dispatchWorkflowWithRegistrationRetry({ token, repository, workflowId, environment }) {
+  let lastError;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await sleep(2500);
+    try {
+      await dispatchGithubWorkflow({
+        token,
+        owner: repository.owner,
+        repo: repository.repo,
+        workflowId,
+        branch: repository.branch,
+        inputs: { environment },
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isWorkflowDispatchMissingError(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
 function isWorkflowDispatchMissingError(error) {
   return /workflow does not have 'workflow_dispatch'/i.test(String(error?.message ?? ''));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, res) => {

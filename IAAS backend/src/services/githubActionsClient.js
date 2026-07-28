@@ -254,6 +254,19 @@ export async function dispatchGithubWorkflow({ token, owner, repo, workflowId, b
   throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
 }
 
+export async function getGithubRepositoryDefaultBranch({ token, owner, repo }) {
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+    headers: githubApiHeaders(token),
+  });
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+
+  if (!response.ok) {
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'GitHub repository lookup failed.'));
+  }
+
+  return result.default_branch || 'main';
+}
+
 // GitHub's dispatch API doesn't hand back the run it just created, so this polls the workflow's
 // recent runs and matches by "created at or after we dispatched" — a few seconds of retry covers the
 // normal delay between dispatch and the run appearing in the list.
