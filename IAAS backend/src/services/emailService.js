@@ -3,9 +3,26 @@ import { env } from '../config/env.js';
 
 let transporter;
 
+export class EmailConfigurationError extends Error {
+  constructor(missingVariables) {
+    super(`Password reset email is missing required Lambda env vars: ${missingVariables.join(', ')}.`);
+    this.name = 'EmailConfigurationError';
+    this.missingVariables = missingVariables;
+  }
+}
+
 function getTransporter() {
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS || !env.EMAIL_FROM) {
-    throw new Error('Password reset email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and EMAIL_FROM.');
+  const missingVariables = [
+    ['SMTP_HOST', env.SMTP_HOST],
+    ['SMTP_USER', env.SMTP_USER],
+    ['SMTP_PASS', env.SMTP_PASS],
+    ['EMAIL_FROM', env.EMAIL_FROM],
+  ]
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+  if (missingVariables.length) {
+    throw new EmailConfigurationError(missingVariables);
   }
 
   if (!transporter) {

@@ -10,7 +10,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
 import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
-import { sendPasswordResetEmail } from '../services/emailService.js';
+import { EmailConfigurationError, sendPasswordResetEmail } from '../services/emailService.js';
 
 export const registerSchema = z.object({
   body: z.object({
@@ -125,8 +125,19 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     try {
       await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
     } catch (error) {
-      console.error('Password reset email failed', { email: user.email, message: error.message });
-      throw new ApiError(500, 'Password reset email is not configured or could not be sent. Contact the administrator.');
+      console.error('Password reset email failed', {
+        email: user.email,
+        message: error.message,
+        code: error.code,
+        command: error.command,
+        responseCode: error.responseCode,
+      });
+
+      if (error instanceof EmailConfigurationError) {
+        throw new ApiError(500, error.message);
+      }
+
+      throw new ApiError(500, 'Password reset SMTP delivery failed. Check SMTP host, port, secure mode, username, password, and sender address.');
     }
   }
 
