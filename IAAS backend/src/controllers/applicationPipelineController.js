@@ -1156,7 +1156,8 @@ function deployStepsFor(target) {
             + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
             + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)' \
             lambda-env.json > lambda-env-updated.json
-          aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment "Variables=$(jq -c . lambda-env-updated.json)"
+          jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
+          aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
           aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
 
       - name: Package Lambda artifact
