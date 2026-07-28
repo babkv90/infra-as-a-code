@@ -123,7 +123,13 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
   if (env.NODE_ENV === 'production') {
     try {
-      await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
+      const emailResult = await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
+      console.info('Password reset email sent', {
+        email: user.email,
+        messageId: emailResult.messageId,
+        accepted: emailResult.accepted,
+        rejected: emailResult.rejected,
+      });
     } catch (error) {
       console.error('Password reset email failed', {
         email: user.email,

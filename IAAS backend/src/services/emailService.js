@@ -44,7 +44,7 @@ export async function sendPasswordResetEmail({ to, resetToken, expiresAt }) {
   const resetUrl = new URL('/login', env.APP_BASE_URL);
   resetUrl.searchParams.set('resetToken', resetToken);
 
-  await getTransporter().sendMail({
+  return getTransporter().sendMail({
     from: env.EMAIL_FROM,
     to,
     subject: 'Reset your Infraflow password',
