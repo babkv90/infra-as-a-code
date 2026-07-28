@@ -17,6 +17,8 @@ const GITHUB_OIDC_HOSTNAME = 'token.actions.githubusercontent.com';
 const GITHUB_OIDC_THUMBPRINTS = ['ab9d0263244dd0326eb67015705a667e79cfe998', '1c58a3a8518e8759bf075b76b750d4f2df264fcd'];
 
 export function buildOidcTrustPolicy({ owner, repo, branch, accountId }) {
+  const repositorySubjectPrefix = `repo:${owner}/${repo}:`;
+
   return {
     Version: '2012-10-17',
     Statement: [
@@ -26,7 +28,16 @@ export function buildOidcTrustPolicy({ owner, repo, branch, accountId }) {
         Action: 'sts:AssumeRoleWithWebIdentity',
         Condition: {
           StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-          StringLike: { 'token.actions.githubusercontent.com:sub': `repo:${owner}/${repo}:ref:refs/heads/${branch}` },
+          StringLike: {
+            'token.actions.githubusercontent.com:sub': [
+              `${repositorySubjectPrefix}ref:refs/heads/${branch}`,
+              `${repositorySubjectPrefix}environment:*`,
+              `${repositorySubjectPrefix}environment:development`,
+              `${repositorySubjectPrefix}environment:test`,
+              `${repositorySubjectPrefix}environment:staging`,
+              `${repositorySubjectPrefix}environment:production`,
+            ],
+          },
         },
       },
     ],

@@ -32,7 +32,7 @@ jobs:
       ECS_SERVICE: ${{ vars.ECS_SERVICE || 'react-app-service' }}
       S3_BUCKET: ${{ vars.S3_BUCKET || 'infraflow-static-20260726153431179400000001' }}
       CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-      LAMBDA_FUNCTION: replace-with-lambda-function
+      LAMBDA_FUNCTION: ${{ vars.LAMBDA_FUNCTION || 'infraflow-iaasnode-6a687b40b7d910ba' }}
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'default' }}
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
     steps:
@@ -91,6 +91,13 @@ jobs:
 
         working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: npm run build --if-present
+
+      - name: Verify AWS deploy role secret
+        run: |
+          if [ -z "${{ secrets.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::Set AWS_DEPLOY_ROLE_ARN as a repository secret or on the selected GitHub Environment: ${{ inputs.environment }}."
+            exit 1
+          fi
 
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
