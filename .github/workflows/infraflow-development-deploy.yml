@@ -1,8 +1,6 @@
-name: "iaasInfraFlow development CI/CD"
+name: "infraFlownodeApp development CI/CD"
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
     inputs:
       environment:
