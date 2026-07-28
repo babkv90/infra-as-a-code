@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import Editor from '@monaco-editor/react';
 import {
@@ -24,6 +24,7 @@ import {
   Maximize2,
   Minimize2,
   Moon,
+  MoreVertical,
   PencilLine,
   Plus,
   RefreshCw,
@@ -38,6 +39,7 @@ import {
   Upload,
   Workflow,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
@@ -93,18 +95,23 @@ import { ConnectAwsPage } from './pages/ConnectAwsPage';
 import { SuperAdminPage } from './pages/SuperAdminPage';
 import { requestDemoCredits } from './superAdminApi';
 import {
+  cancelQueuedApplicationWorkflows,
   createApplicationPipeline,
+  deleteApplicationPipeline,
   deployApplicationPipeline,
+  forceStopApplicationDeployment,
   getApplicationDeploymentStatus,
   listApplicationPipelines,
   reportPipelineRunResult,
   syncPipelineToGithub,
+  updateApplicationPipeline,
   type ApplicationDeploymentStatus,
   type ApplicationPipelineRecord,
 } from './applicationPipelineApi';
 import { listNotifications, markAllNotificationsRead, type NotificationRecord } from './notificationApi';
 import { SupportPage } from './pages/SupportPage';
 import {
+  checkGithubRepositoryAccess,
   disconnectGithub,
   getGithubStatus,
   githubOAuthUrl,
@@ -113,6 +120,7 @@ import {
   type GithubBranch,
   type GithubConnection,
   type GithubRepository,
+  type GithubRepositoryAccess,
 } from '../github/githubApi';
 import {
   applyDeployment,
@@ -150,6 +158,47 @@ const dashboardPageIds = new Set<DashboardPage>(dashboardNavItems.map((item) => 
 // page. Kept as a filter (not removed from DashboardPage/dashboardNavItems/renderPage) so the
 // pages themselves stay intact and this is a one-line revert if they need to come back.
 const hiddenDashboardPages = new Set<DashboardPage>(['terraform', 'security']);
+const githubConnectionCacheKey = 'infraflow.github.connection';
+const githubRepositoriesCacheKey = 'infraflow.github.repositories';
+
+function readCachedGithubConnection(): GithubConnection {
+  try {
+    const cached = window.localStorage.getItem(githubConnectionCacheKey);
+    if (!cached) return { connected: false, login: '', scopes: [] };
+    const parsed = JSON.parse(cached) as GithubConnection;
+    return parsed?.connected ? parsed : { connected: false, login: '', scopes: [] };
+  } catch {
+    return { connected: false, login: '', scopes: [] };
+  }
+}
+
+function cacheGithubConnection(connection: GithubConnection) {
+  if (connection.connected) {
+    window.localStorage.setItem(githubConnectionCacheKey, JSON.stringify(connection));
+  } else {
+    window.localStorage.removeItem(githubConnectionCacheKey);
+  }
+  window.dispatchEvent(new CustomEvent('infraflow:github-connection-cache', { detail: connection }));
+}
+
+function readCachedGithubRepositories(): GithubRepository[] {
+  try {
+    const cached = window.localStorage.getItem(githubRepositoriesCacheKey);
+    if (!cached) return [];
+    const parsed = JSON.parse(cached) as GithubRepository[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function cacheGithubRepositories(repositories: GithubRepository[]) {
+  if (repositories.length) {
+    window.localStorage.setItem(githubRepositoriesCacheKey, JSON.stringify(repositories));
+  } else {
+    window.localStorage.removeItem(githubRepositoriesCacheKey);
+  }
+}
 
 function getInitialDashboardPage(): DashboardPage {
   const page = new URLSearchParams(window.location.search).get('view') as DashboardPage | null;
@@ -368,6 +417,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
                 <small>{activeAwsAccount ? `${activeAwsAccount.status}${activeAwsAccount.lastSyncAt ? ` - synced` : ''}` : connectedAccount.syncStatus}</small>
               </div>
             </div>
+            <LiveUpdatesLauncher activePage={activePage} />
             <div className="dash-notifications" ref={notificationsRef}>
               <button className="dash-icon-button" onClick={() => void openNotifications()} title="Notifications" type="button">
                 <Bell size={17} />
@@ -444,6 +494,267 @@ type DashboardAwsContext = {
   isSyncingAws: boolean;
 };
 
+const LIVE_INFRA_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying'];
+const LIVE_APP_RUN_STATUSES = new Set(['queued', 'in_progress', 'requested', 'waiting', 'pending']);
+const liveDeploymentStartedEvent = 'infraflow:deployment-started';
+const appPipelineDeploymentRunningEvent = 'infraflow:app-pipeline-deployments-running';
+const appPipelineDeploymentRunningKey = 'infraflow.running.appPipelineDeployments';
+const appPipelineDeploymentRunningMaxAgeMs = 2 * 60 * 60 * 1000;
+
+function readRunningAppPipelineIds() {
+  try {
+    const now = Date.now();
+    const records = JSON.parse(window.localStorage.getItem(appPipelineDeploymentRunningKey) || '[]') as Array<{ id: string; startedAt: number }>;
+    const activeRecords = records.filter((record) => record.id && now - Number(record.startedAt || 0) < appPipelineDeploymentRunningMaxAgeMs);
+    if (activeRecords.length !== records.length) window.localStorage.setItem(appPipelineDeploymentRunningKey, JSON.stringify(activeRecords));
+    return activeRecords.map((record) => record.id);
+  } catch {
+    return [];
+  }
+}
+
+function writeRunningAppPipelineIds(ids: string[]) {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  const now = Date.now();
+  const existing = readRunningAppPipelineIds();
+  const records = uniqueIds.map((id) => ({
+    id,
+    startedAt: existing.includes(id) ? now - 1 : now,
+  }));
+  window.localStorage.setItem(appPipelineDeploymentRunningKey, JSON.stringify(records));
+  window.dispatchEvent(new CustomEvent(appPipelineDeploymentRunningEvent, { detail: uniqueIds }));
+}
+
+function markAppPipelineDeploymentRunning(id: string) {
+  writeRunningAppPipelineIds([...readRunningAppPipelineIds(), id]);
+}
+
+function clearAppPipelineDeploymentRunning(id?: string) {
+  if (!id) return;
+  writeRunningAppPipelineIds(readRunningAppPipelineIds().filter((runningId) => runningId !== id));
+}
+
+type LiveAppStatusRecord = {
+  status?: ApplicationDeploymentStatus;
+  error?: string;
+  checkedAt: number;
+};
+
+function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
+  const [pipelines, setPipelines] = useState<ApplicationPipelineRecord[]>([]);
+  const [appStatuses, setAppStatuses] = useState<Record<string, LiveAppStatusRecord>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const liveRefreshRef = useRef<{ inFlight: boolean; lastStartedAt: number; backoffUntil: number }>({ inFlight: false, lastStartedAt: 0, backoffUntil: 0 });
+  const currentUser = getStoredUser();
+
+  async function refreshLiveUpdates() {
+    const now = Date.now();
+    if (liveRefreshRef.current.inFlight || now < liveRefreshRef.current.backoffUntil || now - liveRefreshRef.current.lastStartedAt < 3000) return;
+    liveRefreshRef.current.inFlight = true;
+    liveRefreshRef.current.lastStartedAt = now;
+    setIsLoading(true);
+    try {
+      const [deploymentData, pipelineData] = await Promise.all([listDeployments(), listApplicationPipelines()]);
+      setDeployments(deploymentData);
+      setPipelines(pipelineData);
+      setError('');
+
+      const runningAppPipelineIds = readRunningAppPipelineIds();
+      const statusEntries = await Promise.all(
+        pipelineData
+          .filter((pipeline) => runningAppPipelineIds.includes(pipeline._id))
+          .filter((pipeline) => parseGithubRepositoryUrl(pipeline.repository.url))
+          .map(async (pipeline) => {
+            const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+            if (!repository) return [pipeline._id, { checkedAt: Date.now() }] as const;
+            try {
+              const status = await getApplicationDeploymentStatus(pipeline._id, {
+                owner: repository.owner,
+                repo: repository.repo,
+                branch: pipeline.repository.branch || 'main',
+              });
+              if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) {
+                markAppPipelineDeploymentRunning(pipeline._id);
+              } else if (status.run?.status === 'completed') {
+                clearAppPipelineDeploymentRunning(pipeline._id);
+              }
+              return [pipeline._id, { status, checkedAt: Date.now() }] as const;
+            } catch (statusError) {
+              return [
+                pipeline._id,
+                {
+                  error: statusError instanceof Error ? statusError.message : 'Unable to read app pipeline status.',
+                  checkedAt: Date.now(),
+                },
+              ] as const;``
+            }
+          }),
+      );
+      setAppStatuses((current) => ({ ...current, ...Object.fromEntries(statusEntries) }));
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Unable to load live updates.';
+      const isRateLimited = message.includes('429') || message.toLowerCase().includes('too many');
+      if (isRateLimited) liveRefreshRef.current.backoffUntil = Date.now() + 30000;
+      setError(isRateLimited ? 'Too many live update requests. Pausing refresh briefly.' : message);
+    } finally {
+      liveRefreshRef.current.inFlight = false;
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setIsOpen(false);
+    setError('');
+  }, [activePage]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    void refreshLiveUpdates();
+    const interval = window.setInterval(() => void refreshLiveUpdates(), 15000);
+    return () => window.clearInterval(interval);
+  }, [isOpen]);
+
+  useEffect(() => {
+    function handleDeploymentStarted() {
+      liveRefreshRef.current.backoffUntil = 0;
+      liveRefreshRef.current.lastStartedAt = 0;
+      void refreshLiveUpdates();
+    }
+
+    window.addEventListener(liveDeploymentStartedEvent, handleDeploymentStarted);
+    return () => window.removeEventListener(liveDeploymentStartedEvent, handleDeploymentStarted);
+  }, []);
+
+  const liveInfraItems = deployments.filter((deployment) => LIVE_INFRA_STATUSES.includes(deployment.status));
+  const liveAppItems = pipelines
+    .map((pipeline) => ({ pipeline, status: appStatuses[pipeline._id] }))
+    .filter(({ status }) => {
+      const runStatus = status?.status?.run?.status;
+      return runStatus ? LIVE_APP_RUN_STATUSES.has(runStatus) : false;
+    });
+  const liveItems = [
+    ...liveInfraItems.map((deployment) => ({
+      id: `infra-${deployment._id}`,
+      actor: actorLabel(deployment.requestedBy, currentUser),
+      name: deployment.name,
+      percent: infraCompletionPercent(deployment),
+      status: deploymentStatusLabel(deployment.status),
+      type: 'Infra',
+    })),
+    ...liveAppItems.map(({ pipeline, status }) => ({
+      id: `app-${pipeline._id}`,
+      actor: actorLabel(pipeline.createdBy, currentUser),
+      name: pipeline.name,
+      percent: appCompletionPercent(status?.status?.run?.status),
+      status: appRunStatusLabel(status?.status?.run?.status),
+      type: 'App',
+    })),
+  ];
+  const activeCount = liveItems.length;
+
+  return (
+    <div className="live-updates">
+      {isOpen && (
+        <section className="live-updates-panel" aria-label="Live deployment updates">
+          <header>
+            <div>
+              <span className="dash-eyebrow">Live deployments</span>
+              <strong>{activeCount ? `${activeCount} running` : 'No running deployments'}</strong>
+            </div>
+            <div className="live-updates-panel__actions">
+              <button aria-label="Refresh live updates" disabled={isLoading} onClick={() => void refreshLiveUpdates()} type="button">
+                <RefreshCw size={14} />
+              </button>
+              <button aria-label="Close live updates" onClick={() => setIsOpen(false)} type="button">
+                <X size={14} />
+              </button>
+            </div>
+          </header>
+
+          {error && <div className="live-updates-error">{error}</div>}
+
+          {liveItems.length ? (
+            <div className="live-updates-list">
+              {liveItems.map((item) => (
+                <LiveUpdateRow actor={item.actor} key={item.id} name={item.name} percent={item.percent} status={item.status} type={item.type} />
+              ))}
+            </div>
+          ) : (
+            <p className="live-updates-empty">{isLoading ? 'Checking live deployments...' : 'No infrastructure or application deployment is running right now.'}</p>
+          )}
+        </section>
+      )}
+
+      <button
+        className={`live-updates-launcher ${activeCount ? 'live-updates-launcher--active' : ''}`}
+        onClick={() => {
+          setIsOpen((value) => !value);
+        }}
+        type="button"
+      >
+        <span className="live-updates-launcher__orb">
+          <Activity size={21} />
+          {activeCount > 0 && <i>{activeCount}</i>}
+        </span>
+        <span>
+          <strong>Live update</strong>
+          <small>{activeCount ? `${activeCount} running` : '0 running'}</small>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function LiveUpdateRow({ actor, name, percent, status, type }: { actor: string; name: string; percent: number; status: string; type: string }) {
+  return (
+    <article className="live-update-row">
+      <div className="live-update-row__top">
+        <span>{type}</span>
+        <b>{percent}%</b>
+      </div>
+      <strong>{name}</strong>
+      <small>Deploying by {actor}</small>
+      <div className="live-update-row__progress" aria-label={`${status}: ${percent}% complete`}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <em>{status}</em>
+    </article>
+  );
+}
+
+function actorLabel(actor: DeploymentRecord['requestedBy'] | ApplicationPipelineRecord['createdBy'], fallbackUser: ReturnType<typeof getStoredUser>) {
+  if (actor && typeof actor === 'object') return actor.name || actor.email || 'Unknown user';
+  return fallbackUser?.name || fallbackUser?.email || 'Unknown user';
+}
+
+function infraCompletionPercent(deployment: DeploymentRecord) {
+  if (deployment.status === 'queued') return 10;
+  if (deployment.status === 'destroying') return deployment.activeRun?.githubRunId ? 65 : 45;
+  if (deployment.status === 'deploying') return deployment.activeRun?.githubRunId ? 70 : 50;
+  return 0;
+}
+
+function appCompletionPercent(status?: string) {
+  switch (status) {
+    case 'queued':
+    case 'requested':
+    case 'waiting':
+    case 'pending':
+      return 20;
+    case 'in_progress':
+      return 65;
+    default:
+      return 10;
+  }
+}
+
+function appRunStatusLabel(status?: string) {
+  if (!status) return 'Starting';
+  return status.replace(/_/g, ' ');
+}
 function renderPage(
   activePage: DashboardPage,
   setActivePage: (page: DashboardPage) => void,
@@ -472,6 +783,8 @@ function renderPage(
       );
     case 'resource-info':
       return <ResourceInfoPage />;
+    case 'infra-pipeline':
+      return <InfraDeploymentPipelinePage insights={awsContext.awsInsights} />;
     case 'app-pipeline':
       return <ApplicationPipelinePage />;
     case 'security':
@@ -1613,13 +1926,6 @@ function DeploymentsPage({
                         <td>{formatDeploymentDate(deployment)}</td>
                         <td>
                           <div className="dash-deploy-table-actions">
-                            <button className="dash-secondary-action" onClick={() => setExpandedDeploymentId(isExpanded ? undefined : deployment._id)} type="button">
-                              {isExpanded ? 'Hide' : 'Details'}
-                            </button>
-                            <button className="dash-secondary-action" disabled={isLoadingDeployments} onClick={() => void refreshDeployments()} type="button">
-                              <RefreshCw size={15} />
-                              Refresh
-                            </button>
                             {deployment.status === 'draft' && (
                               <button
                                 className="dash-secondary-action"
@@ -1642,18 +1948,20 @@ function DeploymentsPage({
                               <Edit3 size={15} />
                               {renamingDeploymentId === deployment._id ? 'Renaming...' : 'Rename'}
                             </button>
-                            <button
-                              className="dash-secondary-action"
-                              disabled={!['deployed', 'failed'].includes(deployment.status)}
-                              onClick={() => {
-                                window.location.href = `/dashboard?view=builder&updateDeployment=${encodeURIComponent(deployment._id)}`;
-                              }}
-                              title="Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
-                              type="button"
-                            >
-                              <PencilLine size={15} />
-                              Update
-                            </button>
+                            {deployment.status !== 'draft' && (
+                              <button
+                                className="dash-secondary-action"
+                                disabled={!['deployed', 'failed'].includes(deployment.status)}
+                                onClick={() => {
+                                  window.location.href = `/dashboard?view=builder&updateDeployment=${encodeURIComponent(deployment._id)}`;
+                                }}
+                                title="Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                                type="button"
+                              >
+                                <PencilLine size={15} />
+                                Update
+                              </button>
+                            )}
                             {MERGE_SOURCE_ELIGIBLE_STATUSES.includes(deployment.status) && (
                               <button
                                 className="dash-secondary-action dash-nowrap-action"
@@ -1666,49 +1974,57 @@ function DeploymentsPage({
                                 Merge into...
                               </button>
                             )}
-                            {FORCE_DESTROY_STATUSES.includes(deployment.status) ? (
-                              <button
-                                className="dash-secondary-action dash-danger-action dash-nowrap-action"
-                                disabled={forceDestroyingDeploymentId === deployment._id}
-                                onClick={() => setPendingForceDestroyDeployment(deployment)}
-                                title="Taking an unusual amount of time? Force destroy cleans up whatever was already created in AWS."
-                                type="button"
-                              >
-                                <AlertTriangle size={15} />
-                                {forceDestroyingDeploymentId === deployment._id ? 'Forcing...' : 'Force destroy'}
-                              </button>
-                            ) : (
-                              <button
-                                className="dash-secondary-action dash-danger-action"
-                                disabled={!canDestroyDeployment(deployment.status) || destroyingDeploymentId === deployment._id}
-                                onClick={() => setPendingDestroyDeployment(deployment)}
-                                type="button"
-                              >
-                                <Trash2 size={15} />
-                                {destroyingDeploymentId === deployment._id ? 'Destroying...' : 'Destroy'}
-                              </button>
-                            )}
-                            {extractDestroyAttempts(deployment.logs).length > 0 && (
-                              <button
-                                className="dash-secondary-action dash-nowrap-action"
-                                onClick={() => setDestroyHistoryDeployment(deployment)}
-                                title="See why a destroy attempt failed, and every past attempt for this deployment."
-                                type="button"
-                              >
-                                <History size={15} />
-                                Destroy log
-                              </button>
-                            )}
+                            {deployment.status !== 'draft' &&
+                              (FORCE_DESTROY_STATUSES.includes(deployment.status) ? (
+                                <button
+                                  className="dash-secondary-action dash-danger-action dash-nowrap-action"
+                                  disabled={forceDestroyingDeploymentId === deployment._id}
+                                  onClick={() => setPendingForceDestroyDeployment(deployment)}
+                                  title="Taking an unusual amount of time? Force destroy cleans up whatever was already created in AWS."
+                                  type="button"
+                                >
+                                  <AlertTriangle size={15} />
+                                  {forceDestroyingDeploymentId === deployment._id ? 'Forcing...' : 'Force destroy'}
+                                </button>
+                              ) : (
+                                <button
+                                  className="dash-secondary-action dash-danger-action"
+                                  disabled={!canDestroyDeployment(deployment.status) || destroyingDeploymentId === deployment._id}
+                                  onClick={() => setPendingDestroyDeployment(deployment)}
+                                  type="button"
+                                >
+                                  <Trash2 size={15} />
+                                  {destroyingDeploymentId === deployment._id ? 'Destroying...' : 'Destroy'}
+                                </button>
+                              ))}
+                            <details className="dash-row-more-menu">
+                              <summary className="dash-icon-button" aria-label={`More actions for ${deployment.name}`} title="More actions">
+                                <MoreVertical size={16} />
+                              </summary>
+                              <div className="dash-row-more-menu__content">
+                                <button onClick={() => setExpandedDeploymentId(isExpanded ? undefined : deployment._id)} type="button">
+                                  <Eye size={15} />
+                                  {isExpanded ? 'Hide details' : 'Details'}
+                                </button>
+                                <button disabled={isLoadingDeployments} onClick={() => void refreshDeployments()} type="button">
+                                  <RefreshCw size={15} />
+                                  Refresh
+                                </button>
+                                {extractDestroyAttempts(deployment.logs).length > 0 && (
+                                  <button
+                                    onClick={() => setDestroyHistoryDeployment(deployment)}
+                                    title="See why a destroy attempt failed, and every past attempt for this deployment."
+                                    type="button"
+                                  >
+                                    <History size={15} />
+                                    Destroy logs
+                                  </button>
+                                )}
+                              </div>
+                            </details>
                           </div>
                         </td>
                       </tr>
-                      {isExpanded && (
-                        <tr className="dash-deploy-table-detail-row">
-                          <td colSpan={7}>
-                            <DeploymentTableDetails deployment={deployment} insights={insights} onViewResourceInfo={onViewResourceInfo} />
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   );
                 })}
@@ -2068,7 +2384,7 @@ const pipelineAppTypes = [
   { id: 'kubernetes-service', label: 'Kubernetes service' },
 ];
 
-function ApplicationPipelinePage() {
+function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const user = getStoredUser();
   const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
   const [pipelines, setPipelines] = useState<ApplicationPipelineRecord[]>([]);
@@ -2080,8 +2396,8 @@ function ApplicationPipelinePage() {
   const [branch, setBranch] = useState('main');
   const [githubOwner, setGithubOwner] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
-  const [githubConnection, setGithubConnection] = useState<GithubConnection>({ connected: false, login: '', scopes: [] });
-  const [githubRepos, setGithubRepos] = useState<GithubRepository[]>([]);
+  const [githubConnection, setGithubConnection] = useState<GithubConnection>(readCachedGithubConnection);
+  const [githubRepos, setGithubRepos] = useState<GithubRepository[]>(readCachedGithubRepositories);
   const [githubBranches, setGithubBranches] = useState<GithubBranch[]>([]);
   const [selectedGithubRepo, setSelectedGithubRepo] = useState('');
   const [installCommand, setInstallCommand] = useState('npm ci');
@@ -2096,12 +2412,25 @@ function ApplicationPipelinePage() {
   const [isGithubLoading, setIsGithubLoading] = useState(false);
   const [isGithubBranchesLoading, setIsGithubBranchesLoading] = useState(false);
   const [isSyncingGithub, setIsSyncingGithub] = useState(false);
+  const [githubAccess, setGithubAccess] = useState<GithubRepositoryAccess>();
+  const [isCheckingGithubAccess, setIsCheckingGithubAccess] = useState(false);
+  const [deletingPipelineId, setDeletingPipelineId] = useState('');
+  const [pendingDeletePipeline, setPendingDeletePipeline] = useState<ApplicationPipelineRecord | null>(null);
+  const [pendingBulkDeletePipelines, setPendingBulkDeletePipelines] = useState<ApplicationPipelineRecord[]>([]);
+  const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
   const [activePreviewTab, setActivePreviewTab] = useState<'overview' | 'workflow' | 'files' | 'activity'>('overview');
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<ApplicationDeploymentStatus>();
   const [isDeployingApplication, setIsDeployingApplication] = useState(false);
+  const deployingApplicationRef = useRef(false);
+  const [runningPipelineIds, setRunningPipelineIds] = useState<string[]>(readRunningAppPipelineIds);
+  const runningPipelineKey = runningPipelineIds.join('|');
+  const [forceStoppingPipelineId, setForceStoppingPipelineId] = useState('');
+  const [cancellingQueuedPipelineId, setCancellingQueuedPipelineId] = useState('');
   const [isPollingDeployment, setIsPollingDeployment] = useState(false);
+  const [resourceHealthDeployment, setResourceHealthDeployment] = useState<DeploymentRecord>();
+  const [resourceHealthPipelineName, setResourceHealthPipelineName] = useState('');
   const [deploymentResultRunId, setDeploymentResultRunId] = useState<number>();
   const [isDeploymentResultOpen, setIsDeploymentResultOpen] = useState(false);
   const githubPopupRef = useRef<Window | null>(null);
@@ -2134,14 +2463,18 @@ function ApplicationPipelinePage() {
     { id: 'files', label: 'Generated Files', icon: FilePlus2 },
     { id: 'activity', label: 'Activity', icon: Activity },
   ];
+  const syncedPipelineCount = pipelines.filter((pipeline) => pipeline.repository.lastSyncedAt).length;
+  const lambdaPipelineCount = pipelines.filter((pipeline) => pipeline.target.type === 'lambda').length;
+  const provisionedRoleCount = pipelines.filter((pipeline) => pipeline.awsDeployRole?.status === 'provisioned').length;
+  const resourceHealthMetrics = resourceHealthDeployment ? buildDeploymentResourceMetrics(resourceHealthDeployment, insights) : [];
+  const selectedPipelines = pipelines.filter((pipeline) => selectedPipelineIds.includes(pipeline._id));
+  const areAllPipelinesSelected = pipelines.length > 0 && selectedPipelineIds.length === pipelines.length;
 
   async function refreshPipelineData() {
     setIsLoading(true);
     try {
-      const [deploymentData, pipelineData] = await Promise.all([listDeployments(), listApplicationPipelines()]);
-      setDeployments(deploymentData);
+      const pipelineData = await listApplicationPipelines();
       setPipelines(pipelineData);
-      setSelectedDeploymentId((current) => current || deploymentData.find((deployment) => deployment.status === 'deployed')?._id || deploymentData[0]?._id || '');
       setSelectedPipelineId((current) => current || pipelineData[0]?._id || '');
       setError('');
     } catch (loadError) {
@@ -2153,7 +2486,7 @@ function ApplicationPipelinePage() {
 
   useEffect(() => {
     void refreshPipelineData();
-    void refreshGithubConnection();
+    void refreshGithubConnection({ silent: true });
 
     return () => {
       if (githubPollRef.current) window.clearInterval(githubPollRef.current);
@@ -2178,6 +2511,63 @@ function ApplicationPipelinePage() {
   }, []);
 
   useEffect(() => {
+    function handleGithubConnectionCache(event: Event) {
+      const nextConnection = (event as CustomEvent<GithubConnection>).detail;
+      if (nextConnection) setGithubConnection(nextConnection);
+    }
+
+    window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+    return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+
+  useEffect(() => {
+    function handleRunningPipelinesChanged() {
+      setRunningPipelineIds(readRunningAppPipelineIds());
+    }
+
+    window.addEventListener(appPipelineDeploymentRunningEvent, handleRunningPipelinesChanged);
+    return () => window.removeEventListener(appPipelineDeploymentRunningEvent, handleRunningPipelinesChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPipeline || !runningPipelineIds.includes(selectedPipeline._id)) return;
+    if (deploymentStatus?.run && deploymentStatus.run.status !== 'completed') return;
+
+    const repository = parseGithubRepositoryUrl(selectedPipeline.repository.url);
+    if (!repository) return;
+
+    setGithubOwner(repository.owner);
+    setGithubRepo(repository.repo);
+    setBranch(selectedPipeline.repository.branch || 'main');
+    setActivePreviewTab('activity');
+
+    let isCurrent = true;
+    setIsPollingDeployment(true);
+    void getApplicationDeploymentStatus(selectedPipeline._id, {
+      owner: repository.owner,
+      repo: repository.repo,
+      branch: selectedPipeline.repository.branch || 'main',
+    })
+      .then((status) => {
+        if (!isCurrent) return;
+        setDeploymentStatus(status);
+        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
+        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        setRunningPipelineIds(readRunningAppPipelineIds());
+      })
+      .catch(() => {
+        if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
+      })
+      .finally(() => {
+        if (isCurrent) setIsPollingDeployment(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [deploymentStatus?.run?.id, deploymentStatus?.run?.status, runningPipelineKey, selectedPipeline?._id, selectedPipeline?.repository.branch, selectedPipeline?.repository.url]);
+
+  useEffect(() => {
     if (appType === 'python-api') {
       setInstallCommand('pip install -r requirements.txt');
       setTestCommand('pytest');
@@ -2195,7 +2585,7 @@ function ApplicationPipelinePage() {
       setStartCommand('npm run preview -- --host 0.0.0.0');
     } else {
       setInstallCommand('npm ci');
-      setTestCommand('npm test -- --watch=false');
+      setTestCommand(appType === 'serverless-api' ? 'echo "Skipping Lambda tests by default. Set a custom test command to run them."' : 'npm test -- --watch=false');
       setBuildCommand(appType === 'serverless-api' ? 'npm run build --if-present' : 'npm run build');
       setStartCommand(appType === 'static-spa' ? 'npm run preview -- --host 0.0.0.0' : 'npm start');
     }
@@ -2263,7 +2653,7 @@ function ApplicationPipelinePage() {
     setError('');
     try {
       const repositoryUrl = githubOwner && githubRepo ? `https://github.com/${githubOwner}/${githubRepo}` : '';
-      const pipeline = await createApplicationPipeline({
+      const payload = {
         name,
         appType,
         environment,
@@ -2279,10 +2669,13 @@ function ApplicationPipelinePage() {
           region: targetRegion,
           lambdaFunctionName: appType === 'serverless-api' ? lambdaFunctionName : undefined,
         },
-      });
+      };
+      const pipeline = selectedPipeline
+        ? await updateApplicationPipeline(selectedPipeline._id, payload)
+        : await createApplicationPipeline(payload);
       await refreshPipelineData();
       setSelectedPipelineId(pipeline._id);
-      setMessage('Pipeline generated. Add these files to the application repository to deploy on push.');
+      setMessage(selectedPipeline ? 'Pipeline updated. Sync these files, then deploy with workflow dispatch.' : 'Pipeline generated. Sync these files, then deploy with workflow dispatch.');
     } catch (pipelineError) {
       setError(pipelineError instanceof Error ? pipelineError.message : 'Unable to generate application pipeline.');
     }
@@ -2330,8 +2723,10 @@ function ApplicationPipelinePage() {
     try {
       const connection = await getGithubStatus();
       setGithubConnection(connection);
+      cacheGithubConnection(connection);
       if (!connection.connected) {
         setGithubRepos([]);
+        cacheGithubRepositories([]);
         setGithubBranches([]);
         setSelectedGithubRepo('');
         setGithubOwner('');
@@ -2339,17 +2734,1202 @@ function ApplicationPipelinePage() {
         return false;
       }
 
-      const repos = await listGithubRepositories();
-      setGithubRepos(repos);
-      const preferredRepo = repos.find((repo) => repo.fullName === selectedGithubRepo) ?? repos[0];
-      if (preferredRepo) chooseGithubRepository(preferredRepo.fullName, repos);
-      if (repos.length === 0) {
-        setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
+      try {
+        const repos = await listGithubRepositories();
+        setGithubRepos(repos);
+        cacheGithubRepositories(repos);
+        const preferredRepo = repos.find((repo) => repo.fullName === selectedGithubRepo) ?? repos[0];
+        if (preferredRepo) chooseGithubRepository(preferredRepo.fullName, repos);
+        if (repos.length === 0) {
+          setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
+        }
+      } catch (repoError) {
+        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
       }
       return true;
     } catch (githubError) {
+      if (options.silent && readCachedGithubConnection().connected) return false;
       setGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
+        cacheGithubRepositories([]);
+      setGithubBranches([]);
+      setSelectedGithubRepo('');
+      setGithubOwner('');
+      setGithubRepo('');
+      if (!options.silent) setError(githubError instanceof Error ? githubError.message : 'Unable to load GitHub connection.');
+      return false;
+    } finally {
+      if (!options.silent) setIsGithubLoading(false);
+    }
+  }
+
+  function connectGithub() {
+    setMessage('');
+    setError('');
+    const popup = window.open(githubOAuthUrl({ mode: 'popup', returnTo: '/dashboard?view=infra-pipeline' }), 'infraflow-github-oauth', 'width=980,height=760');
+    if (!popup) {
+      setError('Popup blocked. Allow popups for this app, then connect GitHub again.');
+      return;
+    }
+    githubPopupRef.current = popup;
+    popup.focus();
+    startGithubPopupPolling();
+  }
+
+  function startGithubPopupPolling() {
+    stopGithubPopupPolling();
+    githubPollRef.current = window.setInterval(() => {
+      void refreshGithubConnection({ silent: true }).then((connected) => {
+        if (connected) {
+          stopGithubPopupPolling();
+          setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+          setError('');
+          try {
+            githubPopupRef.current?.close();
+          } catch {
+            // Browser may block programmatic close for some popup states.
+          }
+        }
+      });
+    }, 1800);
+  }
+
+  function stopGithubPopupPolling() {
+    if (!githubPollRef.current) return;
+    window.clearInterval(githubPollRef.current);
+    githubPollRef.current = undefined;
+  }
+
+  async function disconnectGithubAccount() {
+    setMessage('');
+    setError('');
+    try {
+      await disconnectGithub();
+      setGithubConnection({ connected: false, login: '', scopes: [] });
+      cacheGithubConnection({ connected: false, login: '', scopes: [] });
+      setGithubRepos([]);
+        cacheGithubRepositories([]);
+      setGithubBranches([]);
+      setSelectedGithubRepo('');
+      setGithubOwner('');
+      setGithubRepo('');
+      setMessage('GitHub disconnected.');
+    } catch (disconnectError) {
+      setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect GitHub.');
+    }
+  }
+
+  async function syncSelectedPipeline() {
+    if (!selectedPipeline) return;
+    if (!githubConnection.connected) {
+      setError('Connect GitHub before syncing generated files.');
+      return;
+    }
+    if (!githubOwner || !githubRepo) {
+      setError('Choose a GitHub repository before syncing generated files.');
+      return;
+    }
+    setMessage('');
+    setError('');
+    setIsSyncingGithub(true);
+    try {
+      const result = await syncPipelineToGithub(selectedPipeline._id, {
+        owner: githubOwner,
+        repo: githubRepo,
+        branch,
+      });
+      await refreshPipelineData();
+      setSelectedPipelineId(result.pipeline._id);
+      const oidcSuffix =
+        result.oidc?.status === 'provisioned'
+          ? ' AWS deploy role provisioned automatically.'
+          : result.oidc?.status === 'failed'
+            ? ` AWS deploy role setup failed: ${result.oidc.error}`
+            : result.oidc?.status === 'skipped'
+              ? ` AWS deploy role not auto-provisioned: ${result.oidc.error}`
+              : '';
+      setMessage(`Synced ${result.sync.files.length} files to GitHub. Latest commit ${result.sync.commitSha.slice(0, 7)}.${oidcSuffix}`);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : 'Unable to sync repository.');
+    } finally {
+      setIsSyncingGithub(false);
+    }
+  }
+
+  async function deploySelectedApplication() {
+    if (!selectedPipeline) return;
+    if (deployingApplicationRef.current) return;
+    if (readRunningAppPipelineIds().includes(selectedPipeline._id)) {
+      setError('Deployment is already running for this pipeline.');
+      return;
+    }
+    if (!githubConnection.connected) {
+      setError('Connect GitHub before deploying the application.');
+      return;
+    }
+    if (!githubOwner || !githubRepo) {
+      setError('Choose a GitHub repository before deploying the application.');
+      return;
+    }
+
+    setMessage('');
+    setError('');
+    markAppPipelineDeploymentRunning(selectedPipeline._id);
+    deployingApplicationRef.current = true;
+    setIsDeployingApplication(true);
+    setActivePreviewTab('activity');
+    try {
+      const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
+      setDeploymentStatus(status);
+      setMessage(status.message ?? 'Deployment workflow started.');
+      window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
+      if (status.run?.status !== 'completed') {
+        window.setTimeout(() => void refreshApplicationDeploymentStatus({ silent: true }), 2200);
+      }
+    } catch (deployError) {
+      clearAppPipelineDeploymentRunning(selectedPipeline._id);
+      setError(deployError instanceof Error ? deployError.message : 'Unable to start application deployment.');
+    } finally {
+      deployingApplicationRef.current = false;
+      setIsDeployingApplication(false);
+    }
+  }
+
+  async function refreshApplicationDeploymentStatus(options: { silent?: boolean } = {}) {
+    const repository = selectedPipeline ? parseGithubRepositoryUrl(selectedPipeline.repository.url) : undefined;
+    const owner = githubOwner || repository?.owner;
+    const repo = githubRepo || repository?.repo;
+    const selectedBranch = branch || selectedPipeline?.repository.branch || 'main';
+    if (!selectedPipeline || !owner || !repo) return;
+    if (!options.silent) {
+      setMessage('');
+      setError('');
+    }
+    setIsPollingDeployment(true);
+    try {
+      const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
+      setDeploymentStatus(status);
+      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
+      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      setRunningPipelineIds(readRunningAppPipelineIds());
+      if (!options.silent) setMessage('Deployment status refreshed.');
+    } catch (statusError) {
+      if (!options.silent) setError(statusError instanceof Error ? statusError.message : 'Unable to refresh deployment status.');
+    } finally {
+      setIsPollingDeployment(false);
+    }
+  }
+
+  async function forceStopApplicationPipeline(pipeline: ApplicationPipelineRecord) {
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    setMessage('');
+    setError('');
+    setForceStoppingPipelineId(pipeline._id);
+    try {
+      const result = await forceStopApplicationDeployment(pipeline._id, {
+        owner: repository?.owner,
+        repo: repository?.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      clearAppPipelineDeploymentRunning(pipeline._id);
+      setRunningPipelineIds(readRunningAppPipelineIds());
+      if (selectedPipelineId === pipeline._id) setDeploymentStatus(undefined);
+      setMessage(result.message || 'Pipeline deployment stopped.');
+    } catch (stopError) {
+      setError(stopError instanceof Error ? stopError.message : 'Unable to stop this deployment.');
+    } finally {
+      setForceStoppingPipelineId('');
+    }
+  }
+
+  async function cancelQueuedApplicationPipelineRuns(pipeline: ApplicationPipelineRecord) {
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    setMessage('');
+    setError('');
+    setCancellingQueuedPipelineId(pipeline._id);
+    try {
+      const result = await cancelQueuedApplicationWorkflows(pipeline._id, {
+        owner: repository?.owner,
+        repo: repository?.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      setMessage(result.message);
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Unable to cancel queued workflow runs.');
+    } finally {
+      setCancellingQueuedPipelineId('');
+    }
+  }
+
+  function selectApplicationPipeline(pipeline: ApplicationPipelineRecord) {
+    setSelectedPipelineId(pipeline._id);
+    setSelectedFilePath('');
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    if (repository) {
+      setGithubOwner(repository.owner);
+      setGithubRepo(repository.repo);
+      setBranch(pipeline.repository.branch || 'main');
+    }
+  }
+
+  async function syncApplicationPipelineRow(pipeline: ApplicationPipelineRecord) {
+    if (!githubConnection.connected) {
+      setError('Connect GitHub before syncing generated files.');
+      return;
+    }
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    if (!repository) {
+      setError('Pipeline repository is missing. Connect GitHub and regenerate this pipeline.');
+      return;
+    }
+    setMessage('');
+    setError('');
+    setIsSyncingGithub(true);
+    selectApplicationPipeline(pipeline);
+    try {
+      const result = await syncPipelineToGithub(pipeline._id, {
+        owner: repository.owner,
+        repo: repository.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      await refreshPipelineData();
+      setSelectedPipelineId(result.pipeline._id);
+      setMessage(`Synced ${result.sync.files.length} files to GitHub. Latest commit ${result.sync.commitSha.slice(0, 7)}.`);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : 'Unable to sync repository.');
+    } finally {
+      setIsSyncingGithub(false);
+    }
+  }
+
+  async function deployApplicationPipelineRow(pipeline: ApplicationPipelineRecord) {
+    if (deployingApplicationRef.current) return;
+    if (readRunningAppPipelineIds().includes(pipeline._id)) {
+      setError('Deployment is already running for this pipeline.');
+      return;
+    }
+    if (!githubConnection.connected) {
+      setError('Connect GitHub before deploying the application.');
+      return;
+    }
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    if (!repository) {
+      setError('Pipeline repository is missing. Connect GitHub and regenerate this pipeline.');
+      return;
+    }
+    setMessage('');
+    setError('');
+    markAppPipelineDeploymentRunning(pipeline._id);
+    deployingApplicationRef.current = true;
+    setIsDeployingApplication(true);
+    selectApplicationPipeline(pipeline);
+    try {
+      const status = await deployApplicationPipeline(pipeline._id, {
+        owner: repository.owner,
+        repo: repository.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      setDeploymentStatus(status);
+      setMessage(status.message ?? 'Deployment workflow started.');
+      setIsDeploymentResultOpen(true);
+      window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: pipeline._id } }));
+    } catch (deployError) {
+      clearAppPipelineDeploymentRunning(pipeline._id);
+      setError(deployError instanceof Error ? deployError.message : 'Unable to start application deployment.');
+    } finally {
+      deployingApplicationRef.current = false;
+      setIsDeployingApplication(false);
+    }
+  }
+
+  async function showApplicationPipelineResourceHealth(pipeline: ApplicationPipelineRecord) {
+    const deploymentId = pipelineDeploymentId(pipeline.deployment);
+    if (!deploymentId) {
+      setError('No infrastructure deployment is linked to this pipeline. Regenerate it with an infrastructure target to see resource health.');
+      return;
+    }
+    setMessage('');
+    setError('');
+    setIsPollingDeployment(true);
+    selectApplicationPipeline(pipeline);
+    try {
+      const deployment = await getDeployment(deploymentId);
+      setResourceHealthDeployment(deployment);
+      setResourceHealthPipelineName(pipeline.name);
+    } catch (healthError) {
+      setError(healthError instanceof Error ? healthError.message : 'Unable to load resource health for this pipeline.');
+    } finally {
+      setIsPollingDeployment(false);
+    }
+  }
+
+  function togglePipelineSelection(pipelineId: string, checked: boolean) {
+    setSelectedPipelineIds((current) => (checked ? Array.from(new Set([...current, pipelineId])) : current.filter((id) => id !== pipelineId)));
+  }
+
+  function toggleAllPipelineSelection(checked: boolean) {
+    setSelectedPipelineIds(checked ? pipelines.map((pipeline) => pipeline._id) : []);
+  }
+
+  async function deleteApplicationPipelineRow(pipeline: ApplicationPipelineRecord) {
+    setMessage('');
+    setError('');
+    setDeletingPipelineId(pipeline._id);
+    try {
+      await deleteApplicationPipeline(pipeline._id);
+      setPipelines((records) => records.filter((record) => record._id !== pipeline._id));
+      if (selectedPipelineId === pipeline._id) {
+        setSelectedPipelineId('');
+        setDeploymentStatus(undefined);
+      }
+      setPendingDeletePipeline(null);
+      setMessage(`Deleted pipeline "${pipeline.name}".`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete pipeline.');
+    } finally {
+      setDeletingPipelineId('');
+    }
+  }
+
+  async function deleteSelectedApplicationPipelines(records: ApplicationPipelineRecord[]) {
+    if (!records.length) return;
+    setMessage('');
+    setError('');
+    setDeletingPipelineId('bulk');
+    try {
+      await Promise.all(records.map((pipeline) => deleteApplicationPipeline(pipeline._id)));
+      const deletedIds = new Set(records.map((pipeline) => pipeline._id));
+      setPipelines((current) => current.filter((pipeline) => !deletedIds.has(pipeline._id)));
+      setSelectedPipelineIds((current) => current.filter((id) => !deletedIds.has(id)));
+      if (selectedPipelineId && deletedIds.has(selectedPipelineId)) {
+        setSelectedPipelineId('');
+        setDeploymentStatus(undefined);
+      }
+      setPendingBulkDeletePipelines([]);
+      setMessage(`Deleted ${records.length} pipelines.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete selected pipelines.');
+    } finally {
+      setDeletingPipelineId('');
+    }
+  }
+
+  if (!canUseApplicationPipelines(user)) {
+    return (
+      <div className="dash-page">
+        <Panel title="Application Pipeline" action="Enterprise">
+          <EmptyState>Application deployment pipelines are available only for Super admin or Enterprise workspaces.</EmptyState>
+        </Panel>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dash-page dash-page--deployments dash-page--app-pipeline-inventory">
+      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
+      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
+
+      <header className="pipeline-console-header">
+        <div>
+          <span className="dash-eyebrow">Infrastructure deployment pipeline</span>
+          <h2>Infra Pipeline</h2>
+        </div>
+        <div className="pipeline-header-badges">
+          <span className={`pipeline-badge ${githubConnection.connected ? 'pipeline-badge--success' : 'pipeline-badge--warning'}`}>
+            <Github size={13} />
+            {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
+          </span>
+          {githubConnection.connected ? (
+            <button className="pipeline-github-action pipeline-github-action--connected" onClick={() => void disconnectGithubAccount()} type="button">
+              <Github size={14} />
+              Disconnect GitHub
+            </button>
+          ) : (
+            <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
+              <Github size={14} />
+              {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
+            </button>
+          )}
+        </div>
+      </header>
+
+      <section className="deployment-summary">
+        <div>
+          <span>Total pipelines</span>
+          <strong>{pipelines.length}</strong>
+        </div>
+        <div>
+          <span>Synced to GitHub</span>
+          <strong>{syncedPipelineCount}</strong>
+        </div>
+        <div>
+          <span>Lambda pipelines</span>
+          <strong>{lambdaPipelineCount}</strong>
+        </div>
+        <div>
+          <span>AWS roles ready</span>
+          <strong>{provisionedRoleCount}</strong>
+        </div>
+      </section>
+
+      <Panel
+        title="Application Pipelines"
+        action={`${pipelines.length} pipelines`}
+      >
+        {pipelines.length > 0 && (
+          <div className="pipeline-bulk-actions">
+            <span>{selectedPipelineIds.length ? `${selectedPipelineIds.length} selected` : 'Select pipelines to delete multiple records'}</span>
+            <button
+              className="dash-secondary-action dash-danger-action"
+              disabled={!selectedPipelineIds.length || Boolean(deletingPipelineId)}
+              onClick={() => setPendingBulkDeletePipelines(selectedPipelines)}
+              type="button"
+            >
+              <Trash2 size={15} />
+              Delete selected
+            </button>
+          </div>
+        )}
+        <div className="dash-deploy-table-wrap">
+          {pipelines.length ? (
+            <table className="dash-deploy-table app-pipeline-inventory-table">
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      aria-label="Select all pipelines"
+                      checked={areAllPipelinesSelected}
+                      type="checkbox"
+                      onChange={(event) => toggleAllPipelineSelection(event.target.checked)}
+                    />
+                  </th>
+                  <th>Pipeline</th>
+                  <th>Target</th>
+                  <th>Repository</th>
+                  <th>Sync</th>
+                  <th>AWS role</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pipelines.map((pipeline) => {
+                  const isPipelineDeploymentRunning = runningPipelineIds.includes(pipeline._id);
+                  return (
+                    <Fragment key={pipeline._id}>
+                      <tr className="dash-deploy-table-row">
+                        <td>
+                          <input
+                            aria-label={`Select ${pipeline.name}`}
+                            checked={selectedPipelineIds.includes(pipeline._id)}
+                            type="checkbox"
+                            onChange={(event) => togglePipelineSelection(pipeline._id, event.target.checked)}
+                          />
+                        </td>
+                        <td>
+                          <button className="dash-deploy-name-button" onClick={() => selectApplicationPipeline(pipeline)} type="button">
+                            <strong>{pipeline.name}</strong>
+                            <span>{pipelineAppTypeLabel(pipeline.appType)} · {pipeline.environment}</span>
+                          </button>
+                        </td>
+                        <td>
+                          <span className="pipeline-badge">{pipeline.target.type}</span>
+                          <div className="dash-deploy-elapsed">{pipeline.target.region || 'Region pending'}</div>
+                        </td>
+                        <td>
+                          <strong>{githubRepositoryLabel(pipeline.repository.url)}</strong>
+                          <div className="dash-deploy-elapsed">{pipeline.repository.branch || 'main'}</div>
+                        </td>
+                        <td>
+                          {pipeline.repository.lastSyncedAt ? (
+                            <span className="status-pill status-pill--running">{pipeline.repository.lastSyncCommit?.slice(0, 7) ?? 'Synced'}</span>
+                          ) : (
+                            <span className="status-pill status-pill--unknown">Pending</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`status-pill status-pill--${awsDeployRolePillVariant(pipeline.awsDeployRole?.status)}`}>
+                            {awsDeployRoleLabel(pipeline.awsDeployRole?.status)}
+                          </span>
+                        </td>
+                        <td>{pipeline.updatedAt ? new Date(pipeline.updatedAt).toLocaleString() : 'Pending'}</td>
+                        <td>
+                          <div className="dash-deploy-table-actions">
+                            <button className="dash-secondary-action" disabled={isSyncingGithub} onClick={() => void syncApplicationPipelineRow(pipeline)} type="button">
+                              <Github size={15} />
+                              Sync
+                            </button>
+                            <button className="dash-secondary-action" disabled={isPollingDeployment} onClick={() => void showApplicationPipelineResourceHealth(pipeline)} type="button">
+                              <Activity size={15} />
+                              Performance
+                            </button>
+                            <button className="dash-secondary-action" disabled={isDeployingApplication || isPipelineDeploymentRunning} onClick={() => void deployApplicationPipelineRow(pipeline)} type="button">
+                              <Rocket size={15} />
+                              {isPipelineDeploymentRunning ? 'Running...' : 'Deploy'}
+                            </button>
+                            {isPipelineDeploymentRunning && (
+                              <button
+                                className="dash-secondary-action dash-danger-action"
+                                disabled={forceStoppingPipelineId === pipeline._id}
+                                onClick={() => void forceStopApplicationPipeline(pipeline)}
+                                type="button"
+                              >
+                                <X size={15} />
+                                {forceStoppingPipelineId === pipeline._id ? 'Stopping...' : 'Force stop'}
+                              </button>
+                            )}
+                            <button
+                              className="dash-secondary-action dash-danger-action"
+                              disabled={cancellingQueuedPipelineId === pipeline._id}
+                              onClick={() => void cancelQueuedApplicationPipelineRuns(pipeline)}
+                              type="button"
+                            >
+                              <XCircle size={15} />
+                              {cancellingQueuedPipelineId === pipeline._id ? 'Cancelling...' : 'Cancel queued'}
+                            </button>
+                            <button className="dash-secondary-action dash-danger-action" disabled={deletingPipelineId === pipeline._id} onClick={() => setPendingDeletePipeline(pipeline)} type="button">
+                              <Trash2 size={15} />
+                              {deletingPipelineId === pipeline._id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyState>{isLoading ? 'Loading application pipelines...' : 'No application pipelines yet. Create one to deploy application code from GitHub.'}</EmptyState>
+          )}
+        </div>
+      </Panel>
+      {pendingBulkDeletePipelines.length > 0 && (
+        <div
+          className="pipeline-result-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!deletingPipelineId) setPendingBulkDeletePipelines([]);
+          }}
+        >
+          <section className="pipeline-result-modal pipeline-delete-modal" role="dialog" aria-modal="true" aria-label="Delete selected pipelines" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Delete selected pipelines</span>
+                <h3>{pendingBulkDeletePipelines.length} pipelines selected</h3>
+                <p>This removes selected pipeline records from InfraFlow. Files already synced to GitHub will not be deleted.</p>
+              </div>
+              <button
+                className="pipeline-result-close"
+                disabled={Boolean(deletingPipelineId)}
+                onClick={() => setPendingBulkDeletePipelines([])}
+                type="button"
+                aria-label="Close bulk delete popup"
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="pipeline-delete-modal__body">
+              <AlertTriangle size={18} />
+              <div>
+                <strong>This will delete multiple pipeline records.</strong>
+                <span>{pendingBulkDeletePipelines.map((pipeline) => pipeline.name).slice(0, 3).join(', ')}{pendingBulkDeletePipelines.length > 3 ? ` and ${pendingBulkDeletePipelines.length - 3} more` : ''}</span>
+              </div>
+            </div>
+            <footer>
+              <button className="dash-secondary-action" disabled={Boolean(deletingPipelineId)} onClick={() => setPendingBulkDeletePipelines([])} type="button">
+                Cancel
+              </button>
+              <button
+                className="dash-secondary-action dash-danger-action"
+                disabled={Boolean(deletingPipelineId)}
+                onClick={() => void deleteSelectedApplicationPipelines(pendingBulkDeletePipelines)}
+                type="button"
+              >
+                <Trash2 size={15} />
+                {deletingPipelineId === 'bulk' ? 'Deleting...' : 'Delete selected'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {pendingDeletePipeline && (
+        <div
+          className="pipeline-result-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!deletingPipelineId) setPendingDeletePipeline(null);
+          }}
+        >
+          <section className="pipeline-result-modal pipeline-delete-modal" role="dialog" aria-modal="true" aria-label="Delete pipeline" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Delete pipeline</span>
+                <h3>{pendingDeletePipeline.name}</h3>
+                <p>This removes the pipeline record from InfraFlow. Files already synced to GitHub will not be deleted.</p>
+              </div>
+              <button
+                className="pipeline-result-close"
+                disabled={Boolean(deletingPipelineId)}
+                onClick={() => setPendingDeletePipeline(null)}
+                type="button"
+                aria-label="Close delete pipeline popup"
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="pipeline-delete-modal__body">
+              <AlertTriangle size={18} />
+              <div>
+                <strong>This action cannot be undone inside InfraFlow.</strong>
+                <span>{githubRepositoryLabel(pendingDeletePipeline.repository.url)} · {pendingDeletePipeline.environment}</span>
+              </div>
+            </div>
+            <footer>
+              <button className="dash-secondary-action" disabled={Boolean(deletingPipelineId)} onClick={() => setPendingDeletePipeline(null)} type="button">
+                Cancel
+              </button>
+              <button className="dash-secondary-action dash-danger-action" disabled={Boolean(deletingPipelineId)} onClick={() => void deleteApplicationPipelineRow(pendingDeletePipeline)} type="button">
+                <Trash2 size={15} />
+                {deletingPipelineId === pendingDeletePipeline._id ? 'Deleting...' : 'Delete pipeline'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {resourceHealthDeployment && (
+        <div className="pipeline-result-backdrop" role="dialog" aria-modal="true" aria-label="Resource health">
+          <section className="pipeline-result-modal pipeline-resource-health-modal">
+            <header>
+              <div>
+                <span>Resource health</span>
+                <h3>{resourceHealthDeployment.name}</h3>
+                <p>{resourceHealthPipelineName} · {deploymentStatusLabel(resourceHealthDeployment.status)}</p>
+              </div>
+              <button className="pipeline-result-close" onClick={() => setResourceHealthDeployment(undefined)} type="button" aria-label="Close resource health">
+                <X size={16} />
+              </button>
+            </header>
+            {resourceHealthMetrics.length ? (
+              <div className="dash-deploy-detail-table-wrap">
+                <table className="dash-deploy-detail-table dash-deploy-live-table">
+                  <thead>
+                    <tr>
+                      <th>Resource</th>
+                      <th>Service</th>
+                      <th>Usage</th>
+                      <th>Health</th>
+                      <th>Month spend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resourceHealthMetrics.map((metric) => (
+                      <tr key={metric.key}>
+                        <td>
+                          <strong>{metric.label}</strong>
+                          <span>{metric.resourceId}</span>
+                        </td>
+                        <td>{metric.service}</td>
+                        <td>{metric.usage}</td>
+                        <td>
+                          <em>{metric.health}</em>
+                        </td>
+                        <td>${metric.spend.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="pipeline-muted">No created resources were captured for this pipeline's infrastructure deployment yet.</p>
+            )}
+            <footer>
+              <button className="dash-primary-action" onClick={() => setResourceHealthDeployment(undefined)} type="button">
+                Close
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {isDeploymentResultOpen && deploymentStatus && (deploymentStatus.run || deploymentStatus.statusUnavailable) && (
+        <div className="pipeline-result-backdrop" role="dialog" aria-modal="true" aria-label="Deployment result">
+          <section className={`pipeline-result-modal pipeline-result-modal--${applicationRunResultTone(deploymentStatus)}`}>
+            <header>
+              <div>
+                <span>
+                  {applicationRunResultTitle(deploymentStatus)}
+                </span>
+                <h3>{deploymentStatus.run ? `Run #${deploymentStatus.run.runNumber ?? deploymentStatus.run.id}` : 'Status unavailable'}</h3>
+                <p>
+                  {deploymentStatus.repository.owner}/{deploymentStatus.repository.repo} on {deploymentStatus.repository.branch}
+                </p>
+              </div>
+              <button className="pipeline-result-close" onClick={() => setIsDeploymentResultOpen(false)} type="button" aria-label="Close deployment result">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="pipeline-result-summary">
+              <div>
+                <span>Status</span>
+                <strong>{deploymentStatus.statusUnavailable ? 'Triggered' : deploymentStatus.run?.conclusion ?? deploymentStatus.run?.status}</strong>
+              </div>
+              <div>
+                <span>Commit</span>
+                <strong>{deploymentStatus.run?.commitSha?.slice(0, 7) ?? 'Unknown'}</strong>
+              </div>
+              <div>
+                <span>Trigger</span>
+                <strong>{applicationDispatchModeLabel(deploymentStatus.dispatchMode)}</strong>
+              </div>
+            </div>
+            {deploymentStatus.statusUnavailable && (
+              <div className="pipeline-status-unavailable">
+                <AlertTriangle size={16} />
+                <div>
+                  <strong>GitHub Actions status cannot be read</strong>
+                  <span>{deploymentStatus.statusMessage}</span>
+                </div>
+              </div>
+            )}
+            <div className="pipeline-result-jobs">
+              {(deploymentStatus.jobs ?? []).map((job) => (
+                <details className={`pipeline-job pipeline-job--${job.conclusion ?? job.status ?? 'queued'}`} key={job.id} open={job.conclusion !== 'success'}>
+                  <summary>
+                    <span />
+                    <strong>{job.name}</strong>
+                    <em>{job.conclusion ?? job.status}</em>
+                  </summary>
+                  <div>
+                    {(job.steps ?? []).map((step) => (
+                      <p key={`${job.id}-${step.number}-${step.name}`}>
+                        <span>{step.conclusion ?? step.status}</span>
+                        {step.name}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+            <footer>
+              <button className="dash-secondary-action" disabled={isPollingDeployment} onClick={() => void refreshApplicationDeploymentStatus()} type="button">
+                <RefreshCw size={15} />
+                {isPollingDeployment ? 'Refreshing...' : 'Refresh status'}
+              </button>
+              <button className="dash-primary-action" onClick={() => setIsDeploymentResultOpen(false)} type="button">
+                Close
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function ApplicationPipelinePage() {
+  const user = getStoredUser();
+  const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
+  const [pipelines, setPipelines] = useState<ApplicationPipelineRecord[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState('');
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState('');
+  const [name, setName] = useState('Production application pipeline');
+  const [appType, setAppType] = useState('react-app');
+  const [environment, setEnvironment] = useState<'development' | 'staging' | 'production'>('development');
+  const [branch, setBranch] = useState('main');
+  const [githubOwner, setGithubOwner] = useState('');
+  const [githubRepo, setGithubRepo] = useState('');
+  const [githubConnection, setGithubConnection] = useState<GithubConnection>(readCachedGithubConnection);
+  const [githubRepos, setGithubRepos] = useState<GithubRepository[]>(readCachedGithubRepositories);
+  const [githubBranches, setGithubBranches] = useState<GithubBranch[]>([]);
+  const [selectedGithubRepo, setSelectedGithubRepo] = useState('');
+  const [installCommand, setInstallCommand] = useState('npm ci');
+  const [testCommand, setTestCommand] = useState('npm test -- --watch=false');
+  const [buildCommand, setBuildCommand] = useState('npm run build');
+  const [startCommand, setStartCommand] = useState('npm start');
+  const [targetRegion, setTargetRegion] = useState('ap-south-1');
+  const [lambdaFunctionName, setLambdaFunctionName] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGithubLoading, setIsGithubLoading] = useState(false);
+  const [isGithubBranchesLoading, setIsGithubBranchesLoading] = useState(false);
+  const [isSyncingGithub, setIsSyncingGithub] = useState(false);
+  const [githubAccess, setGithubAccess] = useState<GithubRepositoryAccess>();
+  const [isCheckingGithubAccess, setIsCheckingGithubAccess] = useState(false);
+  const [activePreviewTab, setActivePreviewTab] = useState<'overview' | 'workflow' | 'files' | 'activity'>('overview');
+  const [selectedFilePath, setSelectedFilePath] = useState('');
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<ApplicationDeploymentStatus>();
+  const [isDeployingApplication, setIsDeployingApplication] = useState(false);
+  const deployingApplicationRef = useRef(false);
+  const [runningPipelineIds, setRunningPipelineIds] = useState<string[]>(readRunningAppPipelineIds);
+  const runningPipelineKey = runningPipelineIds.join('|');
+  const [forceStoppingPipelineId, setForceStoppingPipelineId] = useState('');
+  const [cancellingQueuedPipelineId, setCancellingQueuedPipelineId] = useState('');
+  const [isPollingDeployment, setIsPollingDeployment] = useState(false);
+  const [deploymentResultRunId, setDeploymentResultRunId] = useState<number>();
+  const [isDeploymentResultOpen, setIsDeploymentResultOpen] = useState(false);
+  const githubPopupRef = useRef<Window | null>(null);
+  const githubPollRef = useRef<number | undefined>(undefined);
+  const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId) ?? pipelines[0];
+  const isSelectedPipelineDeploymentRunning = selectedPipeline ? runningPipelineIds.includes(selectedPipeline._id) : false;
+  const selectedGithubRepository = githubRepos.find((repo) => repo.fullName === selectedGithubRepo);
+  const selectedFile =
+    selectedPipeline?.generatedFiles.find((file) => file.path === selectedFilePath) ??
+    selectedPipeline?.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml')) ??
+    selectedPipeline?.generatedFiles[0];
+  const workflowFile =
+    selectedPipeline?.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml')) ?? selectedFile;
+  const selectedDeployment = deployments.find((deployment) => deployment._id === selectedDeploymentId);
+  const validationChecks = buildPipelineValidationChecks({
+    selectedPipeline,
+    selectedDeployment,
+    githubConnection,
+    githubOwner,
+    githubRepo,
+    branch,
+    selectedGithubRepository,
+  });
+  const hasValidationErrors = validationChecks.some((check) => check.status === 'error');
+  const hasValidationWarnings = validationChecks.some((check) => check.status === 'warning');
+  const validationLabel = hasValidationErrors ? 'Blocked' : hasValidationWarnings ? 'Warnings' : 'Ready';
+  const generatedFileCount = selectedPipeline?.generatedFiles.length ?? 0;
+  const previewTabs: Array<{ id: typeof activePreviewTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+    { id: 'overview', label: 'Overview', icon: ShieldCheck },
+    { id: 'workflow', label: 'Workflow', icon: GitBranch },
+    { id: 'files', label: 'Generated Files', icon: FilePlus2 },
+    { id: 'activity', label: 'Activity', icon: Activity },
+  ];
+
+  async function refreshPipelineData() {
+    setIsLoading(true);
+    try {
+      const pipelineData = await listApplicationPipelines();
+      setPipelines(pipelineData);
+      setSelectedPipelineId((current) => current || pipelineData[0]?._id || '');
+      setError('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load pipeline data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function refreshDeploymentOptions() {
+    if (deployments.length || isLoading) return;
+    try {
+      const records = await listDeployments();
+      setDeployments(records);
+      setSelectedDeploymentId((current) => current || records.find((deployment) => deployment.status === 'deployed')?._id || records[0]?._id || '');
+    } catch {
+      // Deployment targets are optional for application pipelines; do not surface this during navigation.
+    }
+  }
+
+  useEffect(() => {
+    void refreshPipelineData();
+    void refreshGithubConnection({ silent: true });
+
+    return () => {
+      if (githubPollRef.current) window.clearInterval(githubPollRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleGithubMessage(event: MessageEvent) {
+      if (event.data?.type !== 'infraflow:github-connected') return;
+      if (event.data.success) {
+        stopGithubPopupPolling();
+        setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+        setError('');
+        void refreshGithubConnection();
+      } else {
+        setError(event.data.message ?? 'GitHub connection failed.');
+      }
+    }
+
+    window.addEventListener('message', handleGithubMessage);
+    return () => window.removeEventListener('message', handleGithubMessage);
+  }, []);
+
+  useEffect(() => {
+    function handleGithubConnectionCache(event: Event) {
+      const nextConnection = (event as CustomEvent<GithubConnection>).detail;
+      if (nextConnection) setGithubConnection(nextConnection);
+    }
+
+    window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+    return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+  useEffect(() => {
+    function handleRunningPipelinesChanged() {
+      setRunningPipelineIds(readRunningAppPipelineIds());
+    }
+
+    window.addEventListener(appPipelineDeploymentRunningEvent, handleRunningPipelinesChanged);
+    return () => window.removeEventListener(appPipelineDeploymentRunningEvent, handleRunningPipelinesChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPipeline || !runningPipelineIds.includes(selectedPipeline._id)) return;
+    if (deploymentStatus?.run && deploymentStatus.run.status !== 'completed') return;
+
+    const repository = parseGithubRepositoryUrl(selectedPipeline.repository.url);
+    if (!repository) return;
+
+    setGithubOwner(repository.owner);
+    setGithubRepo(repository.repo);
+    setBranch(selectedPipeline.repository.branch || 'main');
+    setActivePreviewTab('activity');
+
+    let isCurrent = true;
+    setIsPollingDeployment(true);
+    void getApplicationDeploymentStatus(selectedPipeline._id, {
+      owner: repository.owner,
+      repo: repository.repo,
+      branch: selectedPipeline.repository.branch || 'main',
+    })
+      .then((status) => {
+        if (!isCurrent) return;
+        setDeploymentStatus(status);
+        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
+        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        setRunningPipelineIds(readRunningAppPipelineIds());
+      })
+      .catch(() => {
+        if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
+      })
+      .finally(() => {
+        if (isCurrent) setIsPollingDeployment(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [deploymentStatus?.run?.id, deploymentStatus?.run?.status, runningPipelineKey, selectedPipeline?._id, selectedPipeline?.repository.branch, selectedPipeline?.repository.url]);
+
+  useEffect(() => {
+    if (appType === 'python-api') {
+      setInstallCommand('pip install -r requirements.txt');
+      setTestCommand('pytest');
+      setBuildCommand('python -m compileall .');
+      setStartCommand('uvicorn app.main:app --host 0.0.0.0 --port 8080');
+    } else if (appType === 'java-service') {
+      setInstallCommand('./mvnw -B dependency:go-offline');
+      setTestCommand('./mvnw test');
+      setBuildCommand('./mvnw -B package');
+      setStartCommand('java -jar target/app.jar');
+    } else if (appType === 'react-app') {
+      setInstallCommand('npm ci');
+      setTestCommand('npm test -- --watch=false');
+      setBuildCommand('npm run build');
+      setStartCommand('npm run preview -- --host 0.0.0.0');
+    } else {
+      setInstallCommand('npm ci');
+      setTestCommand(appType === 'serverless-api' ? 'echo "Skipping Lambda tests by default. Set a custom test command to run them."' : 'npm test -- --watch=false');
+      setBuildCommand(appType === 'serverless-api' ? 'npm run build --if-present' : 'npm run build');
+      setStartCommand(appType === 'static-spa' ? 'npm run preview -- --host 0.0.0.0' : 'npm start');
+    }
+  }, [appType]);
+
+  useEffect(() => {
+    if (selectedDeployment?.diagram?.activeRegion) {
+      setTargetRegion(selectedDeployment.diagram.activeRegion);
+    }
+    if (appType === 'serverless-api') {
+      const inferredLambdaName = lambdaFunctionNameFromDeployment(selectedDeployment);
+      if (inferredLambdaName) setLambdaFunctionName(inferredLambdaName);
+    }
+  }, [appType, selectedDeployment]);
+
+  useEffect(() => {
+    if (!selectedPipeline?.generatedFiles.length) {
+      setSelectedFilePath('');
+      return;
+    }
+
+    if (!selectedPipeline.generatedFiles.some((file) => file.path === selectedFilePath)) {
+      const workflow = selectedPipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
+      setSelectedFilePath((workflow ?? selectedPipeline.generatedFiles[0]).path);
+    }
+  }, [selectedFilePath, selectedPipeline]);
+
+  useEffect(() => {
+    if (!selectedPipeline) return;
+    const repository = parseGithubRepositoryUrl(selectedPipeline.repository.url);
+    if (!repository) return;
+    const fullName = `${repository.owner}/${repository.repo}`;
+    setSelectedGithubRepo(fullName);
+    setGithubOwner(repository.owner);
+    setGithubRepo(repository.repo);
+    setBranch(selectedPipeline.repository.branch || 'main');
+    if (githubConnection.connected) {
+      void syncGithubBranches(repository.owner, repository.repo, selectedPipeline.repository.branch || 'main');
+    }
+  }, [githubConnection.connected, selectedPipeline?._id, selectedPipeline?.repository.branch, selectedPipeline?.repository.url]);
+
+  useEffect(() => {
+    if (!selectedPipeline || !deploymentStatus?.run || deploymentStatus.run.status === 'completed') return undefined;
+
+    const interval = window.setInterval(() => {
+      void refreshApplicationDeploymentStatus({ silent: true });
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [deploymentStatus?.run?.id, deploymentStatus?.run?.status, selectedPipeline?._id, githubOwner, githubRepo, branch]);
+
+  useEffect(() => {
+    const run = deploymentStatus?.run;
+    if (deploymentStatus?.statusUnavailable && deploymentResultRunId !== -1) {
+      setDeploymentResultRunId(-1);
+      setIsDeploymentResultOpen(true);
+      return;
+    }
+    if (!run || run.status !== 'completed' || deploymentResultRunId === run.id) return;
+    setDeploymentResultRunId(run.id);
+    setIsDeploymentResultOpen(true);
+    if (selectedPipeline) {
+      // The notification bell (in DashboardShell) polls independently every 15s and will pick this up.
+      void reportPipelineRunResult(selectedPipeline._id, {
+        runId: run.id,
+        runNumber: run.runNumber,
+        conclusion: run.conclusion,
+        status: run.status,
+        htmlUrl: run.htmlUrl,
+        owner: deploymentStatus?.repository.owner,
+        repo: deploymentStatus?.repository.repo,
+        branch: deploymentStatus?.repository.branch,
+      });
+    }
+  }, [deploymentResultRunId, deploymentStatus]);
+
+  async function generatePipeline() {
+    setMessage('');
+    setError('');
+    try {
+      const repositoryUrl = githubOwner && githubRepo ? `https://github.com/${githubOwner}/${githubRepo}` : '';
+      const payload = {
+        name,
+        appType,
+        environment,
+        deploymentId: selectedDeploymentId || undefined,
+        repository: { url: repositoryUrl, branch },
+        commands: {
+          install: installCommand,
+          test: testCommand,
+          build: buildCommand,
+          start: startCommand,
+        },
+        target: {
+          region: targetRegion,
+          lambdaFunctionName: appType === 'serverless-api' ? lambdaFunctionName : undefined,
+        },
+      };
+      const pipeline = selectedPipeline
+        ? await updateApplicationPipeline(selectedPipeline._id, payload)
+        : await createApplicationPipeline(payload);
+      await refreshPipelineData();
+      setSelectedPipelineId(pipeline._id);
+      setMessage(selectedPipeline ? 'Pipeline updated. Sync these files, then deploy with workflow dispatch.' : 'Pipeline generated. Sync these files, then deploy with workflow dispatch.');
+    } catch (pipelineError) {
+      setError(pipelineError instanceof Error ? pipelineError.message : 'Unable to generate application pipeline.');
+    }
+  }
+
+  function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
+    void navigator.clipboard?.writeText(file.content);
+    setMessage(`${file.path} copied.`);
+  }
+
+  function chooseGithubRepository(fullName: string, repoSource = githubRepos) {
+    setSelectedGithubRepo(fullName);
+    const repo = repoSource.find((item) => item.fullName === fullName);
+    if (!repo) {
+      setGithubOwner('');
+      setGithubRepo('');
+      setGithubBranches([]);
+      return;
+    }
+    setGithubOwner(repo.owner);
+    setGithubRepo(repo.name);
+    setBranch(repo.defaultBranch || 'main');
+    void syncGithubBranches(repo.owner, repo.name, repo.defaultBranch || 'main');
+  }
+
+  async function syncGithubBranches(owner: string, repo: string, preferredBranch = branch) {
+    if (!owner || !repo) return;
+    setIsGithubBranchesLoading(true);
+    try {
+      const branches = await listGithubBranches(owner, repo);
+      setGithubBranches(branches);
+      const selectedBranch = branches.find((item) => item.name === preferredBranch) ?? branches[0];
+      if (selectedBranch) setBranch(selectedBranch.name);
+      if (!branches.length) setMessage(`GitHub connected to ${owner}/${repo}, but no branches were returned.`);
+    } catch (branchError) {
+      setGithubBranches([]);
+      setError(branchError instanceof Error ? branchError.message : 'Unable to load GitHub branches.');
+    } finally {
+      setIsGithubBranchesLoading(false);
+    }
+  }
+
+  async function verifyGithubAccess(options: { silent?: boolean } = {}) {
+    if (!githubOwner || !githubRepo) {
+      if (!options.silent) setError('Choose a GitHub repository before checking access.');
+      return false;
+    }
+
+    setIsCheckingGithubAccess(true);
+    try {
+      const access = await checkGithubRepositoryAccess(githubOwner, githubRepo, selectedPipeline?.repository.workflowPath);
+      setGithubAccess(access);
+      if (!access.ok && !options.silent) setError(access.message);
+      return access.ok;
+    } catch (accessError) {
+      const message = accessError instanceof Error ? accessError.message : 'Unable to check GitHub repository access.';
+      if (!options.silent) setError(message);
+      setGithubAccess(undefined);
+      return false;
+    } finally {
+      setIsCheckingGithubAccess(false);
+    }
+  }
+
+  async function refreshGithubConnection(options: { silent?: boolean } = {}) {
+    if (!options.silent) setIsGithubLoading(true);
+    try {
+      const connection = await getGithubStatus();
+      setGithubConnection(connection);
+      cacheGithubConnection(connection);
+      if (!connection.connected) {
+        setGithubRepos([]);
+        cacheGithubRepositories([]);
+        setGithubBranches([]);
+        setSelectedGithubRepo('');
+        setGithubOwner('');
+        setGithubRepo('');
+        return false;
+      }
+
+      try {
+        const repos = await listGithubRepositories();
+        setGithubRepos(repos);
+        cacheGithubRepositories(repos);
+        const preferredRepo = repos.find((repo) => repo.fullName === selectedGithubRepo) ?? repos[0];
+        if (preferredRepo) chooseGithubRepository(preferredRepo.fullName, repos);
+        if (repos.length === 0) {
+          setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
+        }
+      } catch (repoError) {
+        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
+      }
+      return true;
+    } catch (githubError) {
+      if (options.silent && readCachedGithubConnection().connected) return false;
+      setGithubConnection({ connected: false, login: '', scopes: [] });
+      setGithubRepos([]);
+        cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -2404,7 +3984,9 @@ function ApplicationPipelinePage() {
     try {
       await disconnectGithub();
       setGithubConnection({ connected: false, login: '', scopes: [] });
+      cacheGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
+        cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -2429,6 +4011,8 @@ function ApplicationPipelinePage() {
     setError('');
     setIsSyncingGithub(true);
     try {
+      const hasAccess = await verifyGithubAccess();
+      if (!hasAccess) return;
       const result = await syncPipelineToGithub(selectedPipeline._id, {
         owner: githubOwner,
         repo: githubRepo,
@@ -2454,6 +4038,11 @@ function ApplicationPipelinePage() {
 
   async function deploySelectedApplication() {
     if (!selectedPipeline) return;
+    if (deployingApplicationRef.current) return;
+    if (readRunningAppPipelineIds().includes(selectedPipeline._id)) {
+      setError('Deployment is already running for this pipeline.');
+      return;
+    }
     if (!githubConnection.connected) {
       setError('Connect GitHub before deploying the application.');
       return;
@@ -2465,37 +4054,92 @@ function ApplicationPipelinePage() {
 
     setMessage('');
     setError('');
+    const hasAccess = await verifyGithubAccess();
+    if (!hasAccess) return;
+    markAppPipelineDeploymentRunning(selectedPipeline._id);
+    deployingApplicationRef.current = true;
     setIsDeployingApplication(true);
     setActivePreviewTab('activity');
     try {
       const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
       setDeploymentStatus(status);
       setMessage(status.message ?? 'Deployment workflow started.');
+      window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
       if (status.run?.status !== 'completed') {
         window.setTimeout(() => void refreshApplicationDeploymentStatus({ silent: true }), 2200);
       }
     } catch (deployError) {
+      clearAppPipelineDeploymentRunning(selectedPipeline._id);
       setError(deployError instanceof Error ? deployError.message : 'Unable to start application deployment.');
     } finally {
+      deployingApplicationRef.current = false;
       setIsDeployingApplication(false);
     }
   }
 
   async function refreshApplicationDeploymentStatus(options: { silent?: boolean } = {}) {
-    if (!selectedPipeline || !githubOwner || !githubRepo) return;
+    const repository = selectedPipeline ? parseGithubRepositoryUrl(selectedPipeline.repository.url) : undefined;
+    const owner = githubOwner || repository?.owner;
+    const repo = githubRepo || repository?.repo;
+    const selectedBranch = branch || selectedPipeline?.repository.branch || 'main';
+    if (!selectedPipeline || !owner || !repo) return;
     if (!options.silent) {
       setMessage('');
       setError('');
     }
     setIsPollingDeployment(true);
     try {
-      const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
+      const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
       setDeploymentStatus(status);
+      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
+      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       if (!options.silent) setMessage('Deployment status refreshed.');
     } catch (statusError) {
       if (!options.silent) setError(statusError instanceof Error ? statusError.message : 'Unable to refresh deployment status.');
     } finally {
       setIsPollingDeployment(false);
+    }
+  }
+
+  async function forceStopApplicationPipeline(pipeline: ApplicationPipelineRecord) {
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    setMessage('');
+    setError('');
+    setForceStoppingPipelineId(pipeline._id);
+    try {
+      const result = await forceStopApplicationDeployment(pipeline._id, {
+        owner: repository?.owner,
+        repo: repository?.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      clearAppPipelineDeploymentRunning(pipeline._id);
+      setRunningPipelineIds(readRunningAppPipelineIds());
+      if (selectedPipelineId === pipeline._id) setDeploymentStatus(undefined);
+      setMessage(result.message || 'Pipeline deployment stopped.');
+    } catch (stopError) {
+      setError(stopError instanceof Error ? stopError.message : 'Unable to stop this deployment.');
+    } finally {
+      setForceStoppingPipelineId('');
+    }
+  }
+
+  async function cancelQueuedApplicationPipelineRuns(pipeline: ApplicationPipelineRecord) {
+    const repository = parseGithubRepositoryUrl(pipeline.repository.url);
+    setMessage('');
+    setError('');
+    setCancellingQueuedPipelineId(pipeline._id);
+    try {
+      const result = await cancelQueuedApplicationWorkflows(pipeline._id, {
+        owner: repository?.owner,
+        repo: repository?.repo,
+        branch: pipeline.repository.branch || 'main',
+      });
+      setMessage(result.message);
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Unable to cancel queued workflow runs.');
+    } finally {
+      setCancellingQueuedPipelineId('');
     }
   }
 
@@ -2571,7 +4215,12 @@ function ApplicationPipelinePage() {
               </label>
               <label className="pipeline-field pipeline-field--wide">
                 <span>Infrastructure target</span>
-                <select value={selectedDeploymentId} onChange={(event) => setSelectedDeploymentId(event.target.value)}>
+                <select
+                  value={selectedDeploymentId}
+                  onChange={(event) => setSelectedDeploymentId(event.target.value)}
+                  onFocus={() => void refreshDeploymentOptions()}
+                  onPointerDown={() => void refreshDeploymentOptions()}
+                >
                   <option value="">Auto detect from app type</option>
                   {deployments.map((deployment) => (
                     <option key={deployment._id} value={deployment._id}>
@@ -2628,11 +4277,14 @@ function ApplicationPipelinePage() {
               <label className="pipeline-field">
                 <span>Repository</span>
                 <select
-                  disabled={!githubConnection.connected || isGithubLoading || githubRepos.length === 0}
+                  disabled={!githubConnection.connected || isGithubLoading || (!githubRepos.length && !selectedGithubRepo)}
                   value={selectedGithubRepo}
                   onChange={(event) => chooseGithubRepository(event.target.value)}
                 >
                   <option value="">{isGithubLoading ? 'Loading repositories...' : 'Choose repository'}</option>
+                  {selectedGithubRepo && !githubRepos.some((repo) => repo.fullName === selectedGithubRepo) && (
+                    <option value={selectedGithubRepo}>{selectedGithubRepo} (saved)</option>
+                  )}
                   {githubRepos.map((repo) => (
                     <option key={repo.id} value={repo.fullName}>
                       {repo.fullName}{repo.private ? ' (private)' : ''}
@@ -2657,6 +4309,19 @@ function ApplicationPipelinePage() {
               <p className="pipeline-muted">
                 Repository access: {selectedGithubRepository.permissions?.push ? 'user can push' : 'user cannot push'}. Sync requires Contents write permission.
               </p>
+            )}
+            {githubConnection.connected && githubOwner && githubRepo && (
+              <div className={githubAccess?.ok ? 'pipeline-inline-success' : 'pipeline-inline-warning'}>
+                {githubAccess?.ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                <span>
+                  {githubAccess
+                    ? githubAccess.message
+                    : 'Check GitHub access before syncing or deploying.'}
+                </span>
+                <button disabled={isCheckingGithubAccess} onClick={() => void verifyGithubAccess()} type="button">
+                  {isCheckingGithubAccess ? 'Checking...' : 'Check access'}
+                </button>
+              </div>
             )}
           </section>
 
@@ -2856,13 +4521,35 @@ function ApplicationPipelinePage() {
                         </div>
                         {deploymentStatus?.dispatchMode && (
                           <em className="pipeline-dispatch-mode">
-                            {deploymentStatus.dispatchMode === 'push_trigger' ? 'Push trigger' : 'Workflow dispatch'}
+                            {applicationDispatchModeLabel(deploymentStatus.dispatchMode)}
                           </em>
                         )}
                         <button className="pipeline-link-button" disabled={!selectedPipeline || !githubOwner || !githubRepo || isPollingDeployment} onClick={() => void refreshApplicationDeploymentStatus()} type="button">
                           <RefreshCw size={14} />
                           {isPollingDeployment ? 'Refreshing' : 'Refresh'}
                         </button>
+                        {selectedPipeline && isSelectedPipelineDeploymentRunning && (
+                          <button
+                            className="pipeline-link-button pipeline-link-button--danger"
+                            disabled={forceStoppingPipelineId === selectedPipeline._id}
+                            onClick={() => void forceStopApplicationPipeline(selectedPipeline)}
+                            type="button"
+                          >
+                            <X size={14} />
+                            {forceStoppingPipelineId === selectedPipeline._id ? 'Stopping' : 'Force stop'}
+                          </button>
+                        )}
+                        {selectedPipeline && (
+                          <button
+                            className="pipeline-link-button pipeline-link-button--danger"
+                            disabled={cancellingQueuedPipelineId === selectedPipeline._id}
+                            onClick={() => void cancelQueuedApplicationPipelineRuns(selectedPipeline)}
+                            type="button"
+                          >
+                            <XCircle size={14} />
+                            {cancellingQueuedPipelineId === selectedPipeline._id ? 'Cancelling' : 'Cancel queued'}
+                          </button>
+                        )}
                       </header>
                       {deploymentStatus?.statusUnavailable ? (
                         <div className="pipeline-status-unavailable">
@@ -2945,36 +4632,54 @@ function ApplicationPipelinePage() {
           </button>
           <button
             className="dash-secondary-action"
-            disabled={!selectedPipeline || !githubConnection.connected || !githubOwner || !githubRepo || isSyncingGithub}
+            disabled={!selectedPipeline || !githubConnection.connected || !githubOwner || !githubRepo || isSyncingGithub || isCheckingGithubAccess}
             onClick={() => void syncSelectedPipeline()}
             type="button"
           >
             <Github size={15} />
-            {isSyncingGithub ? 'Syncing...' : 'Sync to GitHub'}
+            {isSyncingGithub ? 'Syncing...' : isCheckingGithubAccess ? 'Checking access...' : 'Sync to GitHub'}
           </button>
           <button
             className="dash-primary-action"
-            disabled={!selectedPipeline || hasValidationErrors || isDeployingApplication}
+            disabled={!selectedPipeline || hasValidationErrors || isDeployingApplication || isSelectedPipelineDeploymentRunning || isCheckingGithubAccess}
             onClick={() => void deploySelectedApplication()}
             type="button"
           >
             <Rocket size={15} />
-            {isDeployingApplication ? 'Starting deployment...' : 'Deploy Application'}
+            {isSelectedPipelineDeploymentRunning ? 'Deployment running...' : isDeployingApplication ? 'Starting deployment...' : 'Deploy Application'}
           </button>
+          {selectedPipeline && isSelectedPipelineDeploymentRunning && (
+            <button
+              className="dash-secondary-action dash-danger-action"
+              disabled={forceStoppingPipelineId === selectedPipeline._id}
+              onClick={() => void forceStopApplicationPipeline(selectedPipeline)}
+              type="button"
+            >
+              <X size={15} />
+              {forceStoppingPipelineId === selectedPipeline._id ? 'Stopping...' : 'Force stop'}
+            </button>
+          )}
+          {selectedPipeline && (
+            <button
+              className="dash-secondary-action dash-danger-action"
+              disabled={cancellingQueuedPipelineId === selectedPipeline._id}
+              onClick={() => void cancelQueuedApplicationPipelineRuns(selectedPipeline)}
+              type="button"
+            >
+              <XCircle size={15} />
+              {cancellingQueuedPipelineId === selectedPipeline._id ? 'Cancelling...' : 'Cancel queued'}
+            </button>
+          )}
         </div>
       </footer>
 
       {isDeploymentResultOpen && deploymentStatus && (deploymentStatus.run || deploymentStatus.statusUnavailable) && (
         <div className="pipeline-result-backdrop" role="dialog" aria-modal="true" aria-label="Deployment result">
-          <section className={`pipeline-result-modal pipeline-result-modal--${deploymentStatus.statusUnavailable ? 'warning' : deploymentStatus.run?.conclusion ?? 'completed'}`}>
+          <section className={`pipeline-result-modal pipeline-result-modal--${applicationRunResultTone(deploymentStatus)}`}>
             <header>
               <div>
                 <span>
-                  {deploymentStatus.statusUnavailable
-                    ? 'Deployment triggered'
-                    : deploymentStatus.run?.conclusion === 'success'
-                      ? 'Deployment succeeded'
-                      : 'Deployment failed'}
+                  {applicationRunResultTitle(deploymentStatus)}
                 </span>
                 <h3>{deploymentStatus.run ? `Run #${deploymentStatus.run.runNumber ?? deploymentStatus.run.id}` : 'Status unavailable'}</h3>
                 <p>
@@ -2996,7 +4701,7 @@ function ApplicationPipelinePage() {
               </div>
               <div>
                 <span>Trigger</span>
-                <strong>{deploymentStatus.dispatchMode === 'push_trigger' ? 'Push trigger' : 'Workflow dispatch'}</strong>
+                <strong>{applicationDispatchModeLabel(deploymentStatus.dispatchMode)}</strong>
               </div>
             </div>
             {deploymentStatus.statusUnavailable && (
@@ -3120,6 +4825,43 @@ function lambdaFunctionNameFromDeployment(deployment?: DeploymentRecord): string
   return String(lambdaNode?.data?.config?.function_name ?? '').trim();
 }
 
+function parseGithubRepositoryUrl(url?: string): { owner: string; repo: string } | undefined {
+  const match = String(url || '').match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i);
+  return match ? { owner: match[1], repo: match[2] } : undefined;
+}
+
+function githubRepositoryLabel(url?: string) {
+  const parsed = parseGithubRepositoryUrl(url);
+  return parsed ? `${parsed.owner}/${parsed.repo}` : 'Not linked';
+}
+
+function applicationDispatchModeLabel(mode?: ApplicationDeploymentStatus['dispatchMode']) {
+  return mode === 'push_trigger' ? 'Push trigger' : 'Workflow dispatch';
+}
+
+function applicationRunResultTone(status: ApplicationDeploymentStatus) {
+  if (status.statusUnavailable) return 'warning';
+  if (status.run?.status !== 'completed') return 'in_progress';
+  return status.run?.conclusion ?? 'completed';
+}
+
+function applicationRunResultTitle(status: ApplicationDeploymentStatus) {
+  if (status.statusUnavailable) return 'Deployment triggered';
+  if (status.run?.status !== 'completed') return 'Deployment in progress';
+  if (status.run?.conclusion === 'success') return 'Deployment succeeded';
+  if (status.run?.conclusion === 'cancelled') return 'Deployment cancelled';
+  return 'Deployment failed';
+}
+
+function pipelineDeploymentId(deployment?: ApplicationPipelineRecord['deployment']) {
+  if (!deployment) return '';
+  return typeof deployment === 'string' ? deployment : deployment._id ?? '';
+}
+
+function pipelineAppTypeLabel(appType: string) {
+  return pipelineAppTypes.find((item) => item.id === appType)?.label ?? appType;
+}
+
 function awsDeployRoleLabel(status?: string) {
   switch (status) {
     case 'provisioned':
@@ -3177,7 +4919,7 @@ function buildPipelineActivity(pipeline: ApplicationPipelineRecord, deploymentSt
     },
     {
       label: 'Deployment trigger',
-      detail: pipeline.repository.lastSyncCommit ? `Ready from commit ${pipeline.repository.lastSyncCommit.slice(0, 7)}` : 'Push or run workflow after sync',
+      detail: pipeline.repository.lastSyncCommit ? `Ready from commit ${pipeline.repository.lastSyncCommit.slice(0, 7)}` : 'Run workflow dispatch after sync',
       status: pipeline.repository.lastSyncCommit ? 'success' : 'pending',
       time: pipeline.updatedAt ? new Date(pipeline.updatedAt).toLocaleString() : 'Pending',
     },
@@ -3188,9 +4930,11 @@ function buildPipelineActivity(pipeline: ApplicationPipelineRecord, deploymentSt
         : 'Deployment has not been started from infraflow yet',
       status: deploymentStatus?.run?.conclusion === 'failure' || deploymentStatus?.run?.conclusion === 'cancelled'
         ? 'error'
-        : deploymentStatus?.run
+        : deploymentStatus?.run?.status === 'completed'
           ? 'success'
-          : 'pending',
+          : deploymentStatus?.run
+            ? 'warning'
+            : 'pending',
       time: deploymentStatus?.run?.updatedAt ? new Date(deploymentStatus.run.updatedAt).toLocaleString() : 'Pending',
     },
   ];
@@ -3397,9 +5141,6 @@ type DeploymentResourceMetric = {
 };
 
 function buildDeploymentResourceMetrics(deployment: DeploymentRecord, insights?: AwsInsights): DeploymentResourceMetric[] {
-  if (!insights) return [];
-
-  const totalSpend = insights.billing.monthlySpend || insights.billing.byService.reduce((sum, item) => sum + item.cost, 0) || 0;
   const outputResources = Object.entries(deployment.outputs ?? {})
     .map(([key, output]) => normalizeDeploymentOutputResource(key, output))
     .filter((resource): resource is { key: string; label: string; service: string; resourceId: string } => Boolean(resource));
@@ -3410,10 +5151,11 @@ function buildDeploymentResourceMetrics(deployment: DeploymentRecord, insights?:
     resourceId: String(node.data?.config?.name ?? node.data?.config?.bucket ?? node.data?.config?.identifier ?? node.id),
   }));
   const resources = dedupeDeploymentResources([...outputResources, ...nodeResources]);
+  const totalSpend = insights ? insights.billing.monthlySpend || insights.billing.byService.reduce((sum, item) => sum + item.cost, 0) || 0 : 0;
 
   return resources.map((resource) => {
-    const inventory = findInsightInventory(resource.service, insights);
-    const spend = inventory?.spend ?? findServiceSpend(resource.service, insights);
+    const inventory = insights ? findInsightInventory(resource.service, insights) : undefined;
+    const spend = insights ? inventory?.spend ?? findServiceSpend(resource.service, insights) : 0;
     const billShare = totalSpend > 0 ? Math.round((spend / totalSpend) * 1000) / 10 : 0;
 
     return {
@@ -3888,8 +5630,12 @@ function getFindingFix(finding: unknown) {
 }
 
 function hasGithubWorkflowScope(connection: GithubConnection) {
-  if (!connection.scopes?.length) return true;
-  return connection.scopes.includes('workflow');
+  if (connection.reconnectRequired) return false;
+  if (connection.missingScopes?.length) return false;
+  if (connection.requiredScopes?.length) {
+    return connection.requiredScopes.every((scope) => connection.scopes?.includes(scope));
+  }
+  return Boolean(connection.scopes?.includes('workflow'));
 }
 
 function findMainScrollTarget(): HTMLElement | Window | null {
@@ -4219,3 +5965,11 @@ function readFileAsText(file: File): Promise<{ name: string; content: string }> 
 }
 
 export default DashboardShell;
+
+
+
+
+
+
+
+

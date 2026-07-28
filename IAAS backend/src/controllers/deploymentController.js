@@ -92,7 +92,10 @@ export const uploadLambdaZip = asyncHandler(async (req, res) => {
 });
 
 export const listDeployments = asyncHandler(async (req, res) => {
-  const deployments = await Deployment.find({ workspace: req.user.workspace }).sort({ createdAt: -1 }).populate('diagram', 'name activeRegion nodes edges');
+  const deployments = await Deployment.find({ workspace: req.user.workspace })
+    .sort({ createdAt: -1 })
+    .populate('diagram', 'name activeRegion nodes edges')
+    .populate('requestedBy', 'name email role');
   res.json({ success: true, data: deployments });
 });
 

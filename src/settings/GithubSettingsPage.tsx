@@ -130,9 +130,9 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
             </div>
           )}
 
-          {connection.connected && Boolean(connection.scopes?.length) && !connection.scopes.includes('workflow') && (
+          {(connection.reconnectRequired || (connection.connected && Boolean(connection.scopes?.length) && !connection.scopes.includes('workflow'))) && (
             <div className="dash-global-warning">
-              GitHub is connected without workflow permission. Reconnect to sync generated GitHub Actions files.
+              GitHub is missing required OAuth permissions{connection.missingScopes?.length ? `: ${connection.missingScopes.join(', ')}` : ''}. Reconnect to sync generated GitHub Actions files.
               <button className="dash-secondary-action" onClick={connectGithub} type="button">
                 Reconnect GitHub
               </button>

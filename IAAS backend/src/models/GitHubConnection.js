@@ -8,6 +8,8 @@ const githubConnectionSchema = new mongoose.Schema(
     githubName: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
     scopes: { type: [String], default: [] },
+    missingScopes: { type: [String], default: [] },
+    reconnectRequired: { type: Boolean, default: false },
     accessTokenEncrypted: { type: String, required: true, select: false },
     connectedAt: { type: Date, default: Date.now },
     lastUsedAt: Date,
@@ -24,6 +26,8 @@ githubConnectionSchema.methods.toSafeProfile = function toSafeProfile() {
     name: this.githubName,
     avatarUrl: this.avatarUrl,
     scopes: this.scopes,
+    missingScopes: this.missingScopes ?? [],
+    reconnectRequired: Boolean(this.reconnectRequired),
     connectedAt: this.connectedAt,
   };
 };

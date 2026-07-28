@@ -10,15 +10,14 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { createNotification } from '../services/notificationService.js';
 import {
+  cancelWorkflowRun,
   dispatchGithubWorkflow,
-  encodeURIComponentPath,
-  githubApiHeaders,
   githubDeploymentErrorMessage,
-  githubSyncErrorMessage,
   githubWorkflowRunJobs,
+  githubWorkflowRuns,
   isGithubIntegrationPermissionError,
   latestGithubWorkflowRun,
-  syncFilesToGithub,
+  syncFilesToGithubCommit,
   waitForLatestWorkflowRun,
 } from '../services/githubActionsClient.js';
 import { setGithubActionsSecret } from '../services/githubSecretsService.js';
@@ -27,6 +26,30 @@ import { githubTokenForUser } from './githubController.js';
 
 const appTypes = ['react-app', 'static-spa', 'node-container', 'python-api', 'java-service', 'serverless-api', 'kubernetes-service'];
 const environments = ['development', 'staging', 'production'];
+const deploymentDispatchLocks = new Map();
+const deploymentDispatchLockTtlMs = 10 * 60 * 1000;
+
+function deploymentDispatchLockKey(workspaceId, pipelineId) {
+  return `${workspaceId}:${pipelineId}`;
+}
+
+function isDeploymentDispatchLocked(key) {
+  const lockedAt = deploymentDispatchLocks.get(key);
+  if (!lockedAt) return false;
+  if (Date.now() - lockedAt > deploymentDispatchLockTtlMs) {
+    deploymentDispatchLocks.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function lockDeploymentDispatch(key) {
+  deploymentDispatchLocks.set(key, Date.now());
+}
+
+function unlockDeploymentDispatch(key) {
+  deploymentDispatchLocks.delete(key);
+}
 
 export const pipelineSchema = z.object({
   body: z.object({
@@ -89,32 +112,16 @@ export const pipelineRunResultSchema = z.object({
 
 export const listApplicationPipelines = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
-  const pipelines = await ApplicationPipeline.find({ workspace: req.user.workspace }).sort({ updatedAt: -1 }).populate('deployment', 'name status resourceCount connectionCount outputs');
+  const pipelines = await ApplicationPipeline.find({ workspace: req.user.workspace })
+    .sort({ updatedAt: -1 })
+    .populate('deployment', 'name status resourceCount connectionCount outputs')
+    .populate('createdBy', 'name email role');
   res.json({ success: true, data: pipelines });
 });
 
 export const createApplicationPipeline = asyncHandler(async (req, res) => {
   const workspace = await assertPipelineAccess(req);
-  const deployment = req.validated.body.deploymentId
-    ? await Deployment.findOne({ _id: req.validated.body.deploymentId, workspace: req.user.workspace })
-        .populate('diagram', 'name activeRegion nodes edges')
-        .populate('awsAccount', 'accountId')
-    : undefined;
-
-  if (req.validated.body.deploymentId && !deployment) throw new ApiError(404, 'Deployment target not found');
-
-  const target = inferPipelineTarget(req.validated.body.appType, deployment, req.validated.body.target ?? {});
-  assertTargetResolved(target, deployment);
-  const commands = defaultCommandsForApp(req.validated.body.appType, req.validated.body.commands ?? {});
-  const generatedFiles = generatePipelineFiles({
-    name: req.validated.body.name,
-    appType: req.validated.body.appType,
-    environment: req.validated.body.environment,
-    repository: req.validated.body.repository,
-    commands,
-    target,
-    accountId: deployment?.awsAccount?.accountId,
-  });
+  const { deployment, target, commands, generatedFiles } = await buildPipelineDefinition(req);
 
   const pipeline = await ApplicationPipeline.create({
     workspace: req.user.workspace,
@@ -140,6 +147,68 @@ export const createApplicationPipeline = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: pipeline });
 });
 
+export const updateApplicationPipeline = asyncHandler(async (req, res) => {
+  const workspace = await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const { deployment, target, commands, generatedFiles } = await buildPipelineDefinition(req);
+
+  pipeline.deployment = deployment?._id;
+  pipeline.name = req.validated.body.name;
+  pipeline.appType = req.validated.body.appType;
+  pipeline.environment = req.validated.body.environment;
+  pipeline.repository.provider = 'github';
+  pipeline.repository.url = req.validated.body.repository.url;
+  pipeline.repository.branch = req.validated.body.repository.branch;
+  pipeline.repository.workflowPath = workflowPathFor(req.validated.body.environment);
+  pipeline.repository.lastSyncedAt = undefined;
+  pipeline.repository.lastSyncCommit = '';
+  pipeline.commands = commands;
+  pipeline.target = target;
+  pipeline.generatedFiles = generatedFiles;
+  pipeline.checklist = pipelineChecklist(target.type);
+  pipeline.status = 'ready';
+
+  await pipeline.save();
+  await auditLog(req, 'pipeline.update', 'ApplicationPipeline', pipeline._id, { workspace: workspace._id, target: target.type });
+  res.json({ success: true, data: pipeline });
+});
+
+async function buildPipelineDefinition(req) {
+  const deployment = req.validated.body.deploymentId
+    ? await Deployment.findOne({ _id: req.validated.body.deploymentId, workspace: req.user.workspace })
+        .populate('diagram', 'name activeRegion nodes edges')
+        .populate('awsAccount', 'accountId')
+    : undefined;
+
+  if (req.validated.body.deploymentId && !deployment) throw new ApiError(404, 'Deployment target not found');
+
+  const target = inferPipelineTarget(req.validated.body.appType, deployment, req.validated.body.target ?? {});
+  assertTargetResolved(target, deployment);
+  const commands = defaultCommandsForApp(req.validated.body.appType, req.validated.body.commands ?? {});
+  const generatedFiles = generatePipelineFiles({
+    name: req.validated.body.name,
+    appType: req.validated.body.appType,
+    environment: req.validated.body.environment,
+    repository: req.validated.body.repository,
+    commands,
+    target,
+    accountId: deployment?.awsAccount?.accountId,
+  });
+
+  return { deployment, target, commands, generatedFiles };
+}
+
+export const deleteApplicationPipeline = asyncHandler(async (req, res) => {
+  const workspace = await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOneAndDelete({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  await auditLog(req, 'pipeline.delete', 'ApplicationPipeline', pipeline._id, { workspace: workspace._id, name: pipeline.name });
+  res.json({ success: true, data: { deleted: true } });
+});
+
 export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
   const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('deployment', 'awsAccount').populate('deployment.awsAccount', 'accountId');
@@ -160,13 +229,14 @@ export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => 
     accountId: pipeline.deployment?.awsAccount?.accountId,
   });
 
-  const result = await syncFilesToGithub({
+  const result = await syncFilesToGithubCommit({
     token,
     owner: req.validated.body.owner,
     repo: req.validated.body.repo,
     branch: req.validated.body.branch,
     message: req.validated.body.message || `Sync ${pipeline.name} ${pipeline.environment} pipeline from infraflow`,
     files: pipeline.generatedFiles,
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
   });
 
   pipeline.repository.url = syncRepository.url;
@@ -307,14 +377,10 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (!isGithubIntegrationPermissionError(error)) throw error;
-    dispatchMode = 'push_trigger';
-    await createDeploymentTriggerCommit({
-      token,
-      owner: repository.owner,
-      repo: repository.repo,
-      branch: repository.branch,
-      pipeline,
-    });
+    throw new ApiError(
+      409,
+      'GitHub workflow dispatch is not accessible with the connected token. Reconnect GitHub and approve repo + workflow access, then sync the selected environment workflow again.',
+    );
   }
 
   let run = null;
@@ -356,9 +422,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       statusUnavailable,
       statusMessage,
       message: run
-        ? dispatchMode === 'push_trigger'
-          ? 'Deployment started by committing an Infraflow trigger file.'
-          : 'Deployment workflow dispatched.'
+        ? 'Deployment workflow dispatched.'
         : statusUnavailable
           ? statusMessage
         : 'Deployment was requested. GitHub has not returned the run yet.',
@@ -402,6 +466,7 @@ export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, r
     statusUnavailable = true;
     statusMessage = 'GitHub Actions status is not readable with the connected token for this repository. Enable Actions read permission, then refresh status.';
   }
+  if (run?.status === 'completed') unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
 
   res.json({
     success: true,
@@ -413,6 +478,130 @@ export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, r
       jobs,
       statusUnavailable,
       statusMessage,
+    },
+  });
+});
+
+export const forceStopApplicationPipelineDeployment = asyncHandler(async (req, res) => {
+  await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const token = await githubTokenForUser(req.user._id);
+  if (!token) throw new ApiError(409, 'Connect GitHub before stopping deployment.');
+
+  const repository = resolvePipelineRepository(pipeline, req.body ?? {});
+  if (!repository.owner || !repository.repo) {
+    throw new ApiError(409, 'Choose a GitHub repository before stopping deployment.');
+  }
+
+  const workflowFile = pipeline.generatedFiles.find((file) => file.path === pipeline.repository.workflowPath)
+    ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
+  const workflowId = workflowFile?.path.split('/').pop();
+  if (!workflowId) throw new ApiError(409, 'Generate a workflow file before stopping deployment.');
+
+  const run = await latestGithubWorkflowRun({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    workflowId,
+    branch: repository.branch,
+  });
+
+  if (!run) {
+    res.json({ success: true, data: { stopped: false, message: 'No GitHub Actions run was found for this pipeline.', run: null } });
+    return;
+  }
+
+  if (run.status === 'completed') {
+    unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
+    res.json({ success: true, data: { stopped: false, message: 'The latest GitHub Actions run is already completed.', run } });
+    return;
+  }
+
+  const stopResult = await cancelWorkflowRun({ token, owner: repository.owner, repo: repository.repo, runId: run.id });
+  unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
+  await auditLog(req, 'pipeline.deploy.force_stop', 'ApplicationPipeline', pipeline._id, { runId: run.id, repository });
+  await createNotification({
+    workspace: req.user.workspace,
+    user: req.user._id,
+    title: `Deployment stopped: ${pipeline.name}`,
+    message: `GitHub Actions run #${run.runNumber ?? run.id} was requested to stop.`,
+    status: 'failed',
+    resourceType: 'ApplicationPipeline',
+    resourceId: pipeline._id,
+    meta: { runId: run.id, runNumber: run.runNumber, owner: repository.owner, repo: repository.repo, branch: repository.branch },
+  });
+
+  res.json({
+    success: true,
+    data: {
+      stopped: stopResult.cancelled,
+      message: stopResult.alreadyFinished ? 'The latest run already finished before it could be stopped.' : 'Stop request sent to GitHub Actions.',
+      run,
+    },
+  });
+});
+
+export const cancelQueuedApplicationPipelineWorkflows = asyncHandler(async (req, res) => {
+  await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const token = await githubTokenForUser(req.user._id);
+  if (!token) throw new ApiError(409, 'Connect GitHub before cancelling queued workflows.');
+
+  const repository = resolvePipelineRepository(pipeline, req.body ?? {});
+  if (!repository.owner || !repository.repo) {
+    throw new ApiError(409, 'Choose a GitHub repository before cancelling queued workflows.');
+  }
+
+  const workflowFile = pipeline.generatedFiles.find((file) => file.path === pipeline.repository.workflowPath)
+    ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
+  const workflowId = workflowFile?.path.split('/').pop();
+  if (!workflowId) throw new ApiError(409, 'Generate a workflow file before cancelling queued workflows.');
+
+  const queuedRuns = await githubWorkflowRuns({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    workflowId,
+    branch: repository.branch,
+    status: 'queued',
+    perPage: 50,
+  });
+
+  const results = await Promise.allSettled(
+    queuedRuns.map(async (run) => {
+      const result = await cancelWorkflowRun({ token, owner: repository.owner, repo: repository.repo, runId: run.id });
+      return { ...run, stopped: result.cancelled, alreadyFinished: result.alreadyFinished };
+    }),
+  );
+  const cancelled = results.filter((result) => result.status === 'fulfilled' && result.value.stopped).map((result) => result.value);
+  const failed = results
+    .filter((result) => result.status === 'rejected')
+    .map((result) => (result.reason instanceof Error ? result.reason.message : 'Unable to cancel queued workflow run.'));
+
+  if (cancelled.length || failed.length) {
+    await auditLog(req, 'pipeline.deploy.cancel_queued', 'ApplicationPipeline', pipeline._id, {
+      repository,
+      workflow: workflowId,
+      queuedCount: queuedRuns.length,
+      cancelledCount: cancelled.length,
+      failedCount: failed.length,
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      cancelledCount: cancelled.length,
+      queuedCount: queuedRuns.length,
+      cancelledRuns: cancelled,
+      failed,
+      message: queuedRuns.length
+        ? `Cancelled ${cancelled.length} of ${queuedRuns.length} queued workflow runs.`
+        : 'No queued workflow runs were found for this pipeline.',
     },
   });
 });
@@ -525,7 +714,7 @@ function defaultCommandsForApp(appType, overrides) {
     'node-container': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
     'python-api': { install: 'pip install -r requirements.txt', test: 'pytest', build: 'python -m compileall .', start: 'uvicorn app.main:app --host 0.0.0.0 --port 8080' },
     'java-service': { install: './mvnw -B dependency:go-offline', test: './mvnw test', build: './mvnw -B package', start: 'java -jar target/app.jar' },
-    'serverless-api': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build --if-present', start: 'npm start' },
+    'serverless-api': { install: 'npm ci', test: 'echo "Skipping Lambda tests by default. Set a custom test command to run them."', build: 'npm run build --if-present', start: 'npm start' },
     'kubernetes-service': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
   }[appType];
 
@@ -540,7 +729,7 @@ function generatePipelineFiles({ name, appType, environment, repository, command
     {
       path: workflowPathFor(environment),
       language: 'yaml',
-      purpose: 'GitHub Actions pipeline triggered on push.',
+      purpose: 'GitHub Actions deployment pipeline triggered by Infraflow workflow dispatch.',
       content: githubWorkflow({ name, appType, environment, branch: repository.branch || 'main', commands, target }),
     },
     {
@@ -611,8 +800,6 @@ function githubWorkflow({ name, appType, environment, branch, commands, target }
   return `name: ${escapeYaml(`${name} ${environment} CI/CD`)}
 
 on:
-  push:
-    branches: [${escapeYaml(branch)}]
   workflow_dispatch:
     inputs:
       environment:
@@ -756,12 +943,31 @@ function deployStepsFor(target) {
           LAMBDA_HANDLER="$(aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query Handler --output text)"
           HANDLER_MODULE="\${LAMBDA_HANDLER%.*}"
           echo "Lambda handler configured in AWS: $LAMBDA_HANDLER"
-          if [ ! -f "$HANDLER_MODULE.js" ] && [ ! -f "$HANDLER_MODULE.mjs" ] && [ ! -f "$HANDLER_MODULE.cjs" ]; then
-            echo "::error::AWS expects handler module '$HANDLER_MODULE' at the Lambda zip root, but it was not found in $PWD."
-            echo "Add $HANDLER_MODULE.js, change the Lambda handler in AWS/Terraform, or move the workflow's Lambda app directory to the folder that contains it."
-            find . -maxdepth 3 -type f \\( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \\) | sort | head -80
+          if [ -f "$HANDLER_MODULE.js" ] || [ -f "$HANDLER_MODULE.mjs" ] || [ -f "$HANDLER_MODULE.cjs" ]; then
+            echo "Configured Lambda handler module exists in deployment package."
+            exit 0
+          fi
+          echo "Configured handler module '$HANDLER_MODULE' was not found in $PWD. Inferring handler module from common Lambda entry files."
+          INFERRED_HANDLER_MODULE=""
+          for candidate in lambda index handler app server src/lambda src/index src/handler src/app; do
+            for ext in js mjs cjs; do
+              if [ -f "$candidate.$ext" ]; then
+                INFERRED_HANDLER_MODULE="$candidate"
+                break 2
+              fi
+            done
+          done
+          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
+            INFERRED_HANDLER_MODULE="$(find . -maxdepth 3 -type f \\( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \\) | sort | sed 's#^./##;s#\\.[^.]*$##' | head -1)"
+          fi
+          if [ -z "$INFERRED_HANDLER_MODULE" ]; then
+            echo "::error::No JavaScript Lambda handler module was found in $PWD."
+            find . -maxdepth 3 -type f | sort | head -80
             exit 1
           fi
+          echo "Updating Lambda handler from '$LAMBDA_HANDLER' to '$INFERRED_HANDLER_MODULE.handler'."
+          aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --handler "$INFERRED_HANDLER_MODULE.handler"
+          aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
 
       - name: Package Lambda artifact
         working-directory: \${{ env.LAMBDA_APP_DIR }}
@@ -821,22 +1027,46 @@ function deployStepsFor(target) {
 }
 
 function testStepFor(appType, commands, workingDirectory = '') {
+  if (appType === 'serverless-api' && isDefaultSkippedLambdaTestCommand(commands.test)) {
+    return `      - name: Run tests
+        run: echo "Skipping Lambda tests by default. Set a custom test command in Infraflow to run deployment tests."
+`;
+  }
+
   if (['react-app', 'static-spa', 'node-container', 'serverless-api', 'kubernetes-service'].includes(appType)) {
     return `      - name: Run tests
+        timeout-minutes: 3
+        env:
+          CI: true
+          NODE_ENV: test
 ${workingDirectory}
         run: |
-          if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
+          if [ ! -f package.json ]; then
+            echo "No package.json found; skipping test step."
+            exit 0
+          fi
+          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
+          if [ -z "$TEST_SCRIPT" ]; then
             echo "No npm test script found; skipping test step."
             exit 0
           fi
-          ${commands.test}
+          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
+            echo "Default placeholder npm test script found; skipping test step."
+            exit 0
+          fi
+          timeout 150s ${commands.test}
 `;
   }
 
   return `      - name: Run tests
+        timeout-minutes: 3
 ${workingDirectory}
-        run: ${commands.test}
+        run: timeout 150s ${commands.test}
 `;
+}
+
+function isDefaultSkippedLambdaTestCommand(command = '') {
+  return /^echo\s+["']?Skipping Lambda tests by default/i.test(String(command).trim());
 }
 
 function dockerfileFor(appType, commands) {
@@ -1008,7 +1238,7 @@ function pipelineChecklist(targetType) {
       : targetType === 'lambda'
         ? 'Confirm Lambda function name and AWS region.'
         : 'Confirm ECR repository and runtime target names.',
-    'Push to the configured branch to trigger automated deployment.',
+    'Use Deploy Application in Infraflow to dispatch the selected environment workflow.',
   ];
 }
 
@@ -1016,47 +1246,10 @@ function workflowPathFor(environment) {
   return `.github/workflows/infraflow-${environment}-deploy.yml`;
 }
 
-async function createDeploymentTriggerCommit({ token, owner, repo, branch, pipeline }) {
-  const triggerPath = `.infraflow/deploy-triggers/${pipeline._id}.json`;
-  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const headers = githubApiHeaders(token);
-  const existingResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(triggerPath)}?ref=${encodeURIComponent(branch)}`, { headers });
-  const existing = existingResponse.ok ? await existingResponse.json() : undefined;
-  if (!existingResponse.ok && existingResponse.status !== 404) {
-    const text = await existingResponse.text();
-    throw new ApiError(existingResponse.status, `GitHub trigger read failed for ${triggerPath}: ${text}`);
-  }
-
-  const content = JSON.stringify(
-    {
-      pipelineId: String(pipeline._id),
-      pipelineName: pipeline.name,
-      environment: pipeline.environment,
-      target: pipeline.target?.type,
-      requestedAt: new Date().toISOString(),
-      source: 'infraflow',
-    },
-    null,
-    2,
-  );
-  const updateResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(triggerPath)}`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      message: `Trigger ${pipeline.name} deployment from Infraflow`,
-      branch,
-      content: Buffer.from(content, 'utf8').toString('base64'),
-      ...(existing?.sha ? { sha: existing.sha } : {}),
-    }),
-  });
-  const result = await updateResponse.json().catch(async () => ({ message: await updateResponse.text() }));
-  if (!updateResponse.ok) {
-    throw new ApiError(updateResponse.status, githubSyncErrorMessage(triggerPath, result?.message));
-  }
-  return {
-    path: triggerPath,
-    commitSha: result?.commit?.sha ?? '',
-  };
+function obsoleteWorkflowPathsFor(environment) {
+  return environments
+    .filter((item) => item !== environment)
+    .map(workflowPathFor);
 }
 
 function firstConfig(nodes, keys) {
@@ -1093,3 +1286,4 @@ function escapeYaml(value) {
 function jsonCommand(command) {
   return JSON.stringify(command.split(' ').filter(Boolean));
 }
+

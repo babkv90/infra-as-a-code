@@ -36,6 +36,7 @@ export type DashboardPage =
   | 'ai-agent'
   | 'deployments'
   | 'resource-info'
+  | 'infra-pipeline'
   | 'app-pipeline'
   | 'security'
   | 'connect-aws'
@@ -57,6 +58,7 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'ai-agent', label: 'AI Cloud Agent', icon: BrainCircuit, badge: 'AI' },
   { id: 'deployments', label: 'Deployments', icon: Rocket },
   { id: 'resource-info', label: 'Resource Info', icon: Database },
+  { id: 'infra-pipeline', label: 'Infra Pipeline', icon: Server },
   { id: 'app-pipeline', label: 'App Pipeline', icon: GitBranch },
   { id: 'security', label: 'Security Review', icon: ShieldCheck },
   { id: 'connect-aws', label: 'Connect AWS', icon: CloudCog },

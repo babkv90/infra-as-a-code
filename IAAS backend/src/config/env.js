@@ -42,6 +42,18 @@ function readList(name, fallback) {
     .filter(Boolean);
 }
 
+function readMergedList(names, fallback) {
+  return Array.from(
+    new Set(
+      names
+        .flatMap((name) => readList(name, ''))
+        .concat(readList('', fallback))
+        .map((item) => item.replace(/\/+$/, ''))
+        .filter(Boolean),
+    ),
+  );
+}
+
 export const env = {
   NODE_ENV: readString('NODE_ENV', 'development'),
   PORT: readNumber('PORT', 4000),
@@ -50,8 +62,8 @@ export const env = {
   JWT_REFRESH_SECRET: readString('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
   JWT_ACCESS_EXPIRES_IN: readString('JWT_ACCESS_EXPIRES_IN', '15m'),
   JWT_REFRESH_EXPIRES_IN: readString('JWT_REFRESH_EXPIRES_IN', '7d'),
-  CLIENT_ORIGINS: readList(
-    'CLIENT_ORIGIN',
+  CLIENT_ORIGINS: readMergedList(
+    ['CLIENT_ORIGIN', 'CLIENT_ORIGINS'],
     'http://127.0.0.1:5173,http://localhost:5173,https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com,https://d3pgg5abvvdatt.cloudfront.net',
   ),
   BCRYPT_ROUNDS: readNumber('BCRYPT_ROUNDS', 12),

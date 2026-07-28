@@ -14,6 +14,19 @@ export type ApplicationPipelineRecord = {
   name: string;
   appType: string;
   environment: 'development' | 'staging' | 'production';
+  createdBy?: string | {
+    _id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+  };
+  deployment?: string | {
+    _id?: string;
+    name?: string;
+    status?: string;
+    resourceCount?: number;
+    connectionCount?: number;
+  };
   repository: {
     provider: string;
     url: string;
@@ -114,6 +127,14 @@ export type ApplicationDeploymentStatus = {
   message?: string;
 };
 
+export type CancelQueuedApplicationWorkflowsResult = {
+  cancelledCount: number;
+  queuedCount: number;
+  cancelledRuns: ApplicationDeploymentRun[];
+  failed: string[];
+  message: string;
+};
+
 export async function listApplicationPipelines() {
   return pipelineRequest<ApplicationPipelineRecord[]>('/app-pipelines');
 }
@@ -122,6 +143,19 @@ export async function createApplicationPipeline(payload: CreateApplicationPipeli
   return pipelineRequest<ApplicationPipelineRecord>('/app-pipelines', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function updateApplicationPipeline(id: string, payload: CreateApplicationPipelinePayload) {
+  return pipelineRequest<ApplicationPipelineRecord>(`/app-pipelines/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteApplicationPipeline(id: string) {
+  return pipelineRequest<{ deleted: boolean }>(`/app-pipelines/${id}`, {
+    method: 'DELETE',
   });
 }
 
@@ -162,6 +196,26 @@ export async function getApplicationDeploymentStatus(
   if (params.branch) query.set('branch', params.branch);
   const suffix = query.toString() ? `?${query.toString()}` : '';
   return pipelineRequest<ApplicationDeploymentStatus>(`/app-pipelines/${id}/deployment-status${suffix}`);
+}
+
+export async function forceStopApplicationDeployment(
+  id: string,
+  payload: { owner?: string; repo?: string; branch?: string } = {},
+) {
+  return pipelineRequest<{ stopped: boolean; message: string; run: ApplicationDeploymentRun | null }>(`/app-pipelines/${id}/force-stop`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelQueuedApplicationWorkflows(
+  id: string,
+  payload: { owner?: string; repo?: string; branch?: string } = {},
+) {
+  return pipelineRequest<CancelQueuedApplicationWorkflowsResult>(`/app-pipelines/${id}/cancel-queued`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function reportPipelineRunResult(

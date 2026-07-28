@@ -30,6 +30,19 @@ export type DeploymentRecord = {
   };
   terraform: string;
   terraformWorkDir?: string;
+  requestedBy?: string | {
+    _id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+  };
+  executor?: 'local' | 'github-actions';
+  activeRun?: {
+    githubRunId?: string;
+    action?: string;
+    status?: string;
+    startedAt?: string;
+  };
   awsAccount?: string;
   outputs?: Record<string, unknown>;
   mergedInto?: string;

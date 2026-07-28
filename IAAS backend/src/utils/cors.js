@@ -1,19 +1,21 @@
 import { env } from '../config/env.js';
 
 const allowedCorsOrigins = new Set([
-  ...env.CLIENT_ORIGINS,
+  ...env.CLIENT_ORIGINS.map(normalizeOrigin),
   'https://cjgutvxvh2.execute-api.ap-south-1.amazonaws.com',
   'https://d3pgg5abvvdatt.cloudfront.net',
 ]);
 
 export function isAllowedCorsOrigin(origin) {
+  const normalizedOrigin = normalizeOrigin(origin);
   if (!origin) return true;
-  if (allowedCorsOrigins.has(origin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(origin);
+  if (allowedCorsOrigins.has(normalizedOrigin)) return true;
+  return /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(normalizedOrigin)
+    || /^https:\/\/[a-z0-9-]+(?:-[a-z0-9-]+)*\.vercel\.app$/i.test(normalizedOrigin);
 }
 
 export function corsHeaders(origin) {
-  const allowedOrigin = isAllowedCorsOrigin(origin) ? origin : undefined;
+  const allowedOrigin = isAllowedCorsOrigin(origin) ? normalizeOrigin(origin) : undefined;
 
   return {
     ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin } : {}),
@@ -22,4 +24,8 @@ export function corsHeaders(origin) {
     'Access-Control-Allow-Methods': 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     Vary: 'Origin',
   };
+}
+
+function normalizeOrigin(origin = '') {
+  return String(origin).trim().replace(/\/+$/, '');
 }

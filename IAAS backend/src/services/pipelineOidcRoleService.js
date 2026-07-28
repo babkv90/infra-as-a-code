@@ -63,7 +63,7 @@ export function buildOidcPermissionsPolicy({ target, accountId, kmsKeyArn }) {
     statements.push({
       Sid: 'DeployLambda',
       Effect: 'Allow',
-      Action: ['lambda:UpdateFunctionCode', 'lambda:GetFunction'],
+      Action: ['lambda:UpdateFunctionCode', 'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction', 'lambda:GetFunctionConfiguration'],
       Resource: `arn:aws:lambda:${target.region}:${accountId}:function:${target.lambdaFunctionName}`,
     });
   } else {
