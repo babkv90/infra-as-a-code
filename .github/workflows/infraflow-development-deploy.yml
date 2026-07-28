@@ -83,6 +83,10 @@ jobs:
         run: npm ci
 
       - name: Run tests
+        timeout-minutes: 5
+        env:
+          CI: true
+          NODE_ENV: test
 
         working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: |
