@@ -1,4 +1,4 @@
-name: "infraFlowNodedeploymentPipeline development CI/CD"
+name: "iaasInfraFlow development CI/CD"
 
 on:
   push:
