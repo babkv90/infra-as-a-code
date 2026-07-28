@@ -2,8 +2,13 @@ import { connectDatabase } from '../config/database.js';
 import { roles } from '../constants/roles.js';
 import { User } from '../models/User.js';
 
-const email = 'babkv90@gmail.com';
-const password = 'SuperAdmin@123';
+const email = process.env.RESET_EMAIL?.trim().toLowerCase();
+const password = process.env.RESET_PASSWORD;
+
+if (!email || !password) {
+  console.error('RESET_EMAIL and RESET_PASSWORD are required.');
+  process.exit(1);
+}
 
 await connectDatabase();
 
@@ -16,6 +21,8 @@ if (!user) {
 user.password = password;
 user.role = roles.SUPER_ADMIN;
 user.status = 'active';
+user.passwordResetToken = undefined;
+user.passwordResetExpires = undefined;
 await user.save();
 
 console.log(`Password reset for ${email}`);
