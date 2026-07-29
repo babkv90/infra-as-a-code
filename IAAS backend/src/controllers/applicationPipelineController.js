@@ -1122,6 +1122,10 @@ function deployStepsFor(target) {
           INFRAFLOW_APP_AWS_ACCESS_KEY_ID: \${{ secrets.INFRAFLOW_APP_AWS_ACCESS_KEY_ID }}
           INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: \${{ secrets.INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY }}
           INFRAFLOW_APP_AWS_SESSION_TOKEN: \${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
+          INFRAFLOW_GITHUB_CLIENT_ID: \${{ secrets.INFRAFLOW_GITHUB_CLIENT_ID }}
+          INFRAFLOW_GITHUB_CLIENT_SECRET: \${{ secrets.INFRAFLOW_GITHUB_CLIENT_SECRET }}
+          INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: \${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
+          INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: \${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
         run: |
           aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
           jq \
@@ -1148,6 +1152,10 @@ function deployStepsFor(target) {
             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID" \
             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY" \
             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN" \
+            --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID" \
+            --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET" \
+            --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL" \
+            --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY" \
             '. + {
               NODE_ENV: $nodeEnv
             }
@@ -1172,7 +1180,11 @@ function deployStepsFor(target) {
             + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
             + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
             + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
-            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)' \
+            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)
+            + (if $githubClientId == "" then {} else { INFRAFLOW_GITHUB_CLIENT_ID: $githubClientId } end)
+            + (if $githubClientSecret == "" then {} else { INFRAFLOW_GITHUB_CLIENT_SECRET: $githubClientSecret } end)
+            + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
+            + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)' \
             lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
           aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
@@ -1443,6 +1455,8 @@ Recommended secrets by target:
 - Environment variable \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
 - Environment secrets \`INFRAFLOW_APP_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
 - Environment secret \`INFRAFLOW_APP_AWS_SESSION_TOKEN\` only when the access key is temporary.
+- Environment secrets \`INFRAFLOW_GITHUB_CLIENT_ID\` and \`INFRAFLOW_GITHUB_CLIENT_SECRET\` for GitHub OAuth repository connections.
+- Environment variable \`INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL\` when the deployed callback URL differs from the default backend URL.
 
 ## Target
 

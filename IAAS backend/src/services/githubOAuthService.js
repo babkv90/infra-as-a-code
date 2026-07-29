@@ -11,7 +11,10 @@ const stateExpiresIn = '10m';
 
 export function assertGithubOAuthConfigured() {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
-    throw new ApiError(500, 'GitHub OAuth is not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.');
+    throw new ApiError(
+      500,
+      'GitHub OAuth is not configured. Set INFRAFLOW_GITHUB_CLIENT_ID and INFRAFLOW_GITHUB_CLIENT_SECRET.',
+    );
   }
 }
 

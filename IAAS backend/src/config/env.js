@@ -28,6 +28,14 @@ function readString(name, fallback = '') {
   return hasMatchingQuotes ? trimmed.slice(1, -1) : trimmed;
 }
 
+function readFirstString(names, fallback = '') {
+  for (const name of names) {
+    const value = readString(name);
+    if (value) return value;
+  }
+  return fallback;
+}
+
 function readNumber(name, fallback) {
   const value = readString(name);
   if (!value) return fallback;
@@ -88,10 +96,10 @@ export const env = {
   STORAGE_S3_REGION: readString('STORAGE_S3_REGION') || readString('AWS_REGION'),
   STORAGE_DYNAMODB_LOCK_TABLE: readString('STORAGE_DYNAMODB_LOCK_TABLE'),
   RAG_API_URL: readString('RAG_API_URL', 'http://127.0.0.1:8000'),
-  GITHUB_CLIENT_ID: readString('GITHUB_CLIENT_ID'),
-  GITHUB_CLIENT_SECRET: readString('GITHUB_CLIENT_SECRET'),
-  GITHUB_OAUTH_CALLBACK_URL: readString('GITHUB_OAUTH_CALLBACK_URL'),
-  GITHUB_TOKEN_ENCRYPTION_KEY: readString('GITHUB_TOKEN_ENCRYPTION_KEY'),
+  GITHUB_CLIENT_ID: readFirstString(['INFRAFLOW_GITHUB_CLIENT_ID', 'GITHUB_CLIENT_ID']),
+  GITHUB_CLIENT_SECRET: readFirstString(['INFRAFLOW_GITHUB_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET']),
+  GITHUB_OAUTH_CALLBACK_URL: readFirstString(['INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL', 'GITHUB_OAUTH_CALLBACK_URL']),
+  GITHUB_TOKEN_ENCRYPTION_KEY: readFirstString(['INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY', 'GITHUB_TOKEN_ENCRYPTION_KEY']),
   // Selects which runner NEW deployments are created with (src/services/deploymentExecutorDispatch.js).
   // Read once, at deployment-creation time only — Deployment.executor then pins that single record to
   // whichever value was in effect at that moment, for its entire lifecycle. Flipping this later never
