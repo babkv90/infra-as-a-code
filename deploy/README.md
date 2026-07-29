@@ -64,7 +64,7 @@ Recommended secrets by target:
 - Environment secrets `INFRAFLOW_APP_AWS_ACCESS_KEY_ID` and `INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY` for Lambda backend apps that need to connect AWS accounts from production.
 - Environment secret `INFRAFLOW_APP_AWS_SESSION_TOKEN` only when the access key is temporary.
 - Environment secrets `INFRAFLOW_GITHUB_CLIENT_ID` and `INFRAFLOW_GITHUB_CLIENT_SECRET` for GitHub OAuth repository connections.
-- Environment variable `INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL` when the deployed callback URL differs from the default backend URL.
+- Environment variable or secret `INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL` set to the backend callback URL registered in the GitHub OAuth app, e.g. `https://<api-host>/api/v1/github/oauth/callback`.
 
 ## Target
 
