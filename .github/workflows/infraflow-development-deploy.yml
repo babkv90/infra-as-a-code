@@ -172,7 +172,7 @@ jobs:
           INFRAFLOW_APP_AWS_SESSION_TOKEN: ${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
           INFRAFLOW_GITHUB_CLIENT_ID: ${{ secrets.INFRAFLOW_GITHUB_CLIENT_ID }}
           INFRAFLOW_GITHUB_CLIENT_SECRET: ${{ secrets.INFRAFLOW_GITHUB_CLIENT_SECRET }}
-          INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: ${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
+          INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: ${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL || secrets.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
           INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: ${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
         run: |
           aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json

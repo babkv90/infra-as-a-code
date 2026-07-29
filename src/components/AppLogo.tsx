@@ -8,7 +8,8 @@ type AppLogoProps = {
 function AppLogo({ className = '', suffix }: AppLogoProps) {
   return (
     <span className={`app-logo ${className}`.trim()}>
-      <img src="/infraflow.png" alt={APP_NAME} />
+      <img className="app-logo__image app-logo__image--default" src="/infraflow.png" alt={APP_NAME} />
+      <img className="app-logo__image app-logo__image--dark" src="/infraflow-dark.png" alt="" aria-hidden="true" />
       {suffix && <span className="app-logo__suffix">{suffix}</span>}
     </span>
   );

@@ -132,6 +132,7 @@ import {
   MERGE_TARGET_ELIGIBLE_STATUSES,
   previewDeploymentMerge,
   renameDeployment,
+  syncDeploymentDrift,
   verifyDeploymentResources,
   type DeploymentRecord,
   type ResourceVerificationResult,
@@ -1715,6 +1716,7 @@ function DeploymentsPage({
   const [pendingDestroyDeployment, setPendingDestroyDeployment] = useState<DeploymentRecord | null>(null);
   const [forceDestroyingDeploymentId, setForceDestroyingDeploymentId] = useState<string>();
   const [pendingForceDestroyDeployment, setPendingForceDestroyDeployment] = useState<DeploymentRecord | null>(null);
+  const [driftSyncingDeploymentId, setDriftSyncingDeploymentId] = useState<string>();
   const [pendingMergeSourceDeployment, setPendingMergeSourceDeployment] = useState<DeploymentRecord | null>(null);
   const [renamingDeploymentId, setRenamingDeploymentId] = useState<string>();
   const [applyingDeploymentId, setApplyingDeploymentId] = useState<string>();
@@ -1811,6 +1813,21 @@ function DeploymentsPage({
       setError(forceDestroyError instanceof Error ? forceDestroyError.message : 'Unable to force destroy infrastructure.');
     } finally {
       setForceDestroyingDeploymentId(undefined);
+    }
+  }
+
+  async function handleSyncDrift(deployment: DeploymentRecord) {
+    setMessage('');
+    setError('');
+    setDriftSyncingDeploymentId(deployment._id);
+    try {
+      const drift = await syncDeploymentDrift(deployment._id);
+      setDeploymentRecords((records) => records.map((item) => (item._id === deployment._id ? { ...item, drift } : item)));
+      setMessage(drift.status === 'drifted' ? `AWS drift found ${drift.summary.changed} changed Terraform-managed resource(s) in ${deployment.name}.` : `${deployment.name} is in sync with AWS.`);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : 'Unable to sync AWS drift.');
+    } finally {
+      setDriftSyncingDeploymentId(undefined);
     }
   }
 
@@ -1919,6 +1936,9 @@ function DeploymentsPage({
                               Running {formatElapsedDuration(deploymentElapsedMs(deployment))}
                             </span>
                           )}
+                          {deployment.drift?.checkedAt && (
+                            <span className={`dash-drift-pill dash-drift-pill--${deployment.drift.status}`}>{deploymentDriftStatusLabel(deployment.drift.status)}</span>
+                          )}
                         </td>
                         <td>{deployment.resourceCount}</td>
                         <td>{deployment.connectionCount}</td>
@@ -2010,6 +2030,17 @@ function DeploymentsPage({
                                   <RefreshCw size={15} />
                                   Refresh
                                 </button>
+                                {['deployed', 'failed'].includes(deployment.status) && (
+                                  <button
+                                    disabled={driftSyncingDeploymentId === deployment._id}
+                                    onClick={() => void handleSyncDrift(deployment)}
+                                    title="Refresh Terraform state from AWS and store a drift report. This never applies changes."
+                                    type="button"
+                                  >
+                                    <CloudCog size={15} />
+                                    {driftSyncingDeploymentId === deployment._id ? 'Syncing drift...' : 'Sync AWS drift'}
+                                  </button>
+                                )}
                                 {extractDestroyAttempts(deployment.logs).length > 0 && (
                                   <button
                                     onClick={() => setDestroyHistoryDeployment(deployment)}
@@ -3145,10 +3176,19 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
               Disconnect GitHub
             </button>
           ) : (
-            <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
-              <Github size={14} />
-              {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
-            </button>
+            <div className="legal-connect-group legal-connect-group--compact">
+              <p className="legal-inline-notice">
+                By connecting GitHub, you authorize infraflow to sync files per our{' '}
+                <a href="/legal/terms" rel="noreferrer" target="_blank">
+                  Terms of Service
+                </a>
+                .
+              </p>
+              <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
+                <Github size={14} />
+                {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -4253,10 +4293,19 @@ function ApplicationPipelinePage() {
                   Disconnect
                 </button>
               ) : (
-                <button className="pipeline-primary-compact" onClick={connectGithub} type="button">
-                  <Github size={14} />
-                  Connect GitHub
-                </button>
+                <div className="legal-connect-group legal-connect-group--compact">
+                  <p className="legal-inline-notice">
+                    By connecting GitHub, you authorize infraflow to sync files per our{' '}
+                    <a href="/legal/terms" rel="noreferrer" target="_blank">
+                      Terms of Service
+                    </a>
+                    .
+                  </p>
+                  <button className="pipeline-primary-compact" onClick={connectGithub} type="button">
+                    <Github size={14} />
+                    Connect GitHub
+                  </button>
+                </div>
               )}
             </header>
             {githubConnection.connected ? (
@@ -5276,6 +5325,13 @@ function deploymentFilterLabel(filter: 'all' | 'successful' | 'pending' | 'error
 
 function deploymentStatusLabel(status: DeploymentRecord['status']) {
   return status.replace(/_/g, ' ');
+}
+
+function deploymentDriftStatusLabel(status: NonNullable<DeploymentRecord['drift']>['status']) {
+  if (status === 'in_sync') return 'AWS in sync';
+  if (status === 'drifted') return 'AWS drift';
+  if (status === 'error') return 'Drift check failed';
+  return 'Drift unknown';
 }
 
 function formatDeploymentDate(deployment: DeploymentRecord) {

@@ -147,18 +147,6 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
 }`;
 
-// Change AWS metric dummy data here.
-export const awsMetrics = [
-  { label: 'Monthly Spend', value: '$0.00', icon: BadgeDollarSign, tone: 'cyan' },
-  { label: 'Active Lambda Functions', value: '0', icon: Zap, tone: 'violet' },
-  { label: 'S3 Buckets', value: '0', icon: Boxes, tone: 'emerald' },
-  { label: 'EC2 Instances', value: '0', icon: Server, tone: 'blue' },
-  { label: 'Idle Resources Found', value: '0', icon: AlertTriangle, tone: 'amber' },
-  { label: 'Estimated Savings', value: '$0/mo', icon: CheckCircle2, tone: 'emerald' },
-  { label: 'Failed Invocations', value: '0', icon: Activity, tone: 'rose' },
-  { label: 'Security Warnings', value: '0', icon: ShieldCheck, tone: 'amber' },
-];
-
 export const useCases = [
   'Serverless application builder',
   'Startup infrastructure planning',
@@ -215,9 +203,9 @@ export const footerColumns = {
 };
 
 export const heroStats = [
-  { label: 'Terraform resources generated', value: '0' },
-  { label: 'Potential monthly savings found', value: '$0' },
-  { label: 'AWS services supported', value: '0' },
+  { label: 'AWS services supported', value: String(builderServices.length) },
+  { label: 'AI insight signals available', value: String(aiBullets.length) },
+  { label: 'Security controls listed', value: String(securityItems.length) },
 ];
 
 export const howItWorks = [
@@ -236,4 +224,15 @@ export const trustSignals = [
   { label: 'AI architecture advisor', icon: Sparkles },
   { label: 'One-click deploy path', icon: Rocket },
   { label: 'Secrets-aware workflows', icon: KeyRound },
+];
+
+export const awsMetrics = [
+  { label: 'Builder Services', value: String(builderServices.length), icon: Boxes, tone: 'cyan' },
+  { label: 'AI Insight Signals', value: String(aiBullets.length), icon: BrainCircuit, tone: 'violet' },
+  { label: 'Security Controls', value: String(securityItems.length), icon: ShieldCheck, tone: 'emerald' },
+  { label: 'Use Cases', value: String(useCases.length), icon: Server, tone: 'blue' },
+  { label: 'Workflow Steps', value: String(howItWorks.length), icon: CheckCircle2, tone: 'amber' },
+  { label: 'Trust Signals', value: String(trustSignals.length), icon: LockKeyhole, tone: 'emerald' },
+  { label: 'Hero Nodes', value: String(heroDiagramNodes.length), icon: Activity, tone: 'rose' },
+  { label: 'Diagram Edges', value: String(heroDiagramEdges.length), icon: GitBranch, tone: 'amber' },
 ];

@@ -33,7 +33,6 @@ import {
   heroDiagramNodes,
   heroStats,
   howItWorks,
-  navItems,
   // pricingPlans,
   problemCards,
   securityItems,
@@ -108,13 +107,6 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
       <a className="lp-logo" href="/">
         <AppLogo className="app-logo--nav" />
       </a>
-      <nav className="lp-nav-links">
-        {navItems.map((item) => (
-          <a href={`#${slug(item)}`} key={item}>
-            {item}
-          </a>
-        ))}
-      </nav>
       <div className="lp-nav-actions">
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
@@ -503,14 +495,35 @@ function Footer() {
         <div className="lp-footer-column" key={title}>
           <h4>{title}</h4>
           {links.map((link) => (
-            <a href="/" key={link}>
+            <a href={footerLinkHref(link)} key={link}>
               {link}
             </a>
           ))}
         </div>
       ))}
+      <div className="lp-footer-attribution">
+        <span>
+          Built with <span aria-label="love" role="img">❤️</span> in India
+        </span>
+        <span>
+          About developer:{' '}
+          <a href="https://www.linkedin.com/in/abiece32" rel="noreferrer" target="_blank">
+            LinkedIn
+          </a>
+          <span aria-hidden="true"> · </span>
+          <a href="https://www.abinashkumar.com" rel="noreferrer" target="_blank">
+            abinashkumar.com
+          </a>
+        </span>
+      </div>
     </footer>
   );
+}
+
+function footerLinkHref(label: string) {
+  if (label === 'Terms') return '/legal/terms';
+  if (label === 'Privacy') return '/legal/privacy';
+  return '/';
 }
 
 function DiagramMockup({ variant }: { variant: 'hero' | 'builder' | 'mini' }) {
@@ -813,10 +826,6 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
       {children}
     </section>
   );
-}
-
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 export default LandingPage;

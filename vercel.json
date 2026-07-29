@@ -9,6 +9,18 @@
       "maxDuration": 60
     }
   },
+  "redirects": [
+    {
+      "source": "/terms",
+      "destination": "/legal/terms",
+      "permanent": true
+    },
+    {
+      "source": "/privacy",
+      "destination": "/legal/privacy",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/v1/(.*)",

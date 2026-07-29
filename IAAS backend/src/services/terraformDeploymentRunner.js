@@ -338,6 +338,126 @@ export async function verifyDeploymentResources(deploymentId) {
   }
 }
 
+export async function syncDeploymentDrift(deploymentId) {
+  const id = String(deploymentId);
+  const deployment = await Deployment.findById(id).populate('awsAccount');
+  if (!deployment) throw new Error('Deployment not found.');
+
+  const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
+  if (!account) throw new Error('AWS account not found for this deployment.');
+  if (!deployment.terraform) throw new Error('No Terraform configuration was saved for this deployment.');
+
+  const workDir = deployment.terraformWorkDir || (await storage.getWorkingDirectory(id));
+  const checkedAt = new Date();
+
+  try {
+    await mkdir(workDir, { recursive: true });
+    await writeFile(path.join(workDir, 'main.tf'), deployment.terraform, 'utf8');
+
+    const credentials = await assumeAwsRole(account);
+    const terraformEnv = {
+      ...process.env,
+      AWS_ACCESS_KEY_ID: credentials.accessKeyId,
+      AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey,
+      AWS_SESSION_TOKEN: credentials.sessionToken ?? '',
+      AWS_REGION: account.defaultRegion,
+      AWS_DEFAULT_REGION: account.defaultRegion,
+      TF_IN_AUTOMATION: 'true',
+      TF_PLUGIN_CACHE_DIR: await getPluginCacheDir(),
+    };
+
+    await runProcess(env.TERRAFORM_BIN, ['init', '-input=false'], workDir, terraformEnv);
+    await runProcess(env.TERRAFORM_BIN, ['plan', '-input=false', '-refresh-only', '-out=refresh.tfplan'], workDir, terraformEnv);
+    const showOutput = await runProcess(env.TERRAFORM_BIN, ['show', '-json', 'refresh.tfplan'], workDir, terraformEnv);
+    const planJson = JSON.parse(showOutput || '{}');
+    const drift = buildDeploymentDriftResult(planJson, account.defaultRegion, checkedAt);
+
+    deployment.drift = drift;
+    deployment.logs.push({
+      message:
+        drift.status === 'drifted'
+          ? `AWS drift sync found ${drift.summary.changed} changed Terraform-managed resource(s).`
+          : 'AWS drift sync completed. Terraform-managed resources are in sync.',
+      level: drift.status === 'drifted' ? 'warning' : 'info',
+    });
+    await deployment.save();
+    return drift;
+  } catch (error) {
+    const drift = {
+      checkedAt,
+      status: 'error',
+      summary: { total: 0, changed: 0, updated: 0, deleted: 0, replaced: 0, created: 0, noOp: 0 },
+      resources: [],
+      message: 'AWS drift sync could not complete.',
+      error: stripAnsi(error.message ?? String(error)).slice(0, 500),
+    };
+    deployment.drift = drift;
+    deployment.logs.push({ message: `AWS drift sync failed: ${drift.error}`, level: 'error' });
+    await deployment.save();
+    return drift;
+  } finally {
+    await removeProviderCache(workDir);
+  }
+}
+
+function buildDeploymentDriftResult(planJson, region, checkedAt) {
+  const changes = Array.isArray(planJson.resource_drift) ? planJson.resource_drift : [];
+  const resources = changes.map((item) => {
+    const actions = Array.isArray(item.change?.actions) ? item.change.actions : [];
+    return {
+      address: item.address ?? '',
+      type: item.type ?? '',
+      name: item.name ?? '',
+      providerName: item.provider_name ?? '',
+      actions,
+      status: driftStatusForActions(actions),
+    };
+  });
+  const summary = summarizeDriftResources(resources);
+  const status = summary.changed > 0 ? 'drifted' : 'in_sync';
+
+  return {
+    checkedAt,
+    status,
+    summary,
+    resources,
+    message:
+      status === 'drifted'
+        ? 'Terraform-managed AWS resources changed outside Infraflow. Review these changes before updating the visual builder or Terraform source.'
+        : 'Terraform-managed AWS resources match the latest Terraform state refresh.',
+    region,
+    unmanagedResourceNote:
+      'Resources created manually in AWS but never imported into this Terraform state are not auto-added. Import support must be enabled per AWS resource type to avoid unsafe ownership changes.',
+  };
+}
+
+function summarizeDriftResources(resources) {
+  return resources.reduce(
+    (summary, resource) => {
+      summary.total += 1;
+      if (resource.status === 'unchanged') {
+        summary.noOp += 1;
+        return summary;
+      }
+      summary.changed += 1;
+      if (resource.status === 'deleted') summary.deleted += 1;
+      else if (resource.status === 'replaced') summary.replaced += 1;
+      else if (resource.status === 'created') summary.created += 1;
+      else summary.updated += 1;
+      return summary;
+    },
+    { total: 0, changed: 0, updated: 0, deleted: 0, replaced: 0, created: 0, noOp: 0 },
+  );
+}
+
+function driftStatusForActions(actions) {
+  if (!actions.length || actions.includes('no-op')) return 'unchanged';
+  if (actions.includes('delete') && actions.includes('create')) return 'replaced';
+  if (actions.includes('delete')) return 'deleted';
+  if (actions.includes('create')) return 'created';
+  return 'updated';
+}
+
 function describeVerifiedResource(name, info, account, missingAddresses, trackedAddresses, regionConsoleUrl) {
   const address = info?.terraform_address ?? '';
   const status = !address || !trackedAddresses ? 'unknown' : missingAddresses.has(address) ? 'missing' : trackedAddresses.has(address) ? 'present' : 'destroyed';

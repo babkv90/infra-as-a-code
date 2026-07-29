@@ -169,6 +169,13 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
           )}
         </Panel>
         <Panel title="Connect AWS account" action="AssumeRole">
+          <p className="legal-inline-notice">
+            By connecting your AWS account, you authorize infraflow to provision infrastructure on your behalf, per our{' '}
+            <a href="/legal/terms" rel="noreferrer" target="_blank">
+              Terms of Service
+            </a>
+            .
+          </p>
           <form className="dash-role-form" onSubmit={handleConnect}>
             <label>
               Account name

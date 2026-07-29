@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { roles } from '../constants/roles.js';
+import { currentLegalVersions } from '../constants/legalVersions.js';
 import { getDashboardModulesForRole, getDashboardPermissionsForRole } from '../constants/dashboardModules.js';
 import { User } from '../models/User.js';
 import { Workspace } from '../models/Workspace.js';
@@ -18,6 +19,7 @@ export const registerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
     workspaceName: z.string().min(2).optional(),
+    acceptTerms: z.literal(true),
   }),
 });
 
@@ -50,7 +52,18 @@ export const register = asyncHandler(async (req, res) => {
   }
 
   const role = roles.OWNER;
-  const user = await User.create({ name, email, password, role });
+  const user = await User.create({
+    name,
+    email,
+    password,
+    role,
+    legalConsent: {
+      termsVersionAccepted: currentLegalVersions.terms,
+      privacyVersionAccepted: currentLegalVersions.privacy,
+      acceptedAt: new Date(),
+      acceptedIp: req.ip,
+    },
+  });
   const workspace = await Workspace.create({
     name: workspaceName ?? `${name}'s workspace`,
     owner: user._id,
@@ -230,6 +243,12 @@ function serializeUser(user, workspace) {
     },
     workspace: user.workspace,
     status: user.status,
+    legalConsent: {
+      termsVersionAccepted: user.legalConsent?.termsVersionAccepted ?? '',
+      privacyVersionAccepted: user.legalConsent?.privacyVersionAccepted ?? '',
+      acceptedAt: user.legalConsent?.acceptedAt ?? null,
+      acceptedIp: user.legalConsent?.acceptedIp ?? '',
+    },
   };
 }
 

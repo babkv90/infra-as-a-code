@@ -14,7 +14,7 @@ import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
 import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
 import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
-import { verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
+import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 
 export const createDeploymentSchema = z.object({
   body: z.object({
@@ -614,5 +614,16 @@ export const verifyDeploymentResourcesRoute = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.verify_resources', 'Deployment', deployment._id);
   const result = await verifyDeploymentResources(deployment._id);
+  res.json({ success: true, data: result });
+});
+
+export const syncDeploymentDriftRoute = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (!deployment.terraform) throw new ApiError(409, 'Deployment does not have Terraform saved for drift sync');
+
+  await auditLog(req, 'deployment.sync_drift', 'Deployment', deployment._id);
+  const result = await syncDeploymentDrift(deployment._id);
   res.json({ success: true, data: result });
 });

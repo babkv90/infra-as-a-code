@@ -175,6 +175,8 @@ export const getGithubOAuthDiagnostics = asyncHandler(async (req, res) => {
       configured: true,
       clientId: env.GITHUB_CLIENT_ID,
       callbackUrl: redirectUri,
+      githubOAuthAppCallbackUrl: redirectUri,
+      frontendOrigin: env.CLIENT_ORIGINS[0] ?? '',
       requiredScopes: requiredGithubScopes,
       authorizeUrlScope: url.searchParams.get('scope') ?? '',
       authorizeUrlPreview: `${url.origin}${url.pathname}?client_id=${env.GITHUB_CLIENT_ID ? 'configured' : 'missing'}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(githubOAuthScope)}&state=redacted`,
