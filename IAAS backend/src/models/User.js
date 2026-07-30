@@ -29,6 +29,12 @@ const userSchema = new mongoose.Schema(
       scopes: { type: [String], default: [] },
       connectedAt: Date,
     },
+    legalConsent: {
+      termsVersionAccepted: { type: String, default: '' },
+      privacyVersionAccepted: { type: String, default: '' },
+      acceptedAt: Date,
+      acceptedIp: { type: String, default: '' },
+    },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
     lastLoginAt: Date,

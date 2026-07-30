@@ -3,18 +3,24 @@ import AuthPage from './auth/AuthPage';
 import { validateStoredSession } from './auth/authClient';
 import DashboardShell from './dashboard/DashboardShell';
 import LandingPage from './landing/LandingPage';
+import LegalPage from './legal/LegalPage';
 import ReferenceDocsPage from './reference/ReferenceDocsPage';
 import GithubSettingsPage from './settings/GithubSettingsPage';
 import { getNextTheme, isThemeMode, type ThemeMode } from './theme';
 
 function App() {
   const path = window.location.pathname;
+  if (path === '/terms' || path === '/privacy') {
+    window.location.replace(path === '/terms' ? '/legal/terms' : '/legal/privacy');
+    return null;
+  }
+
   const requiresAuth = path === '/dashboard' || path === '/settings' || path === '/profile';
   const [isProtectedRouteAllowed, setIsProtectedRouteAllowed] = useState(!requiresAuth);
   const [isValidatingProtectedRoute, setIsValidatingProtectedRoute] = useState(requiresAuth);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = window.localStorage.getItem('infra-theme');
-    return isThemeMode(saved) ? saved : 'dark';
+    return isThemeMode(saved) ? saved : 'pearl';
   });
 
   useEffect(() => {
@@ -90,6 +96,10 @@ function App() {
 
   if (path === '/references') {
     page = <ReferenceDocsPage theme={theme} onToggleTheme={toggleTheme} />;
+  }
+
+  if (path.startsWith('/legal/')) {
+    page = <LegalPage path={path} />;
   }
 
   if (path === '/login') {

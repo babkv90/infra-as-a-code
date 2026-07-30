@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67bdb07c891e46de1f20f1",
+  "pipelineName": "gffdvd",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T20:21:23.000Z",
+  "source": "infraflow"
+}

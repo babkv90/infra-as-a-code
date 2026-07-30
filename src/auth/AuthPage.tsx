@@ -1,7 +1,6 @@
 import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import type React from 'react';
-import { useMemo, useState } from 'react';
-import AppLogo from '../components/AppLogo';
+import { useEffect, useMemo, useState } from 'react';
 import { PageAlert } from '../components/PageAlert';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
@@ -13,6 +12,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   const isRegister = mode === 'register';
   const [name, setName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
+  const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,12 +33,20 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
   const canSubmit = useMemo(() => {
     if (!email.trim() || password.length < 8) return false;
-    if (isRegister && name.trim().length < 2) return false;
+    if (isRegister && (name.trim().length < 2 || !hasAcceptedLegal)) return false;
     return true;
-  }, [email, isRegister, name, password]);
+  }, [email, hasAcceptedLegal, isRegister, name, password]);
 
   const canRequestPasswordReset = !isRegister && email.trim().length > 0 && !isRequestingReset;
   const canResetPassword = !isRegister && resetToken.trim().length >= 32 && resetNewPassword.length >= 8 && !isResettingPassword;
+
+  useEffect(() => {
+    if (isRegister) return;
+    const token = new URLSearchParams(window.location.search).get('resetToken')?.trim();
+    if (!token) return;
+    setShowForgotPassword(true);
+    setResetToken(token);
+  }, [isRegister]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,6 +62,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           workspaceName: workspaceName.trim() || undefined,
           email: email.trim(),
           password,
+          acceptTerms: true,
         });
       } else {
         await login({ email: email.trim(), password });
@@ -119,9 +128,6 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           <ArrowLeft size={16} />
           Back to home
         </a>
-        <div className="auth-brand">
-          <AppLogo className="app-logo--auth" />
-        </div>
         <h1>{isRegister ? 'Build AWS infrastructure with your first workspace.' : 'Welcome back to your cloud workspace.'}</h1>
         <p>
           Design visual infrastructure, validate architecture risk, generate Terraform, and monitor connected AWS
@@ -223,14 +229,14 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
               {showForgotPassword && (
                 <div className="auth-forgot-panel">
-                  <p>Enter your email above, request a reset token, then set a new password.</p>
+                  <p>Enter your email above, then use the emailed reset token or reset link to set a new password here.</p>
                   <button className="auth-secondary-submit" disabled={!canRequestPasswordReset} onClick={handleForgotPassword} type="button">
-                    {isRequestingReset ? 'Sending...' : 'Get reset token'}
+                    {isRequestingReset ? 'Sending...' : 'Send reset token'}
                     <Mail size={16} />
                   </button>
                   {forgotPasswordToken && (
                     <div className="auth-reset-token">
-                      <span>Development reset token</span>
+                      <span>Reset token</span>
                       <code>{forgotPasswordToken}</code>
                     </div>
                   )}
@@ -268,6 +274,23 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 </div>
               )}
             </div>
+          )}
+
+          {isRegister && (
+            <label className="auth-consent">
+              <input checked={hasAcceptedLegal} onChange={(event) => setHasAcceptedLegal(event.target.checked)} type="checkbox" />
+              <span>
+                I agree to the{' '}
+                <a href="/legal/terms" rel="noreferrer" target="_blank">
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="/legal/privacy" rel="noreferrer" target="_blank">
+                  Privacy Policy
+                </a>
+                .
+              </span>
+            </label>
           )}
 
           <button className="auth-submit" disabled={!canSubmit || isSubmitting} type="submit">

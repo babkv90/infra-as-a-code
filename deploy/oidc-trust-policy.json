@@ -4,7 +4,7 @@
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:aws:iam::897722687806:oidc-provider/token.actions.githubusercontent.com"
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
       },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
@@ -12,7 +12,14 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:babkv90/infra-as-a-code:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:babkv90/infra-as-a-code:ref:refs/heads/main",
+            "repo:babkv90/infra-as-a-code:environment:*",
+            "repo:babkv90/infra-as-a-code:environment:development",
+            "repo:babkv90/infra-as-a-code:environment:test",
+            "repo:babkv90/infra-as-a-code:environment:staging",
+            "repo:babkv90/infra-as-a-code:environment:production"
+          ]
         }
       }
     }

@@ -32,7 +32,7 @@ export function githubDeploymentErrorMessage(message) {
     return `${text} Confirm the workflow file has been synced to the selected repository and branch.`;
   }
   if (/resource not accessible by integration/i.test(text)) {
-    return `${text} The connected GitHub app/token needs Actions read access and Contents/Workflow write access for this repository.`;
+    return `${text} Reconnect GitHub from the Application Pipeline page and approve repo + workflow access. If this repository belongs to an organization, also authorize the OAuth app for the org/SAML account. For GitHub App tokens, enable Repository permissions: Actions read/write, Contents read/write, and Workflows read/write, then reinstall the app for this repository.`;
   }
   return text;
 }
@@ -70,6 +70,11 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
       const text = await existingResponse.text();
       throw new ApiError(existingResponse.status, `GitHub read failed for ${path}: ${text}`);
     }
+    const nextContent = Buffer.from(file.content, 'utf8').toString('base64');
+    if (existing?.content && String(existing.content).replace(/\s/g, '') === nextContent) {
+      synced.push({ path, commitSha: existing.sha ?? '', skipped: true });
+      continue;
+    }
 
     const updateResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}`, {
       method: 'PUT',
@@ -77,7 +82,7 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
       body: JSON.stringify({
         message: `${message}: ${path}`,
         branch,
-        content: Buffer.from(file.content, 'utf8').toString('base64'),
+        content: nextContent,
         ...(existing?.sha ? { sha: existing.sha } : {}),
       }),
     });
@@ -92,6 +97,136 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
   return {
     files: synced,
     commitSha: synced[synced.length - 1]?.commitSha ?? '',
+  };
+}
+
+export async function deleteFilesFromGithub({ token, owner, repo, branch, message, paths }) {
+  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const headers = githubApiHeaders(token);
+  const deleted = [];
+
+  for (const rawPath of paths) {
+    const path = String(rawPath ?? '').replace(/^\/+/, '');
+    if (!path) continue;
+
+    const existingResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}?ref=${encodeURIComponent(branch)}`, { headers });
+    if (existingResponse.status === 404) continue;
+    const existing = await existingResponse.json().catch(async () => ({ message: await existingResponse.text() }));
+    if (!existingResponse.ok) {
+      throw new ApiError(existingResponse.status, `GitHub read failed for ${path}: ${existing?.message ?? 'unknown error'}`);
+    }
+    if (!existing?.sha) continue;
+
+    const deleteResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}`, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({
+        message: `${message}: remove ${path}`,
+        branch,
+        sha: existing.sha,
+      }),
+    });
+    const result = await deleteResponse.json().catch(async () => ({ message: await deleteResponse.text() }));
+    if (!deleteResponse.ok) {
+      throw new ApiError(deleteResponse.status, githubSyncErrorMessage(path, result?.message));
+    }
+    deleted.push({ path, commitSha: result?.commit?.sha ?? '' });
+  }
+
+  return {
+    files: deleted,
+    commitSha: deleted[deleted.length - 1]?.commitSha ?? '',
+  };
+}
+
+export async function syncFilesToGithubCommit({ token, owner, repo, branch, message, files, deletePaths = [] }) {
+  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const headers = githubApiHeaders(token);
+  const refName = `heads/${branch}`;
+
+  const refResponse = await fetch(`${apiBase}/git/ref/${encodeURIComponentPath(refName)}`, { headers });
+  const ref = await refResponse.json().catch(async () => ({ message: await refResponse.text() }));
+  if (!refResponse.ok) {
+    throw new ApiError(refResponse.status, `GitHub branch lookup failed for ${branch}: ${ref?.message ?? 'unknown error'}`);
+  }
+
+  const baseCommitSha = ref?.object?.sha;
+  if (!baseCommitSha) throw new ApiError(409, `GitHub branch ${branch} did not return a commit SHA.`);
+
+  const commitResponse = await fetch(`${apiBase}/git/commits/${encodeURIComponent(baseCommitSha)}`, { headers });
+  const baseCommit = await commitResponse.json().catch(async () => ({ message: await commitResponse.text() }));
+  if (!commitResponse.ok) {
+    throw new ApiError(commitResponse.status, `GitHub commit lookup failed for ${branch}: ${baseCommit?.message ?? 'unknown error'}`);
+  }
+
+  const treeResponse = await fetch(`${apiBase}/git/trees/${encodeURIComponent(baseCommit.tree.sha)}?recursive=1`, { headers });
+  const baseTree = await treeResponse.json().catch(async () => ({ message: await treeResponse.text() }));
+  if (!treeResponse.ok) {
+    throw new ApiError(treeResponse.status, `GitHub tree lookup failed for ${branch}: ${baseTree?.message ?? 'unknown error'}`);
+  }
+
+  const nextFiles = sortWorkflowFilesLast(files).map((file) => ({
+    path: String(file.path ?? '').replace(/^\/+/, ''),
+    mode: '100644',
+    type: 'blob',
+    content: file.content,
+  })).filter((file) => file.path);
+  const nextFilePaths = new Set(nextFiles.map((file) => file.path));
+  const existingPaths = new Set((baseTree.tree ?? []).map((item) => item.path));
+  const deletes = Array.from(new Set(deletePaths.map((path) => String(path ?? '').replace(/^\/+/, '')).filter(Boolean)))
+    .filter((path) => !nextFilePaths.has(path) && existingPaths.has(path))
+    .map((path) => ({
+      path,
+      mode: '100644',
+      type: 'blob',
+      sha: null,
+    }));
+
+  if (!nextFiles.length && !deletes.length) {
+    return { files: [], deletedWorkflowFiles: [], commitSha: baseCommitSha, skipped: true };
+  }
+
+  const createTreeResponse = await fetch(`${apiBase}/git/trees`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      base_tree: baseCommit.tree.sha,
+      tree: [...nextFiles, ...deletes],
+    }),
+  });
+  const nextTree = await createTreeResponse.json().catch(async () => ({ message: await createTreeResponse.text() }));
+  if (!createTreeResponse.ok) {
+    throw new ApiError(createTreeResponse.status, `GitHub tree create failed: ${nextTree?.message ?? 'unknown error'}`);
+  }
+
+  const createCommitResponse = await fetch(`${apiBase}/git/commits`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      message,
+      tree: nextTree.sha,
+      parents: [baseCommitSha],
+    }),
+  });
+  const nextCommit = await createCommitResponse.json().catch(async () => ({ message: await createCommitResponse.text() }));
+  if (!createCommitResponse.ok) {
+    throw new ApiError(createCommitResponse.status, `GitHub commit create failed: ${nextCommit?.message ?? 'unknown error'}`);
+  }
+
+  const updateRefResponse = await fetch(`${apiBase}/git/refs/${encodeURIComponentPath(refName)}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ sha: nextCommit.sha }),
+  });
+  const updateRef = await updateRefResponse.json().catch(async () => ({ message: await updateRefResponse.text() }));
+  if (!updateRefResponse.ok) {
+    throw new ApiError(updateRefResponse.status, `GitHub branch update failed for ${branch}: ${updateRef?.message ?? 'unknown error'}`);
+  }
+
+  return {
+    files: nextFiles.map((file) => ({ path: file.path, commitSha: nextCommit.sha })),
+    deletedWorkflowFiles: deletes.map((file) => ({ path: file.path, commitSha: nextCommit.sha })),
+    commitSha: nextCommit.sha,
   };
 }
 
@@ -117,6 +252,19 @@ export async function dispatchGithubWorkflow({ token, owner, repo, workflowId, b
 
   const result = await response.json().catch(async () => ({ message: await response.text() }));
   throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
+}
+
+export async function getGithubRepositoryDefaultBranch({ token, owner, repo }) {
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+    headers: githubApiHeaders(token),
+  });
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+
+  if (!response.ok) {
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'GitHub repository lookup failed.'));
+  }
+
+  return result.default_branch || 'main';
 }
 
 // GitHub's dispatch API doesn't hand back the run it just created, so this polls the workflow's
@@ -147,6 +295,18 @@ export async function latestGithubWorkflowRun({ token, owner, repo, workflowId, 
   return run ? normalizeGithubWorkflowRun(run) : null;
 }
 
+export async function githubWorkflowRuns({ token, owner, repo, workflowId, branch, status, perPage = 30 }) {
+  const params = new URLSearchParams({ branch, per_page: String(perPage) });
+  if (status) params.set('status', status);
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowId)}/runs?${params.toString()}`,
+    { headers: githubApiHeaders(token) },
+  );
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+  if (!response.ok) throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read workflow runs.'));
+  return (result.workflow_runs ?? []).map(normalizeGithubWorkflowRun);
+}
+
 export async function getWorkflowRun({ token, owner, repo, runId }) {
   const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${encodeURIComponent(runId)}`, {
     headers: githubApiHeaders(token),
@@ -154,6 +314,20 @@ export async function getWorkflowRun({ token, owner, repo, runId }) {
   const result = await response.json().catch(async () => ({ message: await response.text() }));
   if (!response.ok) throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read workflow run.'));
   return normalizeGithubWorkflowRun(result);
+}
+
+export async function cancelWorkflowRun({ token, owner, repo, runId }) {
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: 'POST',
+    headers: githubApiHeaders(token),
+  });
+
+  if (response.status === 202) return { cancelled: true };
+  if (response.status === 409) return { cancelled: false, alreadyFinished: true };
+
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+  if (!response.ok) throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to cancel workflow run.'));
+  return { cancelled: true };
 }
 
 export async function githubWorkflowRunJobs({ token, owner, repo, runId }) {

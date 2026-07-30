@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import {
+  checkGithubRepositoryAccess,
   disconnectGithub,
   getGithubConnection,
+  getGithubOAuthDiagnostics,
   listGithubBranches,
   githubOAuthCallback,
   listGithubRepositories,
@@ -18,7 +20,9 @@ githubRouter.get('/oauth/callback', githubOAuthCallback);
 githubRouter.use(requireAuth);
 githubRouter.get('/status', getGithubConnection);
 githubRouter.get('/connection', getGithubConnection);
+githubRouter.get('/oauth/diagnostics', getGithubOAuthDiagnostics);
 githubRouter.delete('/disconnect', disconnectGithub);
 githubRouter.delete('/connection', disconnectGithub);
 githubRouter.get('/repos', listGithubRepositories);
 githubRouter.get('/branches', listGithubBranches);
+githubRouter.get('/repository-access', checkGithubRepositoryAccess);

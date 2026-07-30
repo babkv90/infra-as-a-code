@@ -20,6 +20,12 @@ export type AuthUser = {
     note?: string;
   };
   status: string;
+  legalConsent?: {
+    termsVersionAccepted?: string;
+    privacyVersionAccepted?: string;
+    acceptedAt?: string | null;
+    acceptedIp?: string;
+  };
 };
 
 type AuthResponse = {
@@ -61,6 +67,7 @@ export type LoginPayload = {
 export type RegisterPayload = LoginPayload & {
   name: string;
   workspaceName?: string;
+  acceptTerms: true;
 };
 
 export async function login(payload: LoginPayload) {

@@ -30,8 +30,22 @@ export type DeploymentRecord = {
   };
   terraform: string;
   terraformWorkDir?: string;
+  requestedBy?: string | {
+    _id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+  };
+  executor?: 'local' | 'github-actions';
+  activeRun?: {
+    githubRunId?: string;
+    action?: string;
+    status?: string;
+    startedAt?: string;
+  };
   awsAccount?: string;
   outputs?: Record<string, unknown>;
+  drift?: DeploymentDriftResult;
   mergedInto?: string;
   validationIssues: Array<{ severity: string; message: string; nodeId?: string; edgeId?: string }>;
   logs: Array<{ message: string; level: string; at?: string }>;
@@ -181,4 +195,38 @@ export type ResourceVerificationResult = {
 // local state file last recorded — the two can disagree after a destroy attempt fails partway.
 export async function verifyDeploymentResources(id: string) {
   return apiRequest<ResourceVerificationResult>(`/deployments/${id}/verify-resources`, { method: 'POST' });
+}
+
+export type DeploymentDriftResource = {
+  address: string;
+  type: string;
+  name: string;
+  providerName: string;
+  actions: string[];
+  status: 'unchanged' | 'updated' | 'deleted' | 'replaced' | 'created';
+};
+
+export type DeploymentDriftResult = {
+  checkedAt: string;
+  status: 'unknown' | 'in_sync' | 'drifted' | 'error';
+  summary: {
+    total: number;
+    changed: number;
+    updated: number;
+    deleted: number;
+    replaced: number;
+    created: number;
+    noOp: number;
+  };
+  resources: DeploymentDriftResource[];
+  message?: string;
+  error?: string;
+  region?: string;
+  unmanagedResourceNote?: string;
+};
+
+// Syncs Terraform-managed drift metadata from AWS into the deployment record. This is read-only:
+// it refreshes state and stores a sanitized report, but never imports unmanaged resources or applies.
+export async function syncDeploymentDrift(id: string) {
+  return apiRequest<DeploymentDriftResult>(`/deployments/${id}/sync-drift`, { method: 'POST' });
 }

@@ -70,13 +70,30 @@ function makeCredentials(stsCredentials) {
 }
 
 function makeEnvCredentials() {
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
-  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() || undefined;
+  const allowLocalReservedAwsEnv = !process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const accessKeyId = (
+    process.env.INFRAFLOW_APP_AWS_ACCESS_KEY_ID ||
+    process.env.INFRAFLOW_AWS_ACCESS_KEY_ID ||
+    (allowLocalReservedAwsEnv ? process.env.AWS_ACCESS_KEY_ID : '') ||
+    ''
+  ).trim();
+  const secretAccessKey = (
+    process.env.INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY ||
+    process.env.INFRAFLOW_AWS_SECRET_ACCESS_KEY ||
+    (allowLocalReservedAwsEnv ? process.env.AWS_SECRET_ACCESS_KEY : '') ||
+    ''
+  ).trim();
+  const sessionToken =
+    (
+      process.env.INFRAFLOW_APP_AWS_SESSION_TOKEN ||
+      process.env.INFRAFLOW_AWS_SESSION_TOKEN ||
+      (allowLocalReservedAwsEnv ? process.env.AWS_SESSION_TOKEN : '') ||
+      ''
+    ).trim() || undefined;
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      'AWS credentials are missing. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your .env file.',
+      'AWS credentials are missing. Please set INFRAFLOW_APP_AWS_ACCESS_KEY_ID and INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY on the backend.',
     );
   }
 
@@ -107,7 +124,8 @@ async function assumeAwsRole(account = {}) {
     You have only one AWS account.
 
     So, if roleArn is not provided, we DO NOT call sts:AssumeRole.
-    We directly use AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from .env.
+    We use INFRAFLOW_APP_AWS_ACCESS_KEY_ID and INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY from env.
+    Local development can also use AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from .env.
   */
   if (!account.roleArn) {
     return makeEnvCredentials();

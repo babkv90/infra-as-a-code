@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67cc25e96eab241f49d417",
+  "pipelineName": "awslambda",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T21:51:06.014Z",
+  "source": "infraflow"
+}

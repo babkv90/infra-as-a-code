@@ -42,7 +42,6 @@ import {
   heroDiagramNodes,
   heroStats,
   howItWorks,
-  navItems,
   // pricingPlans,
   securityItems,
   solutionCards,
@@ -251,13 +250,6 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
       <a className="lp-logo" href="/">
         <AppLogo className="app-logo--nav" />
       </a>
-      <nav className="lp-nav-links">
-        {navItems.map((item) => (
-          <a href={navHref(item)} key={item}>
-            {item}
-          </a>
-        ))}
-      </nav>
       <div className="lp-nav-actions">
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
@@ -889,14 +881,35 @@ function Footer() {
         <div className="lp-footer-column" key={title}>
           <h4>{title}</h4>
           {links.map((link) => (
-            <a href={footerHref(link)} key={link} rel={footerHref(link).startsWith('http') ? 'noreferrer' : undefined} target={footerHref(link).startsWith('http') ? '_blank' : undefined}>
+            <a href={footerLinkHref(link)} key={link}>
               {link}
             </a>
           ))}
         </div>
       ))}
+      <div className="lp-footer-attribution">
+        <span>
+          Built with <span aria-label="love" role="img">❤️</span> in India
+        </span>
+        <span>
+          About developer:{' '}
+          <a href="https://www.linkedin.com/in/abiece32" rel="noreferrer" target="_blank">
+            LinkedIn
+          </a>
+          <span aria-hidden="true"> · </span>
+          <a href="https://www.abinashkumar.com" rel="noreferrer" target="_blank">
+            abinashkumar.com
+          </a>
+        </span>
+      </div>
     </footer>
   );
+}
+
+function footerLinkHref(label: string) {
+  if (label === 'Terms') return '/legal/terms';
+  if (label === 'Privacy') return '/legal/privacy';
+  return '/';
 }
 
 function DiagramMockup({ variant }: { variant: 'hero' | 'builder' | 'mini' }) {
@@ -1199,38 +1212,6 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
       {children}
     </section>
   );
-}
-
-function navHref(label: string): string {
-  const routes: Record<string, string> = {
-    Product: '#product',
-    'Visual Builder': '#visual-builder',
-    'AWS Insights': '#aws-insights',
-    Terraform: '#terraform-export',
-    Workflow: '#docs',
-  };
-
-  return routes[label] ?? '#product';
-}
-
-function footerHref(label: string): string {
-  const routes: Record<string, string> = {
-    'Visual Builder': '#visual-builder',
-    'AWS Insights': '#aws-insights',
-    'Terraform Export': '#terraform-export',
-    Deployments: '#docs',
-    Workflow: '#docs',
-    'AWS Connection': '#ai-agent',
-    'Terraform Guide': '#terraform-export',
-    Support: '/dashboard?view=support',
-    'About Developer': 'https://www.abinashkumar.com',
-    Contact: 'https://www.linkedin.com/in/abiece32',
-    'Privacy Policy': '/legal/privacy',
-    'Terms of Service': '/legal/terms',
-    Security: '#security',
-  };
-
-  return routes[label] ?? '/';
 }
 
 export default LandingPage;

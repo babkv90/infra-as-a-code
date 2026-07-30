@@ -1,3 +1,4 @@
+import { getStoredToken } from '../auth/authClient';
 import { API_BASE_URL, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
 export type GithubConnection = {
@@ -8,6 +9,9 @@ export type GithubConnection = {
   name?: string;
   avatarUrl?: string;
   scopes: string[];
+  requiredScopes?: string[];
+  missingScopes?: string[];
+  reconnectRequired?: boolean;
   connectedAt?: string;
 };
 
@@ -35,8 +39,27 @@ export type GithubBranch = {
   commitSha: string;
 };
 
+export type GithubRepositoryAccess = {
+  owner: string;
+  repo: string;
+  workflowPath: string;
+  canReadRepository: boolean;
+  canPushContents: boolean;
+  hasWorkflowScope: boolean;
+  canWriteWorkflowFile: boolean;
+  missing: string[];
+  ok: boolean;
+  message: string;
+  reconnectRequired?: boolean;
+  requiredScopes?: string[];
+  grantedScopes?: string[];
+  missingScopes?: string[];
+};
+
 export function githubOAuthUrl({ mode = 'redirect', returnTo = '/settings' }: { mode?: 'redirect' | 'popup'; returnTo?: string } = {}) {
   const params = new URLSearchParams({ mode, returnTo });
+  const token = getStoredToken();
+  if (token) params.set('token', token);
   return `${API_BASE_URL}/github/oauth/connect?${params.toString()}`;
 }
 
@@ -55,6 +78,12 @@ export async function listGithubRepositories() {
 export async function listGithubBranches(owner: string, repo: string) {
   const params = new URLSearchParams({ owner, repo });
   return githubRequest<GithubBranch[]>(`/github/branches?${params.toString()}`);
+}
+
+export async function checkGithubRepositoryAccess(owner: string, repo: string, workflowPath?: string) {
+  const params = new URLSearchParams({ owner, repo });
+  if (workflowPath) params.set('workflowPath', workflowPath);
+  return githubRequest<GithubRepositoryAccess>(`/github/repository-access?${params.toString()}`);
 }
 
 // GitHub connection status/repo/branch data changes outside this app (via GitHub itself), so GET

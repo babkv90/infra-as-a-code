@@ -6,6 +6,9 @@ export { API_BASE_URL };
 async function unwrap<T>(response: Response, fallbackMessage: string): Promise<T> {
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.success) {
+    if (response.status === 429) {
+      throw new Error(result?.message ? `429: ${result.message}` : '429: Too many requests');
+    }
     throw new Error(result?.message ?? fallbackMessage);
   }
   return result.data as T;

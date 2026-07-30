@@ -1,0 +1,8 @@
+{
+  "pipelineId": "6a67b200f043d9381c67c771",
+  "pipelineName": "LambdaErrorResolver",
+  "environment": "development",
+  "target": "lambda",
+  "requestedAt": "2026-07-27T19:45:14.730Z",
+  "source": "infraflow"
+}

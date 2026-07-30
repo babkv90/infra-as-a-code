@@ -4,8 +4,8 @@ import { ReactFlowProvider } from 'reactflow';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initializeAnalytics } from './utils/analytics';
-import './styles.css';
 import 'reactflow/dist/style.css';
+import './styles.css';
 
 initializeAnalytics();
 

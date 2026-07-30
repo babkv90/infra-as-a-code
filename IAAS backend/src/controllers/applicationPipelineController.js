@@ -10,15 +10,15 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { createNotification } from '../services/notificationService.js';
 import {
+  cancelWorkflowRun,
   dispatchGithubWorkflow,
-  encodeURIComponentPath,
-  githubApiHeaders,
   githubDeploymentErrorMessage,
-  githubSyncErrorMessage,
+  getGithubRepositoryDefaultBranch,
   githubWorkflowRunJobs,
+  githubWorkflowRuns,
   isGithubIntegrationPermissionError,
   latestGithubWorkflowRun,
-  syncFilesToGithub,
+  syncFilesToGithubCommit,
   waitForLatestWorkflowRun,
 } from '../services/githubActionsClient.js';
 import { setGithubActionsSecret } from '../services/githubSecretsService.js';
@@ -26,7 +26,31 @@ import { buildOidcPermissionsPolicy, buildOidcTrustPolicy, provisionOidcDeployRo
 import { githubTokenForUser } from './githubController.js';
 
 const appTypes = ['react-app', 'static-spa', 'node-container', 'python-api', 'java-service', 'serverless-api', 'kubernetes-service'];
-const environments = ['development', 'staging', 'production'];
+const environments = ['development', 'test', 'staging', 'production'];
+const deploymentDispatchLocks = new Map();
+const deploymentDispatchLockTtlMs = 10 * 60 * 1000;
+
+function deploymentDispatchLockKey(workspaceId, pipelineId) {
+  return `${workspaceId}:${pipelineId}`;
+}
+
+function isDeploymentDispatchLocked(key) {
+  const lockedAt = deploymentDispatchLocks.get(key);
+  if (!lockedAt) return false;
+  if (Date.now() - lockedAt > deploymentDispatchLockTtlMs) {
+    deploymentDispatchLocks.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function lockDeploymentDispatch(key) {
+  deploymentDispatchLocks.set(key, Date.now());
+}
+
+function unlockDeploymentDispatch(key) {
+  deploymentDispatchLocks.delete(key);
+}
 
 export const pipelineSchema = z.object({
   body: z.object({
@@ -89,32 +113,16 @@ export const pipelineRunResultSchema = z.object({
 
 export const listApplicationPipelines = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
-  const pipelines = await ApplicationPipeline.find({ workspace: req.user.workspace }).sort({ updatedAt: -1 }).populate('deployment', 'name status resourceCount connectionCount outputs');
+  const pipelines = await ApplicationPipeline.find({ workspace: req.user.workspace })
+    .sort({ updatedAt: -1 })
+    .populate('deployment', 'name status resourceCount connectionCount outputs')
+    .populate('createdBy', 'name email role');
   res.json({ success: true, data: pipelines });
 });
 
 export const createApplicationPipeline = asyncHandler(async (req, res) => {
   const workspace = await assertPipelineAccess(req);
-  const deployment = req.validated.body.deploymentId
-    ? await Deployment.findOne({ _id: req.validated.body.deploymentId, workspace: req.user.workspace })
-        .populate('diagram', 'name activeRegion nodes edges')
-        .populate('awsAccount', 'accountId')
-    : undefined;
-
-  if (req.validated.body.deploymentId && !deployment) throw new ApiError(404, 'Deployment target not found');
-
-  const target = inferPipelineTarget(req.validated.body.appType, deployment, req.validated.body.target ?? {});
-  assertTargetResolved(target, deployment);
-  const commands = defaultCommandsForApp(req.validated.body.appType, req.validated.body.commands ?? {});
-  const generatedFiles = generatePipelineFiles({
-    name: req.validated.body.name,
-    appType: req.validated.body.appType,
-    environment: req.validated.body.environment,
-    repository: req.validated.body.repository,
-    commands,
-    target,
-    accountId: deployment?.awsAccount?.accountId,
-  });
+  const { deployment, target, commands, generatedFiles } = await buildPipelineDefinition(req);
 
   const pipeline = await ApplicationPipeline.create({
     workspace: req.user.workspace,
@@ -140,23 +148,99 @@ export const createApplicationPipeline = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: pipeline });
 });
 
+export const updateApplicationPipeline = asyncHandler(async (req, res) => {
+  const workspace = await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const { deployment, target, commands, generatedFiles } = await buildPipelineDefinition(req);
+
+  pipeline.deployment = deployment?._id;
+  pipeline.name = req.validated.body.name;
+  pipeline.appType = req.validated.body.appType;
+  pipeline.environment = req.validated.body.environment;
+  pipeline.repository.provider = 'github';
+  pipeline.repository.url = req.validated.body.repository.url;
+  pipeline.repository.branch = req.validated.body.repository.branch;
+  pipeline.repository.workflowPath = workflowPathFor(req.validated.body.environment);
+  pipeline.repository.lastSyncedAt = undefined;
+  pipeline.repository.lastSyncCommit = '';
+  pipeline.commands = commands;
+  pipeline.target = target;
+  pipeline.generatedFiles = generatedFiles;
+  pipeline.checklist = pipelineChecklist(target.type);
+  pipeline.status = 'ready';
+
+  await pipeline.save();
+  await auditLog(req, 'pipeline.update', 'ApplicationPipeline', pipeline._id, { workspace: workspace._id, target: target.type });
+  res.json({ success: true, data: pipeline });
+});
+
+async function buildPipelineDefinition(req) {
+  const deployment = req.validated.body.deploymentId
+    ? await Deployment.findOne({ _id: req.validated.body.deploymentId, workspace: req.user.workspace })
+        .populate('diagram', 'name activeRegion nodes edges')
+        .populate('awsAccount', 'accountId')
+    : undefined;
+
+  if (req.validated.body.deploymentId && !deployment) throw new ApiError(404, 'Deployment target not found');
+
+  const target = inferPipelineTarget(req.validated.body.appType, deployment, req.validated.body.target ?? {});
+  assertTargetResolved(target, deployment);
+  const commands = defaultCommandsForApp(req.validated.body.appType, req.validated.body.commands ?? {});
+  const generatedFiles = generatePipelineFiles({
+    name: req.validated.body.name,
+    appType: req.validated.body.appType,
+    environment: req.validated.body.environment,
+    repository: req.validated.body.repository,
+    commands,
+    target,
+    accountId: deployment?.awsAccount?.accountId,
+  });
+
+  return { deployment, target, commands, generatedFiles };
+}
+
+export const deleteApplicationPipeline = asyncHandler(async (req, res) => {
+  const workspace = await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOneAndDelete({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  await auditLog(req, 'pipeline.delete', 'ApplicationPipeline', pipeline._id, { workspace: workspace._id, name: pipeline.name });
+  res.json({ success: true, data: { deleted: true } });
+});
+
 export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
-  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('deployment', 'awsAccount').populate('deployment.awsAccount', 'accountId');
   if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
   const token = req.validated.body.token || await githubTokenForUser(req.user._id);
   if (!token) throw new ApiError(409, 'Connect GitHub before syncing generated pipeline files.');
+  const syncRepository = {
+    url: `https://github.com/${req.validated.body.owner}/${req.validated.body.repo}`,
+    branch: req.validated.body.branch,
+  };
+  pipeline.generatedFiles = generatePipelineFiles({
+    name: pipeline.name,
+    appType: pipeline.appType,
+    environment: pipeline.environment,
+    repository: syncRepository,
+    commands: pipeline.commands,
+    target: pipeline.target,
+    accountId: pipeline.deployment?.awsAccount?.accountId,
+  });
 
-  const result = await syncFilesToGithub({
+  const result = await syncFilesToGithubCommit({
     token,
     owner: req.validated.body.owner,
     repo: req.validated.body.repo,
     branch: req.validated.body.branch,
     message: req.validated.body.message || `Sync ${pipeline.name} ${pipeline.environment} pipeline from infraflow`,
     files: pipeline.generatedFiles,
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
   });
 
-  pipeline.repository.url = `https://github.com/${req.validated.body.owner}/${req.validated.body.repo}`;
+  pipeline.repository.url = syncRepository.url;
   pipeline.repository.branch = req.validated.body.branch;
   pipeline.repository.lastSyncedAt = new Date();
   pipeline.repository.lastSyncCommit = result.commitSha;
@@ -280,9 +364,10 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
   if (!workflowFile) throw new ApiError(409, 'Generate and sync a workflow file before deploying.');
 
-  const workflowId = workflowFile.path.split('/').pop();
+  let workflowId = workflowFile.path.split('/').pop();
   const dispatchedAt = new Date();
   let dispatchMode = 'workflow_dispatch';
+  let autoSync = null;
   try {
     await dispatchGithubWorkflow({
       token,
@@ -293,15 +378,18 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       inputs: { environment: pipeline.environment },
     });
   } catch (error) {
+    if (isWorkflowDispatchMissingError(error)) {
+      autoSync = await regenerateAndSyncPipelineWorkflow({ pipeline, token, repository });
+      workflowId = workflowPathFor(pipeline.environment).split('/').pop();
+      await dispatchWorkflowWithRegistrationRetry({ token, repository, workflowId, environment: pipeline.environment });
+    } else
     if (!isGithubIntegrationPermissionError(error)) throw error;
-    dispatchMode = 'push_trigger';
-    await createDeploymentTriggerCommit({
-      token,
-      owner: repository.owner,
-      repo: repository.repo,
-      branch: repository.branch,
-      pipeline,
-    });
+    else {
+      throw new ApiError(
+        409,
+        'GitHub workflow dispatch is not accessible with the connected token. Reconnect GitHub and approve repo + workflow access, then sync the selected environment workflow again.',
+      );
+    }
   }
 
   let run = null;
@@ -329,6 +417,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
     workflow: workflowId,
     runId: run?.id,
     dispatchMode,
+    autoSyncCommit: autoSync?.commitSha,
   });
 
   res.status(202).json({
@@ -338,20 +427,112 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       repository,
       workflowPath: workflowFile.path,
       dispatchMode,
+      autoSync,
       run,
       jobs: [],
       statusUnavailable,
       statusMessage,
       message: run
-        ? dispatchMode === 'push_trigger'
-          ? 'Deployment started by committing an Infraflow trigger file.'
-          : 'Deployment workflow dispatched.'
+        ? 'Deployment workflow dispatched.'
         : statusUnavailable
           ? statusMessage
         : 'Deployment was requested. GitHub has not returned the run yet.',
     },
   });
 });
+
+async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }) {
+  pipeline.generatedFiles = generatePipelineFiles({
+    name: pipeline.name,
+    appType: pipeline.appType,
+    environment: pipeline.environment,
+    repository: {
+      url: `https://github.com/${repository.owner}/${repository.repo}`,
+      branch: repository.branch,
+    },
+    commands: pipeline.commands,
+    target: pipeline.target,
+    accountId: pipeline.deployment?.awsAccount?.accountId,
+  });
+
+  const result = await syncFilesToGithubCommit({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    branch: repository.branch,
+    message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch`,
+    files: pipeline.generatedFiles,
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+  });
+
+  let defaultBranch = repository.branch;
+  try {
+    defaultBranch = await getGithubRepositoryDefaultBranch({
+      token,
+      owner: repository.owner,
+      repo: repository.repo,
+    });
+  } catch {
+    defaultBranch = repository.branch;
+  }
+
+  let defaultBranchSync = null;
+  if (defaultBranch && defaultBranch !== repository.branch) {
+    defaultBranchSync = await syncFilesToGithubCommit({
+      token,
+      owner: repository.owner,
+      repo: repository.repo,
+      branch: defaultBranch,
+      message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch on default branch`,
+      files: pipeline.generatedFiles,
+      deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+    });
+  }
+
+  pipeline.repository.url = `https://github.com/${repository.owner}/${repository.repo}`;
+  pipeline.repository.branch = repository.branch;
+  pipeline.repository.workflowPath = workflowPathFor(pipeline.environment);
+  pipeline.repository.lastSyncedAt = new Date();
+  pipeline.repository.lastSyncCommit = result.commitSha;
+  await pipeline.save();
+
+  return {
+    commitSha: result.commitSha,
+    defaultBranch,
+    defaultBranchCommitSha: defaultBranchSync?.commitSha,
+    files: result.files?.map((file) => file.path ?? file) ?? pipeline.generatedFiles.map((file) => file.path),
+  };
+}
+
+async function dispatchWorkflowWithRegistrationRetry({ token, repository, workflowId, environment }) {
+  let lastError;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await sleep(2500);
+    try {
+      await dispatchGithubWorkflow({
+        token,
+        owner: repository.owner,
+        repo: repository.repo,
+        workflowId,
+        branch: repository.branch,
+        inputs: { environment },
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isWorkflowDispatchMissingError(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
+function isWorkflowDispatchMissingError(error) {
+  return /workflow does not have 'workflow_dispatch'/i.test(String(error?.message ?? ''));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
@@ -389,6 +570,7 @@ export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, r
     statusUnavailable = true;
     statusMessage = 'GitHub Actions status is not readable with the connected token for this repository. Enable Actions read permission, then refresh status.';
   }
+  if (run?.status === 'completed') unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
 
   res.json({
     success: true,
@@ -400,6 +582,130 @@ export const getApplicationPipelineDeploymentStatus = asyncHandler(async (req, r
       jobs,
       statusUnavailable,
       statusMessage,
+    },
+  });
+});
+
+export const forceStopApplicationPipelineDeployment = asyncHandler(async (req, res) => {
+  await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const token = await githubTokenForUser(req.user._id);
+  if (!token) throw new ApiError(409, 'Connect GitHub before stopping deployment.');
+
+  const repository = resolvePipelineRepository(pipeline, req.body ?? {});
+  if (!repository.owner || !repository.repo) {
+    throw new ApiError(409, 'Choose a GitHub repository before stopping deployment.');
+  }
+
+  const workflowFile = pipeline.generatedFiles.find((file) => file.path === pipeline.repository.workflowPath)
+    ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
+  const workflowId = workflowFile?.path.split('/').pop();
+  if (!workflowId) throw new ApiError(409, 'Generate a workflow file before stopping deployment.');
+
+  const run = await latestGithubWorkflowRun({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    workflowId,
+    branch: repository.branch,
+  });
+
+  if (!run) {
+    res.json({ success: true, data: { stopped: false, message: 'No GitHub Actions run was found for this pipeline.', run: null } });
+    return;
+  }
+
+  if (run.status === 'completed') {
+    unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
+    res.json({ success: true, data: { stopped: false, message: 'The latest GitHub Actions run is already completed.', run } });
+    return;
+  }
+
+  const stopResult = await cancelWorkflowRun({ token, owner: repository.owner, repo: repository.repo, runId: run.id });
+  unlockDeploymentDispatch(deploymentDispatchLockKey(req.user.workspace, pipeline._id));
+  await auditLog(req, 'pipeline.deploy.force_stop', 'ApplicationPipeline', pipeline._id, { runId: run.id, repository });
+  await createNotification({
+    workspace: req.user.workspace,
+    user: req.user._id,
+    title: `Deployment stopped: ${pipeline.name}`,
+    message: `GitHub Actions run #${run.runNumber ?? run.id} was requested to stop.`,
+    status: 'failed',
+    resourceType: 'ApplicationPipeline',
+    resourceId: pipeline._id,
+    meta: { runId: run.id, runNumber: run.runNumber, owner: repository.owner, repo: repository.repo, branch: repository.branch },
+  });
+
+  res.json({
+    success: true,
+    data: {
+      stopped: stopResult.cancelled,
+      message: stopResult.alreadyFinished ? 'The latest run already finished before it could be stopped.' : 'Stop request sent to GitHub Actions.',
+      run,
+    },
+  });
+});
+
+export const cancelQueuedApplicationPipelineWorkflows = asyncHandler(async (req, res) => {
+  await assertPipelineAccess(req);
+  const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
+
+  const token = await githubTokenForUser(req.user._id);
+  if (!token) throw new ApiError(409, 'Connect GitHub before cancelling queued workflows.');
+
+  const repository = resolvePipelineRepository(pipeline, req.body ?? {});
+  if (!repository.owner || !repository.repo) {
+    throw new ApiError(409, 'Choose a GitHub repository before cancelling queued workflows.');
+  }
+
+  const workflowFile = pipeline.generatedFiles.find((file) => file.path === pipeline.repository.workflowPath)
+    ?? pipeline.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'));
+  const workflowId = workflowFile?.path.split('/').pop();
+  if (!workflowId) throw new ApiError(409, 'Generate a workflow file before cancelling queued workflows.');
+
+  const queuedRuns = await githubWorkflowRuns({
+    token,
+    owner: repository.owner,
+    repo: repository.repo,
+    workflowId,
+    branch: repository.branch,
+    status: 'queued',
+    perPage: 50,
+  });
+
+  const results = await Promise.allSettled(
+    queuedRuns.map(async (run) => {
+      const result = await cancelWorkflowRun({ token, owner: repository.owner, repo: repository.repo, runId: run.id });
+      return { ...run, stopped: result.cancelled, alreadyFinished: result.alreadyFinished };
+    }),
+  );
+  const cancelled = results.filter((result) => result.status === 'fulfilled' && result.value.stopped).map((result) => result.value);
+  const failed = results
+    .filter((result) => result.status === 'rejected')
+    .map((result) => (result.reason instanceof Error ? result.reason.message : 'Unable to cancel queued workflow run.'));
+
+  if (cancelled.length || failed.length) {
+    await auditLog(req, 'pipeline.deploy.cancel_queued', 'ApplicationPipeline', pipeline._id, {
+      repository,
+      workflow: workflowId,
+      queuedCount: queuedRuns.length,
+      cancelledCount: cancelled.length,
+      failedCount: failed.length,
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      cancelledCount: cancelled.length,
+      queuedCount: queuedRuns.length,
+      cancelledRuns: cancelled,
+      failed,
+      message: queuedRuns.length
+        ? `Cancelled ${cancelled.length} of ${queuedRuns.length} queued workflow runs.`
+        : 'No queued workflow runs were found for this pipeline.',
     },
   });
 });
@@ -445,7 +751,7 @@ export const getPipelineTemplates = asyncHandler(async (req, res) => {
       { id: 'node-container', name: 'Node.js container to ECS Fargate', target: 'ecs' },
       { id: 'python-api', name: 'Python API container to ECS Fargate', target: 'ecs' },
       { id: 'java-service', name: 'Java service container to ECS Fargate', target: 'ecs' },
-      { id: 'serverless-api', name: 'Serverless API to Lambda', target: 'lambda' },
+      { id: 'serverless-api', name: 'Node.js API to AWS Lambda', target: 'lambda' },
       { id: 'kubernetes-service', name: 'Container service to EKS', target: 'eks' },
     ],
   });
@@ -469,7 +775,7 @@ function inferPipelineTarget(appType, deployment, overrides) {
     serviceName: overrides.serviceName || firstConfig(nodes, ['name', 'function_name']) || safeName(`${appType}-service`),
     clusterName: overrides.clusterName || firstConfig(nodes, ['cluster']) || 'infraflow-cluster',
     bucketName: overrides.bucketName || firstConfig(nodes, ['bucket']) || firstOutputForService(deployment, 'S3', ['id']) || 'replace-with-s3-bucket',
-    lambdaFunctionName: overrides.lambdaFunctionName || firstConfig(nodes, ['function_name']) || 'replace-with-lambda-function',
+    lambdaFunctionName: overrides.lambdaFunctionName || firstConfig(nodes, ['function_name']) || firstOutputForService(deployment, 'Lambda', ['function_name']) || 'replace-with-lambda-function',
     namespace: overrides.namespace || 'default',
   };
 
@@ -512,7 +818,7 @@ function defaultCommandsForApp(appType, overrides) {
     'node-container': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
     'python-api': { install: 'pip install -r requirements.txt', test: 'pytest', build: 'python -m compileall .', start: 'uvicorn app.main:app --host 0.0.0.0 --port 8080' },
     'java-service': { install: './mvnw -B dependency:go-offline', test: './mvnw test', build: './mvnw -B package', start: 'java -jar target/app.jar' },
-    'serverless-api': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
+    'serverless-api': { install: 'npm ci', test: 'echo "Skipping Lambda tests by default. Set a custom test command to run them."', build: 'npm run build --if-present', start: 'npm start' },
     'kubernetes-service': { install: 'npm ci', test: 'npm test -- --watch=false', build: 'npm run build', start: 'npm start' },
   }[appType];
 
@@ -527,7 +833,7 @@ function generatePipelineFiles({ name, appType, environment, repository, command
     {
       path: workflowPathFor(environment),
       language: 'yaml',
-      purpose: 'GitHub Actions pipeline triggered on push.',
+      purpose: 'GitHub Actions deployment pipeline triggered by Infraflow workflow dispatch.',
       content: githubWorkflow({ name, appType, environment, branch: repository.branch || 'main', commands, target }),
     },
     {
@@ -593,11 +899,12 @@ function resolvePipelineRepository(pipeline, source = {}) {
 
 function githubWorkflow({ name, appType, environment, branch, commands, target }) {
   const deploy = deployStepsFor(target);
+  const lambdaAppDirectoryStep = target.type === 'lambda' ? lambdaAppDirectoryWorkflowStep() : '';
+  const frontendApiBaseUrlStep = target.type === 's3-cloudfront' ? frontendApiBaseUrlWorkflowStep() : '';
+  const workingDirectory = target.type === 'lambda' ? `\n        working-directory: \${{ env.LAMBDA_APP_DIR }}` : '';
   return `name: ${escapeYaml(`${name} ${environment} CI/CD`)}
 
 on:
-  push:
-    branches: [${escapeYaml(branch)}]
   workflow_dispatch:
     inputs:
       environment:
@@ -607,6 +914,7 @@ on:
         type: choice
         options:
           - development
+          - test
           - staging
           - production
 
@@ -615,31 +923,46 @@ permissions:
   id-token: write
   security-events: write
 
-env:
-  DEPLOY_ENVIRONMENT: ${environment}
-  AWS_REGION: ${target.region}
-  ECR_REPOSITORY: ${target.ecrRepository}
-  ECS_CLUSTER: ${target.clusterName}
-  ECS_SERVICE: ${target.serviceName}
-  S3_BUCKET: ${target.bucketName}
-  CLOUDFRONT_DISTRIBUTION_ID: \${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-  LAMBDA_FUNCTION: ${target.lambdaFunctionName}
-  K8S_NAMESPACE: ${target.namespace}
-
 jobs:
   deploy:
     name: Build, scan, and deploy
     runs-on: ubuntu-latest
+    environment: \${{ inputs.environment }}
+    env:
+      DEPLOY_ENVIRONMENT: \${{ inputs.environment }}
+      AWS_REGION: \${{ vars.AWS_REGION || '${target.region}' }}
+      ECR_REPOSITORY: \${{ vars.ECR_REPOSITORY || '${target.ecrRepository}' }}
+      ECS_CLUSTER: \${{ vars.ECS_CLUSTER || '${target.clusterName}' }}
+      ECS_SERVICE: \${{ vars.ECS_SERVICE || '${target.serviceName}' }}
+      S3_BUCKET: \${{ vars.S3_BUCKET || '${target.bucketName}' }}
+      CLOUDFRONT_DISTRIBUTION_ID: \${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+      LAMBDA_FUNCTION: \${{ vars.LAMBDA_FUNCTION || '${target.lambdaFunctionName}' }}
+      K8S_NAMESPACE: \${{ vars.K8S_NAMESPACE || '${target.namespace}' }}
+      VITE_API_BASE_URL: \${{ vars.VITE_API_BASE_URL || secrets.INFRAFLOW_API_BASE_URL || vars.INFRAFLOW_API_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Normalize Lambda function name
+        run: |
+          CLEAN_LAMBDA_FUNCTION="$(echo "$LAMBDA_FUNCTION" | xargs)"
+          if [ -z "$CLEAN_LAMBDA_FUNCTION" ]; then
+            echo "::error::LAMBDA_FUNCTION is empty. Set GitHub variable LAMBDA_FUNCTION to the Lambda function name."
+            exit 1
+          fi
+          echo "LAMBDA_FUNCTION=$CLEAN_LAMBDA_FUNCTION" >> "$GITHUB_ENV"
+          echo "Deploying Lambda function: $CLEAN_LAMBDA_FUNCTION"
+
+${lambdaAppDirectoryStep}
       - name: Setup Node.js
         if: contains('${appType}', 'react') || contains('${appType}', 'node') || contains('${appType}', 'static') || contains('${appType}', 'serverless') || contains('${appType}', 'kubernetes')
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            IAAS backend/package-lock.json
 
       - name: Setup Python
         if: contains('${appType}', 'python')
@@ -655,12 +978,24 @@ jobs:
           java-version: '21'
 
       - name: Install dependencies
+${workingDirectory}
         run: ${commands.install}
 
-${testStepFor(appType, commands)}
+${testStepFor(appType, commands, workingDirectory)}
+${frontendApiBaseUrlStep}
 
       - name: Build application
+${workingDirectory}
+        env:
+          VITE_API_BASE_URL: \${{ env.VITE_API_BASE_URL }}
         run: ${commands.build}
+
+      - name: Verify AWS deploy role secret
+        run: |
+          if [ -z "\${{ secrets.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::Set AWS_DEPLOY_ROLE_ARN as a repository secret or on the selected GitHub Environment: \${{ inputs.environment }}."
+            exit 1
+          fi
 
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -669,6 +1004,37 @@ ${testStepFor(appType, commands)}
           aws-region: \${{ env.AWS_REGION }}
 
 ${deploy}`;
+}
+
+function frontendApiBaseUrlWorkflowStep() {
+  return `
+      - name: Verify frontend API URL
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Set GitHub variable VITE_API_BASE_URL or secret/variable INFRAFLOW_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            exit 1
+          fi
+`;
+}
+
+function lambdaAppDirectoryWorkflowStep() {
+  return `      - name: Resolve Lambda app directory
+        run: |
+          if [ -f "IAAS backend/lambda.js" ] && [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f lambda.js ] && [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
+          elif [ -f "IAAS backend/package.json" ]; then
+            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
+          elif [ -f package.json ]; then
+            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
+          else
+            echo "::error::No Lambda app found. Expected lambda.js plus package.json at repository root or IAAS backend/."
+            exit 1
+          fi
+          echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
+
+`;
 }
 
 function deployStepsFor(target) {
@@ -705,11 +1071,144 @@ function deployStepsFor(target) {
   }
 
   if (target.type === 'lambda') {
-    return `      - name: Package Lambda artifact
-        run: zip -r lambda.zip . -x ".git/*" "node_modules/.cache/*"
+    return `      - name: Prune dev dependencies
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
+        run: npm prune --omit=dev
+
+      - name: Verify Lambda handler file
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
+        run: |
+          if [ -f lambda.js ]; then
+            DESIRED_HANDLER="lambda.handler"
+          elif [ -f src/lambda.js ]; then
+            DESIRED_HANDLER="src/lambda.handler"
+          else
+            echo "::error::No Lambda entry file found. Expected lambda.js or src/lambda.js in $PWD."
+            find . -maxdepth 3 -type f | sort | head -80
+            exit 1
+          fi
+
+          HANDLER_MODULE="\${DESIRED_HANDLER%.*}"
+          HANDLER_EXPORT="\${DESIRED_HANDLER##*.}"
+          if ! grep -Eq "(^|[^A-Za-z0-9_])$HANDLER_EXPORT([^A-Za-z0-9_]|$)" "$HANDLER_MODULE.js"; then
+            echo "::error::$HANDLER_MODULE.js exists but does not reference handler export '$HANDLER_EXPORT'."
+            exit 1
+          fi
+
+          echo "Lambda package contains handler entry: $DESIRED_HANDLER"
+          echo "Leaving the existing AWS Lambda handler configuration unchanged."
+
+      - name: Configure Lambda application env
+        env:
+          JWT_ACCESS_SECRET: \${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: \${{ secrets.JWT_REFRESH_SECRET }}
+          CLIENT_ORIGINS: \${{ vars.CLIENT_ORIGINS }}
+          APP_BASE_URL: \${{ vars.APP_BASE_URL }}
+          SMTP_HOST: \${{ secrets.SMTP_HOST || vars.SMTP_HOST }}
+          SMTP_PORT: \${{ vars.SMTP_PORT }}
+          SMTP_SECURE: \${{ vars.SMTP_SECURE }}
+          SMTP_USER: \${{ secrets.SMTP_USER || vars.SMTP_USER }}
+          SMTP_PASS: \${{ secrets.SMTP_PASS }}
+          EMAIL_FROM: \${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
+          STORAGE_MODE: \${{ vars.STORAGE_MODE }}
+          STORAGE_S3_BUCKET: \${{ vars.STORAGE_S3_BUCKET }}
+          STORAGE_S3_REGION: \${{ vars.STORAGE_S3_REGION }}
+          STORAGE_DYNAMODB_LOCK_TABLE: \${{ vars.STORAGE_DYNAMODB_LOCK_TABLE }}
+          DEPLOYMENT_EXECUTOR: \${{ vars.DEPLOYMENT_EXECUTOR }}
+          DEPLOYMENT_GITHUB_OWNER: \${{ vars.DEPLOYMENT_GITHUB_OWNER }}
+          DEPLOYMENT_GITHUB_REPO: \${{ vars.DEPLOYMENT_GITHUB_REPO }}
+          DEPLOYMENT_GITHUB_BRANCH: \${{ vars.DEPLOYMENT_GITHUB_BRANCH }}
+          DEPLOYMENT_CALLBACK_SECRET: \${{ secrets.DEPLOYMENT_CALLBACK_SECRET }}
+          INFRAFLOW_APP_AWS_ACCESS_KEY_ID: \${{ secrets.INFRAFLOW_APP_AWS_ACCESS_KEY_ID }}
+          INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: \${{ secrets.INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY }}
+          INFRAFLOW_APP_AWS_SESSION_TOKEN: \${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
+          INFRAFLOW_GITHUB_CLIENT_ID: \${{ secrets.INFRAFLOW_GITHUB_CLIENT_ID }}
+          INFRAFLOW_GITHUB_CLIENT_SECRET: \${{ secrets.INFRAFLOW_GITHUB_CLIENT_SECRET }}
+          INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: \${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL || secrets.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
+          INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: \${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
+        run: |
+          aws lambda get-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
+          jq \
+            --arg nodeEnv "production" \
+            --arg jwtAccessSecret "$JWT_ACCESS_SECRET" \
+            --arg jwtRefreshSecret "$JWT_REFRESH_SECRET" \
+            --arg clientOrigins "$CLIENT_ORIGINS" \
+            --arg appBaseUrl "$APP_BASE_URL" \
+            --arg smtpHost "$SMTP_HOST" \
+            --arg smtpPort "$SMTP_PORT" \
+            --arg smtpSecure "$SMTP_SECURE" \
+            --arg smtpUser "$SMTP_USER" \
+            --arg smtpPass "$SMTP_PASS" \
+            --arg emailFrom "$EMAIL_FROM" \
+            --arg storageMode "$STORAGE_MODE" \
+            --arg storageS3Bucket "$STORAGE_S3_BUCKET" \
+            --arg storageS3Region "$STORAGE_S3_REGION" \
+            --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE" \
+            --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR" \
+            --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER" \
+            --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO" \
+            --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH" \
+            --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET" \
+            --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID" \
+            --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY" \
+            --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN" \
+            --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID" \
+            --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET" \
+            --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL" \
+            --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY" \
+            '. + {
+              NODE_ENV: $nodeEnv
+            }
+            + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
+            + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
+            + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
+            + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
+            + (if $smtpHost == "" then {} else { SMTP_HOST: $smtpHost } end)
+            + (if $smtpPort == "" then {} else { SMTP_PORT: $smtpPort } end)
+            + (if $smtpSecure == "" then {} else { SMTP_SECURE: $smtpSecure } end)
+            + (if $smtpUser == "" then {} else { SMTP_USER: $smtpUser } end)
+            + (if $smtpPass == "" then {} else { SMTP_PASS: $smtpPass } end)
+            + (if $emailFrom == "" then {} else { EMAIL_FROM: $emailFrom } end)
+            + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
+            + (if $storageS3Bucket == "" then {} else { STORAGE_S3_BUCKET: $storageS3Bucket } end)
+            + (if $storageS3Region == "" then {} else { STORAGE_S3_REGION: $storageS3Region } end)
+            + (if $storageDynamodbLockTable == "" then {} else { STORAGE_DYNAMODB_LOCK_TABLE: $storageDynamodbLockTable } end)
+            + (if $deploymentExecutor == "" then {} else { DEPLOYMENT_EXECUTOR: $deploymentExecutor } end)
+            + (if $deploymentGithubOwner == "" then {} else { DEPLOYMENT_GITHUB_OWNER: $deploymentGithubOwner } end)
+            + (if $deploymentGithubRepo == "" then {} else { DEPLOYMENT_GITHUB_REPO: $deploymentGithubRepo } end)
+            + (if $deploymentGithubBranch == "" then {} else { DEPLOYMENT_GITHUB_BRANCH: $deploymentGithubBranch } end)
+            + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
+            + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
+            + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
+            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)
+            + (if $githubClientId == "" then {} else { INFRAFLOW_GITHUB_CLIENT_ID: $githubClientId } end)
+            + (if $githubClientSecret == "" then {} else { INFRAFLOW_GITHUB_CLIENT_SECRET: $githubClientSecret } end)
+            + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
+            + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)' \
+            lambda-env.json > lambda-env-updated.json
+          jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
+          aws lambda update-function-configuration --function-name "\${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
+          aws lambda wait function-updated --function-name "\${{ env.LAMBDA_FUNCTION }}"
+
+      - name: Package Lambda artifact
+        working-directory: \${{ env.LAMBDA_APP_DIR }}
+        run: |
+          rm -rf shared
+          if [ -d "../shared" ]; then
+            cp -R ../shared shared
+          elif [ -d "../../shared" ]; then
+            cp -R ../../shared shared
+          elif [ -d "$GITHUB_WORKSPACE/shared" ]; then
+            cp -R "$GITHUB_WORKSPACE/shared" shared
+          else
+            echo "::error::Missing shared/resourceRegistry.json. Lambda packaging requires the repository shared/ directory."
+            exit 1
+          fi
+          test -f shared/resourceRegistry.json
+          zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
 
       - name: Deploy Lambda function
-        run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://lambda.zip
+        run: aws lambda update-function-code --function-name \${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"\${{ env.LAMBDA_APP_DIR }}/lambda.zip"
 `;
   }
 
@@ -761,21 +1260,47 @@ function deployStepsFor(target) {
 `;
 }
 
-function testStepFor(appType, commands) {
+function testStepFor(appType, commands, workingDirectory = '') {
+  if (appType === 'serverless-api' && isDefaultSkippedLambdaTestCommand(commands.test)) {
+    return `      - name: Run tests
+        run: echo "Skipping Lambda tests by default. Set a custom test command in Infraflow to run deployment tests."
+`;
+  }
+
   if (['react-app', 'static-spa', 'node-container', 'serverless-api', 'kubernetes-service'].includes(appType)) {
     return `      - name: Run tests
+        timeout-minutes: 3
+        env:
+          CI: true
+          NODE_ENV: test
+${workingDirectory}
         run: |
-          if [ -f package.json ] && ! node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test ? 0 : 1)"; then
+          if [ ! -f package.json ]; then
+            echo "No package.json found; skipping test step."
+            exit 0
+          fi
+          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
+          if [ -z "$TEST_SCRIPT" ]; then
             echo "No npm test script found; skipping test step."
             exit 0
           fi
-          ${commands.test}
+          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
+            echo "Default placeholder npm test script found; skipping test step."
+            exit 0
+          fi
+          timeout 150s ${commands.test}
 `;
   }
 
   return `      - name: Run tests
-        run: ${commands.test}
+        timeout-minutes: 3
+${workingDirectory}
+        run: timeout 150s ${commands.test}
 `;
+}
+
+function isDefaultSkippedLambdaTestCommand(command = '') {
+  return /^echo\s+["']?Skipping Lambda tests by default/i.test(String(command).trim());
 }
 
 function dockerfileFor(appType, commands) {
@@ -867,14 +1392,14 @@ function setupGuide({ name, target, repository }) {
 
   return `# ${name} deployment pipeline
 
-This pipeline deploys on every push to \`${branch}\`. It authenticates to AWS using
-GitHub's OIDC provider — no long-lived AWS access keys are stored in GitHub.
+This pipeline deploys from a selected GitHub Environment. It authenticates to AWS using
+GitHub's OIDC provider — no long-lived AWS deploy keys are stored in GitHub.
 
 ## Automatic setup
 
 If this pipeline is linked to an infraflow deployment with a connected AWS account,
 Infraflow automatically provisions the OIDC provider, the IAM deploy role (scoped to
-this exact repo/branch), and the \`AWS_DEPLOY_ROLE_ARN\` GitHub secret for you the
+this exact repo plus branch/environment subjects), and the \`AWS_DEPLOY_ROLE_ARN\` GitHub secret for you the
 moment you sync this pipeline to GitHub. Check the pipeline's "AWS deploy role" status
 in the dashboard — if it says "Provisioned", skip straight to pushing your code. The
 manual steps below are only needed if that status says "Skipped" (no AWS account
@@ -883,13 +1408,13 @@ linked) or "Failed" (check the error shown in the dashboard).
 ## Why "Configure AWS credentials with OIDC" fails
 
 That step calls \`sts:AssumeRoleWithWebIdentity\` using a token GitHub issues for the run.
-It fails when any of these are missing, and AWS gives no hint which one:
+It fails when any of these are missing or mismatched:
 
 1. The AWS account has no OIDC identity provider for \`token.actions.githubusercontent.com\`.
-2. The IAM role's trust policy doesn't exist, or its \`sub\` condition doesn't match
-   \`repo:${owner}/${repo}:ref:refs/heads/${branch}\` exactly (wrong owner/repo, wrong branch,
-   or a typo).
-3. The \`AWS_DEPLOY_ROLE_ARN\` repository secret is missing, empty, or points at a role
+2. The IAM role trust policy does not match this repo. With GitHub Environments, the
+   run subject is \`repo:${owner}/${repo}:environment:<environment>\`, not only
+   \`repo:${owner}/${repo}:ref:refs/heads/${branch}\`.
+3. GitHub has no \`AWS_DEPLOY_ROLE_ARN\` repository secret or selected Environment secret, or it points at a role
    in the wrong AWS account.
 4. The workflow's \`permissions.id-token: write\` block was removed (already included here).
 
@@ -904,7 +1429,7 @@ aws iam create-open-id-connect-provider \\
   --client-id-list sts.amazonaws.com \\
   --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea 1c58a3a8518e8759bf075b76b750d4f2df264fcd
 
-# 2. Create the deploy role, trusted only for this repo + branch (see deploy/oidc-trust-policy.json)
+# 2. Create the deploy role, trusted only for this repo + selected environments (see deploy/oidc-trust-policy.json)
 aws iam create-role \\
   --role-name ${roleName} \\
   --assume-role-policy-document file://deploy/oidc-trust-policy.json
@@ -920,13 +1445,18 @@ Before running step 2, replace \`<ACCOUNT_ID>\` in \`deploy/oidc-trust-policy.js
 AWS account ID. Before running step 3, replace \`<ACCOUNT_ID>\` in
 \`deploy/oidc-permissions-policy.json\` if it references account-scoped ARNs (Lambda target only).
 
-## Required GitHub repository secret
+## Required GitHub secret
 
-- \`AWS_DEPLOY_ROLE_ARN\`: the ARN printed by step 2 above, e.g.
+- \`AWS_DEPLOY_ROLE_ARN\`: set this as a repository secret or per-environment secret. Use the ARN printed by step 2 above, e.g.
   \`arn:aws:iam::<ACCOUNT_ID>:role/${roleName}\`.
 
 Recommended secrets by target:
-- \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
+- Environment variable \`VITE_API_BASE_URL\` for S3 and CloudFront apps. \`INFRAFLOW_API_BASE_URL\` is accepted as a fallback alias.
+- Environment variable \`CLOUDFRONT_DISTRIBUTION_ID\` for S3 and CloudFront apps (leave unset to skip cache invalidation).
+- Environment secrets \`INFRAFLOW_APP_AWS_ACCESS_KEY_ID\` and \`INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY\` for Lambda backend apps that need to connect AWS accounts from production.
+- Environment secret \`INFRAFLOW_APP_AWS_SESSION_TOKEN\` only when the access key is temporary.
+- Environment secrets \`INFRAFLOW_GITHUB_CLIENT_ID\` and \`INFRAFLOW_GITHUB_CLIENT_SECRET\` for GitHub OAuth repository connections.
+- Environment variable or secret \`INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL\` set to the backend callback URL registered in the GitHub OAuth app, e.g. \`https://<api-host>/api/v1/github/oauth/callback\`.
 
 ## Target
 
@@ -942,8 +1472,12 @@ function pipelineChecklist(targetType) {
     'Connect GitHub repository and sync generated files (this also auto-provisions the AWS OIDC deploy role when a deployment is linked).',
     'Check the "AWS deploy role" status on this pipeline — if it says Skipped or Failed, follow deploy/README.md to set it up manually.',
     'Confirm target infrastructure exists from the selected infraflow deployment.',
-    targetType === 's3-cloudfront' ? 'Confirm S3 bucket and optional CloudFront distribution secret.' : 'Confirm ECR repository and runtime target names.',
-    'Push to the configured branch to trigger automated deployment.',
+    targetType === 's3-cloudfront'
+      ? 'Confirm selected GitHub Environment has S3_BUCKET, VITE_API_BASE_URL (or INFRAFLOW_API_BASE_URL), and optional CLOUDFRONT_DISTRIBUTION_ID variables.'
+      : targetType === 'lambda'
+        ? 'Confirm Lambda function name, AWS region, and INFRAFLOW_APP_AWS_* environment secrets if this backend connects AWS accounts.'
+        : 'Confirm ECR repository and runtime target names.',
+    'Use Deploy Application in Infraflow to dispatch the selected environment workflow.',
   ];
 }
 
@@ -951,47 +1485,10 @@ function workflowPathFor(environment) {
   return `.github/workflows/infraflow-${environment}-deploy.yml`;
 }
 
-async function createDeploymentTriggerCommit({ token, owner, repo, branch, pipeline }) {
-  const triggerPath = `.infraflow/deploy-triggers/${pipeline._id}.json`;
-  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const headers = githubApiHeaders(token);
-  const existingResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(triggerPath)}?ref=${encodeURIComponent(branch)}`, { headers });
-  const existing = existingResponse.ok ? await existingResponse.json() : undefined;
-  if (!existingResponse.ok && existingResponse.status !== 404) {
-    const text = await existingResponse.text();
-    throw new ApiError(existingResponse.status, `GitHub trigger read failed for ${triggerPath}: ${text}`);
-  }
-
-  const content = JSON.stringify(
-    {
-      pipelineId: String(pipeline._id),
-      pipelineName: pipeline.name,
-      environment: pipeline.environment,
-      target: pipeline.target?.type,
-      requestedAt: new Date().toISOString(),
-      source: 'infraflow',
-    },
-    null,
-    2,
-  );
-  const updateResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(triggerPath)}`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      message: `Trigger ${pipeline.name} deployment from Infraflow`,
-      branch,
-      content: Buffer.from(content, 'utf8').toString('base64'),
-      ...(existing?.sha ? { sha: existing.sha } : {}),
-    }),
-  });
-  const result = await updateResponse.json().catch(async () => ({ message: await updateResponse.text() }));
-  if (!updateResponse.ok) {
-    throw new ApiError(updateResponse.status, githubSyncErrorMessage(triggerPath, result?.message));
-  }
-  return {
-    path: triggerPath,
-    commitSha: result?.commit?.sha ?? '',
-  };
+function obsoleteWorkflowPathsFor(environment) {
+  return environments
+    .filter((item) => item !== environment)
+    .map(workflowPathFor);
 }
 
 function firstConfig(nodes, keys) {
@@ -1028,3 +1525,4 @@ function escapeYaml(value) {
 function jsonCommand(command) {
   return JSON.stringify(command.split(' ').filter(Boolean));
 }
+

@@ -2,6 +2,11 @@ import { latestAmazonLinux2023Ami, serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsNode, NodeBinding } from '../types';
 import { expectedOutputsForService } from './resourceRequirements';
 
+const defaultApiGatewayCorsOrigins = [
+  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
+  'https://d3pgg5abvvdatt.cloudfront.net',
+];
+
 export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNodeId?: string): string {
   const targetNodes = selectedNodeId ? nodes.filter((node) => node.id === selectedNodeId) : nodes;
   const serviceNodes = targetNodes.filter((node) => node.type !== 'groupBox' && node.data.serviceId);
@@ -538,6 +543,11 @@ ${wafLine}
         `resource "aws_apigatewayv2_api" "${name}" {
   name          = ${formatValue(awsName)}
   protocol_type = ${formatValue(configString(config, 'protocol_type') || 'HTTP')}
+${apiGatewayCorsConfigurationBlock()}
+
+  lifecycle {
+    ignore_changes = [cors_configuration]
+  }
 }`,
       ];
 
@@ -1050,6 +1060,17 @@ function formatListExpression(value: string | number | boolean): string {
 
 function formatStringList(values: string[]): string {
   return `[${values.map((value) => formatValue(value)).join(', ')}]`;
+}
+
+function apiGatewayCorsConfigurationBlock(): string {
+  return `
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["content-type", "authorization", "x-requested-with"]
+    allow_methods     = ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"]
+    allow_origins     = ${formatStringList(defaultApiGatewayCorsOrigins)}
+    max_age           = 86400
+  }`;
 }
 
 function splitList(value: string): string[] {

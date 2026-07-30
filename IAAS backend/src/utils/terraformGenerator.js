@@ -51,6 +51,10 @@ const terraformTypeByServiceId = {
 
 const deployableServices = new Set(deployableServiceIds());
 export const latestAmazonLinux2023Ami = 'data.aws_ami.amazon_linux_2023.id';
+const defaultApiGatewayCorsOrigins = [
+  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
+  'https://d3pgg5abvvdatt.cloudfront.net',
+];
 
 const outputAttributesByServiceId = {
   ec2: ['id', 'arn', 'public_ip', 'private_ip', 'public_dns', 'private_dns', 'availability_zone', 'key_pair_name', 'ssh_private_key_pem'],
@@ -116,7 +120,7 @@ export function generateTerraform(nodes = [], edges = [], options = {}) {
     ...ec2ManagedKeyPairBlocks(deployableNodes, names, suffix),
     ...ec2InstanceProfileBlocks(deployableNodes, suffix),
     ...deployableNodes.flatMap((node) => resourceBlocksForNode(node, names[node.id], suffix, deployableNodes, edges, names)),
-    ...connectionBlocks(deployableNodes, edges, names),
+    ...connectionBlocks(deployableNodes, edges, names, suffix),
     resourceOutputBlock(deployableNodes, names),
   ]);
 
@@ -427,6 +431,11 @@ ${subnetGroupLine}${sgLine}}`,
         `resource "aws_apigatewayv2_api" "${name}" {
   name          = ${formatValue(uniqueName)}
   protocol_type = ${formatValue(configString(config, 'protocol_type') || 'HTTP')}
+${apiGatewayCorsConfigurationBlock()}
+
+  lifecycle {
+    ignore_changes = [cors_configuration]
+  }
 }`,
       ];
     case 'cloudwatch':
@@ -584,6 +593,7 @@ ${packageLines}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
   timeout          = ${formatNumber(config.timeout)}
+${lambdaEnvironmentBlock(node, nodes)}
 }`,
       ];
     }
@@ -1091,7 +1101,7 @@ function outputAttributesForNode(node) {
   return outputs;
 }
 
-function connectionBlocks(nodes, edges, names) {
+function connectionBlocks(nodes, edges, names, suffix = 'diagram') {
   const nodeById = Object.fromEntries(nodes.map((node) => [node.id, node]));
   const blocks = [];
 
@@ -1118,10 +1128,30 @@ function connectionBlocks(nodes, edges, names) {
   route_key = "ANY /{proxy+}"
   target    = "integrations/\${aws_apigatewayv2_integration.${edgeName}.id}"
 }`);
+      blocks.push(`resource "aws_cloudwatch_log_group" "${edgeName}_apigw_logs" {
+  name              = "/aws/apigateway/infraflow-${sourceName}-${edgeName}-${suffix}"
+  retention_in_days = 14
+}`);
       blocks.push(`resource "aws_apigatewayv2_stage" "${edgeName}" {
   api_id      = aws_apigatewayv2_api.${sourceName}.id
   name        = "$default"
   auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.${edgeName}_apigw_logs.arn
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      ip                 = "$context.identity.sourceIp"
+      requestTime        = "$context.requestTime"
+      httpMethod         = "$context.httpMethod"
+      routeKey           = "$context.routeKey"
+      status             = "$context.status"
+      protocol           = "$context.protocol"
+      responseLength     = "$context.responseLength"
+      integrationError   = "$context.integrationErrorMessage"
+      authorizerError    = "$context.authorizer.error"
+    })
+  }
 }`);
       blocks.push(`resource "aws_lambda_permission" "${edgeName}" {
   statement_id  = "AllowApiGatewayInvoke${edgeName}"
@@ -1255,7 +1285,24 @@ function lambdaExecutionRoleFromField(config, uniqueName) {
     return { roleRef, extraBlocks: rawBlock ? [rawBlock] : [] };
   }
 
-  return { roleRef: configString(config, 'role_arn'), extraBlocks: [] };
+  const roleRef = configString(config, 'role_arn');
+  const existingRoleName = roleNameFromArn(roleRef);
+  if (!existingRoleName) return { roleRef, extraBlocks: [] };
+
+  const roleResourceName = sanitizeName(existingRoleName);
+  return {
+    roleRef,
+    extraBlocks: [
+      `# Existing Lambda execution role ARN: ${escapeString(roleRef)}
+data "aws_iam_role" "${roleResourceName}_lambda_execution" {
+  name = ${formatValue(existingRoleName)}
+}`,
+      `resource "aws_iam_role_policy_attachment" "${roleResourceName}_lambda_basic_execution" {
+  role       = data.aws_iam_role.${roleResourceName}_lambda_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}`,
+    ],
+  };
 }
 
 // A zip picked via PropertiesPanel's FilePathField gets uploaded to the backend, and its
@@ -1461,6 +1508,42 @@ function securityGroupIngressBlocks(portsValue, cidrsValue) {
     .join('');
 }
 
+function lambdaEnvironmentBlock(node, allNodes) {
+  const envBindings = (node.data?.bindings ?? []).filter((binding) => binding.targetKind === 'env');
+  if (!envBindings.length) return '';
+
+  const entries = envBindings
+    .map((binding) => `    ${sanitizeEnvName(binding.targetPath)} = ${bindingExpression(binding, allNodes)}`)
+    .join('\n');
+
+  return `
+  environment {
+    variables = {
+${entries}
+    }
+  }`;
+}
+
+function bindingExpression(binding, allNodes) {
+  if (binding.source?.kind === 'variable') return binding.source.id.startsWith('var.') ? binding.source.id : `var.${sanitizeName(binding.source.id)}`;
+  if (binding.source?.kind === 'local') return binding.source.id.startsWith('local.') ? binding.source.id : `local.${sanitizeName(binding.source.id)}`;
+  if (binding.source?.kind === 'ssm') return `data.aws_ssm_parameter.${sanitizeName(binding.source.id)}.${binding.source.attribute || 'value'}`;
+  if (binding.source?.kind === 'resourceAttr' || binding.source?.kind === 'output') return binding.source.attribute ? `${binding.source.id}.${binding.source.attribute}` : binding.source.id;
+
+  const sourceNode = allNodes.find((candidate) => candidate.id === binding.source?.id);
+  if (sourceNode?.data?.serviceId === 'secrets') return `aws_secretsmanager_secret.${sanitizeName(sourceNode.data.label)}.${binding.source.attribute || 'arn'}`;
+  return `data.aws_secretsmanager_secret.${sanitizeName(binding.source?.id)}.${binding.source?.attribute || 'arn'}`;
+}
+
+function sanitizeEnvName(value) {
+  return String(value)
+    .split('.')
+    .pop()
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^([0-9])/, '_$1')
+    .toUpperCase();
+}
+
 function securityGroupEgressBlock(cidrsValue) {
   const cidrs = splitList(cidrsValue);
   if (!cidrs.length) return '';
@@ -1483,6 +1566,19 @@ function formatListExpression(value) {
 
 function formatStringList(values) {
   return `[${values.map((value) => formatValue(value)).join(', ')}]`;
+}
+
+function apiGatewayCorsConfigurationBlock() {
+  const origins = Array.from(new Set([...(env.CLIENT_ORIGINS ?? []), ...defaultApiGatewayCorsOrigins].filter(Boolean)));
+
+  return `
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["content-type", "authorization", "x-requested-with"]
+    allow_methods     = ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"]
+    allow_origins     = ${formatStringList(origins)}
+    max_age           = 86400
+  }`;
 }
 
 // Like formatStringList, but leaves Terraform resource references (aws_x.y.id) unquoted instead

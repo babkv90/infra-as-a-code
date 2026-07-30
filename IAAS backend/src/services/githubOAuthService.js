@@ -1,17 +1,20 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import { githubOAuthScope, normalizeGithubScopes } from '../constants/githubOAuth.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const githubAuthorizeUrl = 'https://github.com/login/oauth/authorize';
 const githubTokenUrl = 'https://github.com/login/oauth/access_token';
 const githubApiUrl = 'https://api.github.com';
 const stateExpiresIn = '10m';
-const githubOAuthScope = 'read:user repo user:email workflow';
 
 export function assertGithubOAuthConfigured() {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
-    throw new ApiError(500, 'GitHub OAuth is not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.');
+    throw new ApiError(
+      500,
+      'GitHub OAuth is not configured. Set INFRAFLOW_GITHUB_CLIENT_ID and INFRAFLOW_GITHUB_CLIENT_SECRET.',
+    );
   }
 }
 
@@ -43,11 +46,11 @@ export function githubAuthorizeRedirectUrl({ redirectUri, state }) {
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: redirectUri,
-    scope: githubOAuthScope,
     state,
   });
+  params.set('scope', githubOAuthScope);
 
-  return `${githubAuthorizeUrl}?${params.toString()}`;
+  return `${githubAuthorizeUrl}?${params.toString().replace(/scope=repo\+workflow/, 'scope=repo%20workflow')}`;
 }
 
 export async function exchangeGithubCodeForToken({ code, redirectUri }) {
@@ -89,6 +92,22 @@ export async function fetchGithubUserProfile(accessToken) {
   };
 }
 
+export async function fetchGithubTokenScopes(accessToken) {
+  const response = await fetch(`${githubApiUrl}/applications/${encodeURIComponent(env.GITHUB_CLIENT_ID)}/token`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Basic ${Buffer.from(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`).toString('base64')}`,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({ access_token: accessToken }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) return [];
+  return parseScopes(result?.scopes);
+}
+
 export async function githubJson(path, accessToken) {
   const response = await fetch(`${githubApiUrl}${path}`, {
     headers: {
@@ -121,10 +140,7 @@ export function decryptGithubAccessToken(encryptedToken) {
 }
 
 function parseScopes(value = '') {
-  return String(value)
-    .split(/[,\s]+/)
-    .map((scope) => scope.trim())
-    .filter(Boolean);
+  return normalizeGithubScopes(String(value));
 }
 
 function githubTokenKey() {

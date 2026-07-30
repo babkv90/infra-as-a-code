@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { roles } from '../constants/roles.js';
+import { currentLegalVersions } from '../constants/legalVersions.js';
 import { getDashboardModulesForRole, getDashboardPermissionsForRole } from '../constants/dashboardModules.js';
 import { User } from '../models/User.js';
 import { Workspace } from '../models/Workspace.js';
@@ -9,6 +10,8 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
+import { EmailConfigurationError, sendPasswordResetEmail } from '../services/emailService.js';
 
 export const registerSchema = z.object({
   body: z.object({
@@ -16,6 +19,7 @@ export const registerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
     workspaceName: z.string().min(2).optional(),
+    acceptTerms: z.literal(true),
   }),
 });
 
@@ -47,9 +51,19 @@ export const register = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'A user with this email already exists');
   }
 
-  const userCount = await User.estimatedDocumentCount();
-  const role = userCount === 0 ? roles.OWNER : roles.VIEWER;
-  const user = await User.create({ name, email, password, role });
+  const role = roles.OWNER;
+  const user = await User.create({
+    name,
+    email,
+    password,
+    role,
+    legalConsent: {
+      termsVersionAccepted: currentLegalVersions.terms,
+      privacyVersionAccepted: currentLegalVersions.privacy,
+      acceptedAt: new Date(),
+      acceptedIp: req.ip,
+    },
+  });
   const workspace = await Workspace.create({
     name: workspaceName ?? `${name}'s workspace`,
     owner: user._id,
@@ -84,6 +98,7 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   user.lastLoginAt = new Date();
+  await ensureWorkspaceOwnerRole(user);
   await user.save();
 
   const tokens = sendAuthTokens(res, user);
@@ -118,6 +133,32 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   await auditLog({ user, ip: req.ip }, 'auth.password_reset.requested', 'User', user._id);
+
+  if (env.NODE_ENV === 'production') {
+    try {
+      const emailResult = await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
+      console.info('Password reset email sent', {
+        email: user.email,
+        messageId: emailResult.messageId,
+        accepted: emailResult.accepted,
+        rejected: emailResult.rejected,
+      });
+    } catch (error) {
+      console.error('Password reset email failed', {
+        email: user.email,
+        message: error.message,
+        code: error.code,
+        command: error.command,
+        responseCode: error.responseCode,
+      });
+
+      if (error instanceof EmailConfigurationError) {
+        throw new ApiError(500, error.message);
+      }
+
+      throw new ApiError(500, 'Password reset SMTP delivery failed. Check SMTP host, port, secure mode, username, password, and sender address.');
+    }
+  }
 
   if (env.NODE_ENV !== 'production') {
     responseBody.data = {
@@ -202,6 +243,12 @@ function serializeUser(user, workspace) {
     },
     workspace: user.workspace,
     status: user.status,
+    legalConsent: {
+      termsVersionAccepted: user.legalConsent?.termsVersionAccepted ?? '',
+      privacyVersionAccepted: user.legalConsent?.privacyVersionAccepted ?? '',
+      acceptedAt: user.legalConsent?.acceptedAt ?? null,
+      acceptedIp: user.legalConsent?.acceptedIp ?? '',
+    },
   };
 }
 

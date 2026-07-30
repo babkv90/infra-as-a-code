@@ -28,6 +28,14 @@ function readString(name, fallback = '') {
   return hasMatchingQuotes ? trimmed.slice(1, -1) : trimmed;
 }
 
+function readFirstString(names, fallback = '') {
+  for (const name of names) {
+    const value = readString(name);
+    if (value) return value;
+  }
+  return fallback;
+}
+
 function readNumber(name, fallback) {
   const value = readString(name);
   if (!value) return fallback;
@@ -42,6 +50,18 @@ function readList(name, fallback) {
     .filter(Boolean);
 }
 
+function readMergedList(names, fallback) {
+  return Array.from(
+    new Set(
+      names
+        .flatMap((name) => readList(name, ''))
+        .concat(readList('', fallback))
+        .map((item) => item.replace(/\/+$/, ''))
+        .filter(Boolean),
+    ),
+  );
+}
+
 export const env = {
   NODE_ENV: readString('NODE_ENV', 'development'),
   PORT: readNumber('PORT', 4000),
@@ -50,10 +70,20 @@ export const env = {
   JWT_REFRESH_SECRET: readString('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
   JWT_ACCESS_EXPIRES_IN: readString('JWT_ACCESS_EXPIRES_IN', '15m'),
   JWT_REFRESH_EXPIRES_IN: readString('JWT_REFRESH_EXPIRES_IN', '7d'),
-  CLIENT_ORIGINS: readList('CLIENT_ORIGIN', 'http://127.0.0.1:5173,http://localhost:5173'),
+  CLIENT_ORIGINS: readMergedList(
+    ['CLIENT_ORIGIN', 'CLIENT_ORIGINS'],
+    'http://127.0.0.1:5173,http://localhost:5173,https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com,https://d3pgg5abvvdatt.cloudfront.net',
+  ),
   BCRYPT_ROUNDS: readNumber('BCRYPT_ROUNDS', 12),
   RATE_LIMIT_WINDOW_MS: readNumber('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
   RATE_LIMIT_MAX: readNumber('RATE_LIMIT_MAX', 300),
+  APP_BASE_URL: readString('APP_BASE_URL', 'http://localhost:5173'),
+  SMTP_HOST: readString('SMTP_HOST'),
+  SMTP_PORT: readNumber('SMTP_PORT', 587),
+  SMTP_SECURE: readString('SMTP_SECURE') === 'true',
+  SMTP_USER: readString('SMTP_USER'),
+  SMTP_PASS: readString('SMTP_PASS'),
+  EMAIL_FROM: readString('EMAIL_FROM'),
   TERRAFORM_APPLY_ENABLED: readString('TERRAFORM_APPLY_ENABLED') === 'true',
   TERRAFORM_BIN: readString('TERRAFORM_BIN', 'terraform'),
   TERRAFORM_WORK_DIR: readString('TERRAFORM_WORK_DIR'),
@@ -66,10 +96,10 @@ export const env = {
   STORAGE_S3_REGION: readString('STORAGE_S3_REGION') || readString('AWS_REGION'),
   STORAGE_DYNAMODB_LOCK_TABLE: readString('STORAGE_DYNAMODB_LOCK_TABLE'),
   RAG_API_URL: readString('RAG_API_URL', 'http://127.0.0.1:8000'),
-  GITHUB_CLIENT_ID: readString('GITHUB_CLIENT_ID'),
-  GITHUB_CLIENT_SECRET: readString('GITHUB_CLIENT_SECRET'),
-  GITHUB_OAUTH_CALLBACK_URL: readString('GITHUB_OAUTH_CALLBACK_URL'),
-  GITHUB_TOKEN_ENCRYPTION_KEY: readString('GITHUB_TOKEN_ENCRYPTION_KEY'),
+  GITHUB_CLIENT_ID: readFirstString(['INFRAFLOW_GITHUB_CLIENT_ID', 'GITHUB_CLIENT_ID']),
+  GITHUB_CLIENT_SECRET: readFirstString(['INFRAFLOW_GITHUB_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET']),
+  GITHUB_OAUTH_CALLBACK_URL: readFirstString(['INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL', 'GITHUB_OAUTH_CALLBACK_URL']),
+  GITHUB_TOKEN_ENCRYPTION_KEY: readFirstString(['INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY', 'GITHUB_TOKEN_ENCRYPTION_KEY']),
   // Selects which runner NEW deployments are created with (src/services/deploymentExecutorDispatch.js).
   // Read once, at deployment-creation time only — Deployment.executor then pins that single record to
   // whichever value was in effect at that moment, for its entire lifecycle. Flipping this later never

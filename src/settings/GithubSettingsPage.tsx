@@ -5,6 +5,7 @@ import { PageAlert } from '../components/PageAlert';
 import { clearAuthSession, getStoredUser } from '../auth/authClient';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
+import { currentLegalVersions } from '../legal/legalDocs';
 
 type SettingsPageProps = {
   theme: ThemeMode;
@@ -130,9 +131,9 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
             </div>
           )}
 
-          {connection.connected && Boolean(connection.scopes?.length) && !connection.scopes.includes('workflow') && (
+          {(connection.reconnectRequired || (connection.connected && Boolean(connection.scopes?.length) && !connection.scopes.includes('workflow'))) && (
             <div className="dash-global-warning">
-              GitHub is connected without workflow permission. Reconnect to sync generated GitHub Actions files.
+              GitHub is missing required OAuth permissions{connection.missingScopes?.length ? `: ${connection.missingScopes.join(', ')}` : ''}. Reconnect to sync generated GitHub Actions files.
               <button className="dash-secondary-action" onClick={connectGithub} type="button">
                 Reconnect GitHub
               </button>
@@ -149,12 +150,45 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
                 {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
               </button>
             ) : (
-              <button className="dash-primary-action" onClick={connectGithub} type="button">
-                <Github size={16} />
-                Connect GitHub
-              </button>
+              <div className="legal-connect-group">
+                <p className="legal-inline-notice">
+                  By connecting GitHub, you authorize infraflow to access selected repositories and sync files per our{' '}
+                  <a href="/legal/terms" rel="noreferrer" target="_blank">
+                    Terms of Service
+                  </a>
+                  .
+                </p>
+                <button className="dash-primary-action" onClick={connectGithub} type="button">
+                  <Github size={16} />
+                  Connect GitHub
+                </button>
+              </div>
             )}
           </div>
+        </article>
+
+        <article className="settings-legal-card">
+          <div className="settings-heading settings-heading--compact">
+            <span className="dash-eyebrow">Legal</span>
+            <h2>Legal documents</h2>
+            <p>Current document versions and the versions accepted by your account.</p>
+          </div>
+          <div className="settings-legal-grid">
+            <a href="/legal/terms" rel="noreferrer" target="_blank">
+              <strong>Terms of Service</strong>
+              <span>Current: {currentLegalVersions.terms}</span>
+              <span>Accepted: {user?.legalConsent?.termsVersionAccepted || 'Not recorded'}</span>
+            </a>
+            <a href="/legal/privacy" rel="noreferrer" target="_blank">
+              <strong>Privacy Policy</strong>
+              <span>Current: {currentLegalVersions.privacy}</span>
+              <span>Accepted: {user?.legalConsent?.privacyVersionAccepted || 'Not recorded'}</span>
+            </a>
+          </div>
+          <p className="settings-legal-accepted">
+            Accepted at:{' '}
+            {user?.legalConsent?.acceptedAt ? new Date(user.legalConsent.acceptedAt).toLocaleString() : 'Not recorded'}
+          </p>
         </article>
       </section>
     </main>
