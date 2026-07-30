@@ -20,6 +20,7 @@ import {
   GitMerge,
   Github,
   History,
+  LayoutGrid,
   LogOut,
   Maximize2,
   Minimize2,
@@ -40,6 +41,7 @@ import {
   Workflow,
   X,
   Zap,
+  XCircle,
 } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
@@ -805,6 +807,18 @@ function renderPage(
   }
 }
 
+type OverviewStyle = 'modern' | 'classic';
+
+const OVERVIEW_STYLE_STORAGE_KEY = 'infraflow-dashboard-overview-style';
+
+function readStoredOverviewStyle(): OverviewStyle {
+  try {
+    return window.localStorage.getItem(OVERVIEW_STYLE_STORAGE_KEY) === 'classic' ? 'classic' : 'modern';
+  } catch {
+    return 'modern';
+  }
+}
+
 function OverviewPage({
   setActivePage,
   insights,
@@ -818,6 +832,16 @@ function OverviewPage({
 }) {
   const [billingRealtimeMetrics, setBillingRealtimeMetrics] = useState<BillingRealtimeMetrics>();
   const [lambdaRealtimeMetrics, setLambdaRealtimeMetrics] = useState<LambdaRealtimeMetrics>();
+  const [overviewStyle, setOverviewStyle] = useState<OverviewStyle>(readStoredOverviewStyle);
+
+  function selectOverviewStyle(style: OverviewStyle) {
+    setOverviewStyle(style);
+    try {
+      window.localStorage.setItem(OVERVIEW_STYLE_STORAGE_KEY, style);
+    } catch {
+      // Ignore storage failures (private browsing, quota) — the toggle still works for this session.
+    }
+  }
 
   async function refreshBillingRealtimeMetrics() {
     try {
@@ -855,20 +879,71 @@ function OverviewPage({
 
   return (
     <div className="dash-page dash-page--overview">
-      <div className="dash-page-head-group dash-page-head-group--aws-insights">
-        <OverviewInsightsTop
-          billingRealtimeMetrics={billingRealtimeMetrics}
-          insights={insights}
-          isSyncingAws={isSyncingAws}
-          lambdaRealtimeMetrics={lambdaRealtimeMetrics}
-          onConnectAws={() => setActivePage('connect-aws')}
-          onStartBuilding={() => setActivePage('builder')}
-          onSyncAws={onSyncAws}
-        />
+      <div className="dash-overview-style-toggle" role="group" aria-label="Overview layout style">
+        <button
+          className={overviewStyle === 'modern' ? 'is-active' : ''}
+          onClick={() => selectOverviewStyle('modern')}
+          type="button"
+        >
+          <Sparkles size={13} />
+          Modern
+        </button>
+        <button
+          className={overviewStyle === 'classic' ? 'is-active' : ''}
+          onClick={() => selectOverviewStyle('classic')}
+          type="button"
+        >
+          <LayoutGrid size={13} />
+          Classic
+        </button>
       </div>
+
+      {overviewStyle === 'modern' ? (
+        <div className="dash-page-head-group dash-page-head-group--aws-insights">
+          <OverviewInsightsTop
+            billingRealtimeMetrics={billingRealtimeMetrics}
+            insights={insights}
+            isSyncingAws={isSyncingAws}
+            lambdaRealtimeMetrics={lambdaRealtimeMetrics}
+            onConnectAws={() => setActivePage('connect-aws')}
+            onStartBuilding={() => setActivePage('builder')}
+            onSyncAws={onSyncAws}
+          />
+        </div>
+      ) : (
+        <div className="dash-page-head-group">
+          <header className="pipeline-console-header">
+            <div>
+              <span className="dash-eyebrow">Cloud operations</span>
+              <h2>Overview</h2>
+            </div>
+            <div className="pipeline-header-badges">
+              <button className="pipeline-link-button" onClick={() => setActivePage('connect-aws')} type="button">
+                Connect AWS Account
+                <ExternalLink size={14} />
+              </button>
+              <button className="pipeline-primary-compact" disabled={isSyncingAws} onClick={() => void onSyncAws()} type="button">
+                <CloudCog size={14} />
+                {isSyncingAws ? 'Syncing AWS...' : 'Sync live AWS data'}
+              </button>
+              <button className="pipeline-primary-compact" onClick={() => setActivePage('builder')} type="button">
+                Start Building
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </header>
+        </div>
+      )}
 
       <div className="dash-overview-scroll">
         {insights && <PermissionErrorList insights={insights} />}
+
+        {overviewStyle === 'classic' && (
+          <>
+            <KpiGrid insights={insights} />
+            <OverviewAwsGraphs insights={insights} />
+          </>
+        )}
 
         {insights && (
           <div className="dash-two-col dash-two-col--wide">
@@ -880,6 +955,15 @@ function OverviewPage({
             </Panel>
           </div>
         )}
+
+        {overviewStyle === 'classic' &&
+          (insights ? (
+            <Panel title="Cost Explorer by service" action="Current month">
+              <BillingServiceTable insights={insights} />
+            </Panel>
+          ) : (
+            <EmptyState>Connect AWS to load live AWS insights and Cost Explorer billing data.</EmptyState>
+          ))}
 
         <CostRecommendationGrid insights={insights} />
 
