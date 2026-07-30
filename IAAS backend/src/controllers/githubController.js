@@ -447,7 +447,6 @@ function frontendRedirectUrl(returnTo, success, message, details) {
 function popupHtml(success, message, returnTo = '/settings', details, nonce) {
   const payload = serializeInlineScriptJson({ type: 'infraflow:github-connected', success, message, details });
   const origins = serializeInlineScriptJson(env.CLIENT_ORIGINS.length ? env.CLIENT_ORIGINS : ['*']);
-  const fallbackUrl = serializeInlineScriptJson(frontendRedirectUrl(returnTo, success, message, details));
   return `<!doctype html>
 <html>
   <head>
@@ -463,10 +462,8 @@ function popupHtml(success, message, returnTo = '/settings', details, nonce) {
           window.opener.postMessage(payload, origin);
         }
         window.opener.postMessage(payload, '*');
-        setTimeout(() => window.close(), 200);
-      } else {
-        window.location.replace(${fallbackUrl});
       }
+      setTimeout(() => window.close(), 700);
     </script>
     <p>${success ? 'GitHub connected. You can close this window.' : `GitHub connection failed: ${escapeHtml(message)}`}</p>
   </body>
