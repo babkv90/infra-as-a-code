@@ -2455,18 +2455,25 @@ function DeploymentsPage({
                         <td>{formatDeploymentDate(deployment)}</td>
                         <td>
                           <div className="dash-deploy-table-actions">
-                            {deployment.status === 'draft' && (
-                              <button
-                                className="dash-secondary-action"
-                                disabled={applyingDeploymentId === deployment._id}
-                                onClick={() => void handleApply(deployment)}
-                                title="Run Terraform apply for this saved draft against its selected AWS account."
-                                type="button"
-                              >
-                                <Rocket size={15} />
-                                {applyingDeploymentId === deployment._id ? 'Applying...' : 'Apply'}
-                              </button>
-                            )}
+                            {deployment.status === 'draft' && (() => {
+                              const hasBlockers = deployment.validationIssues.some((issue) => issue.severity === 'error');
+                              return (
+                                <button
+                                  className="dash-secondary-action"
+                                  disabled={hasBlockers || applyingDeploymentId === deployment._id}
+                                  onClick={() => void handleApply(deployment)}
+                                  title={
+                                    hasBlockers
+                                      ? 'This deployment has blocking validation errors — fix them and regenerate before applying.'
+                                      : 'Run Terraform apply for this saved draft against its selected AWS account.'
+                                  }
+                                  type="button"
+                                >
+                                  <Rocket size={15} />
+                                  {applyingDeploymentId === deployment._id ? 'Applying...' : 'Apply'}
+                                </button>
+                              );
+                            })()}
                             <button
                               className="dash-secondary-action"
                               disabled={renamingDeploymentId === deployment._id}

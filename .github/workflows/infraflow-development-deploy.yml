@@ -65,6 +65,19 @@ jobs:
           fi
           echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
 
+      # This job previously only ever built/deployed the Lambda backend — S3_BUCKET and
+      # CLOUDFRONT_DISTRIBUTION_ID were declared above but never actually used anywhere, so the
+      # frontend was never touched by this workflow at all despite its name. These two steps (plus
+      # "Deploy frontend to S3" and "Invalidate CloudFront cache" further down, after AWS credentials
+      # are configured) are what actually ship it.
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+        run: npm run build
+
 
       - name: Setup Node.js
         if: contains('serverless-api', 'react') || contains('serverless-api', 'node') || contains('serverless-api', 'static') || contains('serverless-api', 'serverless') || contains('serverless-api', 'kubernetes')
@@ -118,6 +131,19 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy frontend to S3
+        if: env.S3_BUCKET != '' && env.S3_BUCKET != 'replace-with-s3-bucket'
+        run: |
+          aws s3 sync dist/ "s3://${{ env.S3_BUCKET }}/" --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+          aws s3 cp dist/index.html "s3://${{ env.S3_BUCKET }}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
 
       - name: Prune dev dependencies
         working-directory: ${{ env.LAMBDA_APP_DIR }}
