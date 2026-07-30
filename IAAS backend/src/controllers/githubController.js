@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import {
   githubOAuthScope,
@@ -422,7 +423,12 @@ function serializeConnection(connection, userGithubConnection) {
 
 function finishGithubOAuth(req, res, { success, message, mode = 'redirect', returnTo = '/settings', details }) {
   if (mode === 'popup') {
-    return res.type('html').send(popupHtml(success, message, returnTo, details));
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.set(
+      'Content-Security-Policy',
+      `default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+    );
+    return res.type('html').send(popupHtml(success, message, returnTo, details, nonce));
   }
 
   const redirectUrl = frontendRedirectUrl(returnTo, success, message, details);
@@ -438,10 +444,10 @@ function frontendRedirectUrl(returnTo, success, message, details) {
   return url.toString();
 }
 
-function popupHtml(success, message, returnTo = '/settings', details) {
-  const payload = JSON.stringify({ type: 'infraflow:github-connected', success, message, details });
-  const origins = JSON.stringify(env.CLIENT_ORIGINS.length ? env.CLIENT_ORIGINS : ['*']);
-  const fallbackUrl = JSON.stringify(frontendRedirectUrl(returnTo, success, message, details));
+function popupHtml(success, message, returnTo = '/settings', details, nonce) {
+  const payload = serializeInlineScriptJson({ type: 'infraflow:github-connected', success, message, details });
+  const origins = serializeInlineScriptJson(env.CLIENT_ORIGINS.length ? env.CLIENT_ORIGINS : ['*']);
+  const fallbackUrl = serializeInlineScriptJson(frontendRedirectUrl(returnTo, success, message, details));
   return `<!doctype html>
 <html>
   <head>
@@ -449,7 +455,7 @@ function popupHtml(success, message, returnTo = '/settings', details) {
     <meta charset="utf-8" />
   </head>
   <body>
-    <script>
+    <script nonce="${escapeHtml(nonce)}">
       const payload = ${payload};
       const origins = ${origins};
       if (window.opener) {
@@ -465,6 +471,10 @@ function popupHtml(success, message, returnTo = '/settings', details) {
     <p>${success ? 'GitHub connected. You can close this window.' : `GitHub connection failed: ${escapeHtml(message)}`}</p>
   </body>
 </html>`;
+}
+
+function serializeInlineScriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
 function escapeHtml(value) {
