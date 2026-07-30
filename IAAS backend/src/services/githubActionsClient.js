@@ -72,7 +72,12 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
     }
     const nextContent = Buffer.from(file.content, 'utf8').toString('base64');
     if (existing?.content && String(existing.content).replace(/\s/g, '') === nextContent) {
-      synced.push({ path, commitSha: existing.sha ?? '', skipped: true });
+      // No commitSha here — existing.sha is this file's *blob* sha (its content identity), not a
+      // commit sha, and callers that need "the commit with everything just pushed" (checking out by
+      // SHA) must not mistake one for the other. Nothing was actually committed by this no-op, so
+      // there is no fresh commit sha to report; the branch's already-current HEAD already has this
+      // file from whatever earlier push put it there.
+      synced.push({ path, commitSha: '', skipped: true });
       continue;
     }
 
