@@ -114,7 +114,7 @@ export const githubOAuthCallback = asyncHandler(async (req, res) => {
       });
     }
 
-    await GitHubConnection.findOneAndUpdate(
+    const connection = await GitHubConnection.findOneAndUpdate(
       { userId: user._id },
       {
         userId: user._id,
@@ -147,6 +147,7 @@ export const githubOAuthCallback = asyncHandler(async (req, res) => {
       message: 'GitHub connected.',
       mode: statePayload.mode,
       returnTo: statePayload.returnTo,
+      details: { connection: serializeConnection(connection, user.githubConnection) },
     });
   } catch (callbackError) {
     return finishGithubOAuth(req, res, {

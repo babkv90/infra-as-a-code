@@ -210,6 +210,31 @@ function cacheGithubRepositories(repositories: GithubRepository[]) {
   window.dispatchEvent(new CustomEvent(githubRepositoriesCacheEvent, { detail: repositories }));
 }
 
+type GithubOAuthMessage = {
+  type: 'infraflow:github-connected';
+  success?: boolean;
+  message?: string;
+  details?: {
+    connection?: GithubConnection;
+    reconnectRequired?: boolean;
+    missingScopes?: string[];
+  };
+};
+
+function parseGithubOAuthMessage(data: unknown): GithubOAuthMessage | null {
+  const message = typeof data === 'string' ? safeJsonParse<GithubOAuthMessage>(data) : data;
+  if (!message || typeof message !== 'object') return null;
+  return (message as GithubOAuthMessage).type === 'infraflow:github-connected' ? (message as GithubOAuthMessage) : null;
+}
+
+function safeJsonParse<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
 function getInitialDashboardPage(): DashboardPage {
   const page = new URLSearchParams(window.location.search).get('view') as DashboardPage | null;
   return page && dashboardPageIds.has(page) && !hiddenDashboardPages.has(page) ? page : 'overview';
@@ -3021,14 +3046,19 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
 
   useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
-      if (event.data?.type !== 'infraflow:github-connected') return;
-      if (event.data.success) {
+      const githubMessage = parseGithubOAuthMessage(event.data);
+      if (!githubMessage) return;
+      if (githubMessage.success) {
         stopGithubPopupPolling();
+        if (githubMessage.details?.connection?.connected) {
+          setGithubConnection(githubMessage.details.connection);
+          cacheGithubConnection(githubMessage.details.connection);
+        }
         setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
         setError('');
         void refreshGithubConnection();
       } else {
-        setError(event.data.message ?? 'GitHub connection failed.');
+        setError(githubMessage.message ?? 'GitHub connection failed.');
       }
     }
 
@@ -4148,7 +4178,7 @@ function ApplicationPipelinePage() {
   const [isDeploymentResultOpen, setIsDeploymentResultOpen] = useState(false);
   const githubPopupRef = useRef<Window | null>(null);
   const githubPollRef = useRef<number | undefined>(undefined);
-  const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId) ?? pipelines[0];
+  const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId);
   const isSelectedPipelineDeploymentRunning = selectedPipeline ? runningPipelineIds.includes(selectedPipeline._id) : false;
   const selectedGithubRepository = githubRepos.find((repo) => repo.fullName === selectedGithubRepo);
   const selectedFile =
@@ -4234,14 +4264,19 @@ function ApplicationPipelinePage() {
 
   useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
-      if (event.data?.type !== 'infraflow:github-connected') return;
-      if (event.data.success) {
+      const githubMessage = parseGithubOAuthMessage(event.data);
+      if (!githubMessage) return;
+      if (githubMessage.success) {
         stopGithubPopupPolling();
+        if (githubMessage.details?.connection?.connected) {
+          setGithubConnection(githubMessage.details.connection);
+          cacheGithubConnection(githubMessage.details.connection);
+        }
         setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
         setError('');
         void refreshGithubConnection();
       } else {
-        setError(event.data.message ?? 'GitHub connection failed.');
+        setError(githubMessage.message ?? 'GitHub connection failed.');
       }
     }
 
