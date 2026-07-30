@@ -6164,6 +6164,8 @@ button.lp-security-item {
   min-width: 0;
   padding: 24px clamp(18px, 3vw, 34px) 20px;
   border-radius: 28px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .dash-aws-insights-head {

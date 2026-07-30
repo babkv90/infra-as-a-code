@@ -3187,6 +3187,29 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     }
   }
 
+  function startNewPipeline() {
+    setSelectedPipelineId('');
+    setName('Production application pipeline');
+    setAppType('react-app');
+    setEnvironment('development');
+    setSelectedDeploymentId('');
+    setBranch('main');
+    setGithubOwner('');
+    setGithubRepo('');
+    setSelectedGithubRepo('');
+    setGithubBranches([]);
+    setInstallCommand('npm ci');
+    setTestCommand('npm test -- --watch=false');
+    setBuildCommand('npm run build');
+    setStartCommand('npm start');
+    setTargetRegion('ap-south-1');
+    setLambdaFunctionName('');
+    setSelectedFilePath('');
+    setActivePreviewTab('overview');
+    setMessage('');
+    setError('');
+  }
+
   function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
     void navigator.clipboard?.writeText(file.content);
     setMessage(`${file.path} copied.`);
@@ -3641,6 +3664,12 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
           <h2>Infra Pipeline</h2>
         </div>
         <div className="pipeline-header-badges">
+          {selectedPipeline && (
+            <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
+              <Plus size={14} />
+              New pipeline
+            </button>
+          )}
           <span className={`pipeline-badge ${githubConnection.connected ? 'pipeline-badge--success' : 'pipeline-badge--warning'}`}>
             <Github size={13} />
             {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
@@ -4122,7 +4151,10 @@ function ApplicationPipelinePage() {
     try {
       const pipelineData = await listApplicationPipelines();
       setPipelines(pipelineData);
-      setSelectedPipelineId((current) => current || pipelineData[0]?._id || '');
+      // Unlike the infra-pipeline console, this page has no pipeline picker of its own — it always
+      // opens in "create" mode so filling the form makes a NEW pipeline instead of silently
+      // overwriting whichever one happened to be most recently updated.
+      setSelectedPipelineId((current) => (pipelineData.some((item) => item._id === current) ? current : ''));
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load pipeline data.');
@@ -4350,6 +4382,29 @@ function ApplicationPipelinePage() {
     } catch (pipelineError) {
       setError(pipelineError instanceof Error ? pipelineError.message : 'Unable to generate application pipeline.');
     }
+  }
+
+  function startNewPipeline() {
+    setSelectedPipelineId('');
+    setName('Production application pipeline');
+    setAppType('react-app');
+    setEnvironment('development');
+    setSelectedDeploymentId('');
+    setBranch('main');
+    setGithubOwner('');
+    setGithubRepo('');
+    setSelectedGithubRepo('');
+    setGithubBranches([]);
+    setInstallCommand('npm ci');
+    setTestCommand('npm test -- --watch=false');
+    setBuildCommand('npm run build');
+    setStartCommand('npm start');
+    setTargetRegion('ap-south-1');
+    setLambdaFunctionName('');
+    setSelectedFilePath('');
+    setActivePreviewTab('overview');
+    setMessage('');
+    setError('');
   }
 
   function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
@@ -4675,7 +4730,7 @@ function ApplicationPipelinePage() {
       <header className="pipeline-console-header">
         <div>
           <span className="dash-eyebrow">CI/CD pipeline builder</span>
-          <h2>Create deployment pipeline</h2>
+          <h2>{selectedPipeline ? `Editing "${selectedPipeline.name}"` : 'Create deployment pipeline'}</h2>
         </div>
         <div className="pipeline-header-badges">
           <span className={`pipeline-badge pipeline-badge--${environment}`}>{environment}</span>
@@ -4684,6 +4739,12 @@ function ApplicationPipelinePage() {
             <Github size={13} />
             {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
           </span>
+          {selectedPipeline && (
+            <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
+              <Plus size={14} />
+              New pipeline
+            </button>
+          )}
           <button className="pipeline-icon-action" disabled={isLoading} onClick={() => void refreshPipelineData()} title="Refresh pipelines" type="button">
             <RefreshCw size={15} />
           </button>
