@@ -4,6 +4,8 @@ const allowedCorsOrigins = new Set([
   ...env.CLIENT_ORIGINS.map(normalizeOrigin),
   'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
   'https://d3pgg5abvvdatt.cloudfront.net',
+  'https://codemanus.in',
+  'https://www.codemanus.in',
 ]);
 
 export function isAllowedCorsOrigin(origin) {

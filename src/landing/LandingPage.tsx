@@ -42,6 +42,7 @@ import {
   heroDiagramNodes,
   heroStats,
   howItWorks,
+  navItems,
   // pricingPlans,
   securityItems,
   solutionCards,
@@ -250,6 +251,13 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
       <a className="lp-logo" href="/">
         <AppLogo className="app-logo--nav" />
       </a>
+      <nav className="lp-nav-links">
+        {navItems.map((item) => (
+          <a href={navHref(item)} key={item}>
+            {item}
+          </a>
+        ))}
+      </nav>
       <div className="lp-nav-actions">
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
@@ -267,6 +275,18 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
       </div>
     </header>
   );
+}
+
+function navHref(label: string): string {
+  const routes: Record<string, string> = {
+    Product: '#product',
+    'Visual Builder': '#visual-builder',
+    'AWS Insights': '#aws-insights',
+    Terraform: '#terraform-export',
+    Workflow: '#docs',
+  };
+
+  return routes[label] ?? '#product';
 }
 
 function HeroSection() {
