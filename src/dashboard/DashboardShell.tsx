@@ -1761,6 +1761,11 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           defaultName={currentDiagramId && currentDiagramName !== 'Untitled diagram' ? currentDiagramName : undefined}
           onClose={() => {
             setIsDeploymentPageOpen(false);
+            // Without this, closing an update/merge-mode session (entered via a deployment's "Edit
+            // diagram" link) leaves updateDeploymentId set — the next click on the toolbar's plain
+            // "Deploy" button then silently reopens in update mode instead of a fresh deploy, with no
+            // visible reason why the button said "Deploy" but showed "Update Infrastructure".
+            clearDeploymentEditContext();
           }}
         />
       </div>

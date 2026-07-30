@@ -91,6 +91,18 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
       return importedIds.has(edge.source) !== importedIds.has(edge.target);
     });
   }, [edges, isMergeMode, mergeImportedNodeIds]);
+  // Explains *why* the primary button is disabled — unlike Save as Draft (which always has a title),
+  // this button previously gave no indication at all, so a disabled state just looked broken/random.
+  const deployButtonDisabledReason = (() => {
+    if (deploymentStatus === 'running') return undefined;
+    if (plan.resourceCount === 0) return 'Add at least one AWS resource to the canvas first.';
+    if (plan.blockers > 0) return 'Fix all blocking validation errors before deploying.';
+    if (isMergeMode && !hasMergeConnection) return 'Draw a connection from the imported nodes to the existing infrastructure before merging.';
+    if (!isNameValid) return 'Enter a deployment name (at least 2 characters).';
+    if (!selectedAccountId) return 'Connect and select an AWS account first.';
+    if (isAlreadyDeployed) return 'This diagram has already been deployed.';
+    return undefined;
+  })();
   const runnerLogs = useMemo(() => {
     const logs = queuedDeployment?.logs ?? [];
     const statusLog: RunnerLog[] = queuedDeployment
@@ -357,6 +369,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
               className="deployment-primary"
               disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
               onClick={deployToAws}
+              title={deployButtonDisabledReason}
               type="button"
             >
               <Rocket size={16} />
