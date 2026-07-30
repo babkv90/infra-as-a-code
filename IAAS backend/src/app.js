@@ -26,6 +26,8 @@ app.use(
       callback(null, isAllowedCorsOrigin(origin));
     },
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   }),
 );
 app.use(

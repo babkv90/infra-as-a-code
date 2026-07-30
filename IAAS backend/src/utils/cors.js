@@ -12,7 +12,8 @@ export function isAllowedCorsOrigin(origin) {
   const normalizedOrigin = normalizeOrigin(origin);
   if (!origin) return true;
   if (allowedCorsOrigins.has(normalizedOrigin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(normalizedOrigin)
+  return /^https:\/\/[a-z0-9-]+\.execute-api\.[^.]+\.amazonaws\.com$/i.test(normalizedOrigin)
+    || /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(normalizedOrigin)
     || /^https:\/\/[a-z0-9-]+(?:-[a-z0-9-]+)*\.vercel\.app$/i.test(normalizedOrigin);
 }
 
@@ -22,7 +23,7 @@ export function corsHeaders(origin) {
   return {
     ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin } : {}),
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,Cache-Control,Pragma',
     'Access-Control-Allow-Methods': 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     Vary: 'Origin',
   };
