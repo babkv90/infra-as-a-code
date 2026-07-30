@@ -287,11 +287,13 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
 
   deployment.logs.push({ message: `Pushing generated Terraform to ${owner}/${repo}@${branch}:${deploymentPath}/`, level: 'info' });
   await deployment.save();
-  await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow ${action} — deployment ${deployment._id}`, files });
-  // Read back the branch's real HEAD after pushing, rather than trusting syncFilesToGithub's own
-  // per-file commitSha (see getBranchHeadSha's comment) — this is what terraform-deploy.yml checks
-  // out by SHA, so it can never race a checkout of the branch's moving HEAD against this push.
-  const commitSha = await getBranchHeadSha({ token, owner, repo, branch });
+  const sync = await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow ${action} — deployment ${deployment._id}`, files });
+  // The commit SHA from the push's own response, not a separate follow-up read — confirmed by a real
+  // failure that a getBranchHeadSha() call immediately after syncFilesToGithub can race GitHub's own
+  // read-after-write consistency and return a commit that predates the push. deploymentPath is always
+  // a fresh, never-before-seen path (one per deployment), so this file is never "skipped" as
+  // unchanged — the branch-head fallback below only covers the theoretical case where it somehow was.
+  const commitSha = sync.commitSha || (await getBranchHeadSha({ token, owner, repo, branch }));
 
   // Same short-lived STS credentials the local executor would assume, just handed to the runner as
   // dispatch inputs instead of a local child-process env. The workflow masks these immediately (see

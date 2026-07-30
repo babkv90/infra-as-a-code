@@ -254,12 +254,14 @@ export async function dispatchGithubWorkflow({ token, owner, repo, workflowId, b
   throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
 }
 
-// syncFilesToGithub commits each file separately via the Contents API and its returned commitSha is
-// unreliable as "the commit that has everything we just pushed" — an unchanged (skipped) file reports
-// its blob sha there instead of a commit sha, and even for real commits, callers pushing multiple
-// files only see the last one. Call this right after syncFilesToGithub instead: a fresh read of the
-// branch's actual current HEAD, which is guaranteed to include every file just pushed to it (git
-// commits are cumulative), safe to check out by SHA with no race against the branch's moving HEAD.
+// Fallback only — prefer syncFilesToGithub's own returned commitSha (the commit response from the
+// exact PUT that created it, race-free) wherever the pushed path is guaranteed not to be skipped as
+// unchanged. This does a *separate* read of the branch's ref after the fact, which was tried as the
+// primary approach here and confirmed, in production, to occasionally race GitHub's own read-after-
+// write consistency and return a commit that predates the push it was meant to reflect — worse than
+// the problem it was meant to solve. Only reach for this when syncFilesToGithub's own commitSha is
+// unavailable (e.g. every pushed file happened to be an unchanged skip, which reports a blob sha
+// there instead of a commit sha).
 export async function getBranchHeadSha({ token, owner, repo, branch }) {
   const response = await fetch(
     `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/ref/${encodeURIComponentPath(`heads/${branch}`)}`,
