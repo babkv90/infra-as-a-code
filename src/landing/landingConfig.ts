@@ -201,9 +201,9 @@ export const footerColumns = {
 };
 
 export const heroStats = [
-  { label: 'Deployable AWS services', value: '12' },
-  { label: 'AWS sync categories', value: '15+' },
-  { label: 'Export formats', value: '4' },
+  { label: 'AWS services supported', value: String(builderServices.length) },
+  { label: 'AI insight signals available', value: String(aiBullets.length) },
+  { label: 'Security controls listed', value: String(securityItems.length) },
 ];
 
 export const howItWorks = [
