@@ -24,9 +24,18 @@ import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terr
 // apply/destroy synchronously as a child process — awaiting that in a Lambda-hosted request would
 // mean blocking on however long a real `terraform apply` takes, so it stays fire-and-forget,
 // unchanged from before.
-async function startTerraformRun(executor, run) {
-  if (executor === 'github-actions') {
+//
+// `run` operates on its own separate document instance (fetched fresh inside
+// deploymentExecutorDispatch.js), not the caller's `deployment` — so after awaiting a github-actions
+// dispatch, the caller's in-memory copy is stale (still whatever status it was set to right before
+// this call, e.g. 'queued') even though the DB has already moved on (e.g. to 'destroying'). Refresh
+// it here so the response the client gets back immediately reflects reality instead of waiting for
+// the next poll.
+async function startTerraformRun(deployment, run) {
+  if (deployment.executor === 'github-actions') {
     await run();
+    const fresh = await Deployment.findById(deployment._id);
+    if (fresh) deployment.set(fresh.toObject());
   } else {
     void run();
   }
@@ -247,7 +256,7 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
       await deployment.save();
     }
   } else if (!hasBlockers && autoApply) {
-    await startTerraformRun(executor, () => runTerraformDeployment(deployment._id));
+    await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
   }
 
   res.status(201).json({ success: true, data: deployment });
@@ -292,7 +301,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
-  await startTerraformRun(deployment.executor, () => runTerraformDeployment(deployment._id));
+  await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
   res.json({ success: true, data: deployment });
 });
 
@@ -357,7 +366,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.update', 'Deployment', deployment._id, { diagram: diagram._id });
-  await startTerraformRun(deployment.executor, () => runTerraformDeployment(deployment._id, { isUpdate: true }));
+  await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id, { isUpdate: true }));
 
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
@@ -577,7 +586,7 @@ export const mergeDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.merge', 'Deployment', target._id, { sourceDeployment: sourceDeployment._id });
   await auditLog(req, 'deployment.merge_source_locked', 'Deployment', sourceDeployment._id, { targetDeployment: target._id });
-  await startTerraformRun(target.executor, () => runTerraformDeployment(target._id, { isUpdate: true }));
+  await startTerraformRun(target, () => runTerraformDeployment(target._id, { isUpdate: true }));
 
   await target.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: { target, source: sourceDeployment } });
@@ -617,12 +626,19 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'Only deployed infrastructure can be destroyed.');
   }
 
-  deployment.status = 'destroying';
+  // Deliberately 'queued', not 'destroying': runTerraformDestroy/runTerraformDeployment (see
+  // githubTerraformRunner.js) re-fetch the deployment and refuse to start if it's already in an
+  // ACTIVE_STATUSES status (deploying/destroying) — a reentrancy guard against double-dispatch.
+  // Pre-setting 'destroying' here collided with that guard and made it return immediately, doing
+  // nothing: every normal (non-force) GitHub Actions destroy silently no-op'd. 'queued' mirrors what
+  // applyDeployment already does below, and isn't in ACTIVE_STATUSES, so the runner is free to make
+  // its own (fast, awaited) transition to 'destroying' once it actually starts.
+  deployment.status = 'queued';
   deployment.logs.push({ message: 'Destroy requested. Terraform runner is starting.', level: 'warning' });
   await deployment.save();
 
   await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
-  await startTerraformRun(deployment.executor, () => runTerraformDestroy(deployment._id));
+  await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });
@@ -645,7 +661,7 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.force_destroy', 'Deployment', deployment._id, { previousStatus });
-  await startTerraformRun(deployment.executor, () => runTerraformDestroy(deployment._id, { force: true }));
+  await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id, { force: true }));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });
