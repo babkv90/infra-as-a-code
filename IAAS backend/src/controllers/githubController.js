@@ -196,7 +196,7 @@ export const listGithubRepositories = asyncHandler(async (req, res) => {
   const token = await githubTokenForUser(req.user._id);
   if (!token) throw new ApiError(409, 'Connect GitHub before selecting a repository.');
 
-  const repos = await githubJson('/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member', token);
+  const repos = await listAllGithubRepositories(token);
   res.json({
     success: true,
     data: repos.map((repo) => ({
@@ -218,6 +218,20 @@ export const listGithubRepositories = asyncHandler(async (req, res) => {
     })),
   });
 });
+
+async function listAllGithubRepositories(token) {
+  const repositories = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const pageRepos = await githubJson(
+      `/user/repos?per_page=100&page=${page}&sort=updated&visibility=all&affiliation=owner,collaborator,organization_member`,
+      token,
+    );
+    if (!Array.isArray(pageRepos) || !pageRepos.length) break;
+    repositories.push(...pageRepos);
+    if (pageRepos.length < 100) break;
+  }
+  return repositories;
+}
 
 export const listGithubBranches = asyncHandler(async (req, res) => {
   const owner = String(req.query.owner ?? '').trim();

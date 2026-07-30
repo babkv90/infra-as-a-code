@@ -4537,13 +4537,111 @@ button.lp-security-item {
 }
 
 .legal-connect-group {
-  display: grid;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  justify-items: end;
+  flex-wrap: wrap;
 }
 
 .legal-connect-group--compact {
   max-width: 320px;
+}
+
+.github-consent-info {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  z-index: 5;
+}
+
+.github-consent-info__trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.github-consent-info__trigger:hover,
+.github-consent-info__trigger:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 12px 30px rgba(245, 158, 11, 0.2);
+  outline: none;
+}
+
+.github-consent-info__card {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: min(290px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(245, 158, 11, 0.16), transparent 34%),
+    rgba(15, 23, 42, 0.96);
+  color: #cbd5e1;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.98);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.github-consent-info:hover .github-consent-info__card,
+.github-consent-info:focus-within .github-consent-info__card {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.github-consent-info__card::before {
+  content: '';
+  position: absolute;
+  right: 11px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid rgba(251, 191, 36, 0.28);
+  border-top: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(15, 23, 42, 0.96);
+  transform: rotate(45deg);
+}
+
+.github-consent-info__card strong,
+.github-consent-info__card span {
+  position: relative;
+  display: block;
+}
+
+.github-consent-info__card strong {
+  margin-bottom: 6px;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.github-consent-info__card span {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.github-consent-info__card a {
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+.github-consent-info__card a:hover {
+  color: #fde68a;
 }
 
 .settings-legal-card {
@@ -13401,6 +13499,47 @@ button.dash-kpi-card {
   color: #e2e8f0;
 }
 
+.dash-info-action,
+.dash-role-setup-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.1);
+  color: #67e8f9;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.dash-info-action:hover,
+.dash-role-setup-open:hover {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, 0.52);
+  background: rgba(14, 165, 233, 0.16);
+  box-shadow: 0 14px 34px rgba(14, 165, 233, 0.16);
+}
+
+.dash-panel header .dash-info-action {
+  border-color: rgba(34, 211, 238, 0.26);
+  background: rgba(14, 165, 233, 0.1);
+  color: #67e8f9;
+}
+
+.dash-panel header .dash-info-action:hover {
+  border-color: rgba(34, 211, 238, 0.52);
+  background: rgba(14, 165, 233, 0.16);
+}
+
+.dash-role-setup-open {
+  justify-self: start;
+  padding: 0 14px;
+}
+
 .dash-role-policy-card {
   min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -13433,6 +13572,86 @@ button.dash-kpi-card {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.dash-role-setup-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vw, 34px);
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(16px);
+}
+
+.dash-role-setup-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(980px, 100%);
+  max-height: min(84vh, 860px);
+  overflow: hidden;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.16), transparent 34%),
+    radial-gradient(circle at 90% 6%, rgba(124, 58, 237, 0.16), transparent 30%),
+    rgba(15, 23, 42, 0.97);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.44);
+}
+
+.dash-role-setup-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.dash-role-setup-modal h2 {
+  margin: 6px 0;
+  color: #f8fafc;
+  font-size: clamp(22px, 2vw, 30px);
+}
+
+.dash-role-setup-modal p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.dash-role-setup-modal-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 22px;
+}
+
+.dash-role-setup-field {
+  display: grid;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dash-role-setup-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.dash-role-setup-field input {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.46);
+  color: #e2e8f0;
+  font-size: 12px;
 }
 
 .dash-role-setup-intro {
@@ -17120,6 +17339,51 @@ button.dash-kpi-card {
   color: var(--text-secondary);
 }
 
+.app-theme-light .dash-role-setup-modal,
+.app-theme-pearl .dash-role-setup-modal {
+  border-color: var(--border-subtle);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(8, 145, 178, 0.12), transparent 34%),
+    radial-gradient(circle at 90% 6%, rgba(124, 58, 237, 0.1), transparent 30%),
+    var(--bg-surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.app-theme-light .dash-role-setup-modal h2,
+.app-theme-pearl .dash-role-setup-modal h2 {
+  color: var(--text-primary);
+}
+
+.app-theme-light .dash-role-setup-modal p,
+.app-theme-light .dash-role-setup-field,
+.app-theme-pearl .dash-role-setup-modal p,
+.app-theme-pearl .dash-role-setup-field {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .dash-role-setup-field input,
+.app-theme-pearl .dash-role-setup-field input {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.app-theme-light .dash-role-policy-card,
+.app-theme-pearl .dash-role-policy-card {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+
+.app-theme-light .dash-role-policy-card strong,
+.app-theme-pearl .dash-role-policy-card strong {
+  color: var(--text-primary);
+}
+
+.app-theme-light .dash-role-policy-card pre,
+.app-theme-pearl .dash-role-policy-card pre {
+  color: var(--text-secondary);
+}
+
 .app-theme-light .deployment-update-banner {
   background: rgba(var(--warning-rgb), 0.1);
   color: var(--warning);
@@ -17701,6 +17965,32 @@ button.dash-kpi-card {
 .app-theme-light .settings-legal-grid span,
 .app-theme-light .settings-legal-accepted {
   color: var(--text-muted);
+}
+
+.app-theme-light .github-consent-info__card,
+.app-theme-pearl .github-consent-info__card {
+  border-color: rgba(217, 119, 6, 0.24);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(245, 158, 11, 0.14), transparent 34%),
+    rgba(255, 255, 255, 0.98);
+  color: var(--text-secondary);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.14);
+}
+
+.app-theme-light .github-consent-info__card::before,
+.app-theme-pearl .github-consent-info__card::before {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.app-theme-light .github-consent-info__card strong,
+.app-theme-pearl .github-consent-info__card strong {
+  color: var(--text-primary);
+}
+
+.app-theme-light .github-consent-info__card span,
+.app-theme-pearl .github-consent-info__card span {
+  color: var(--text-secondary);
 }
 
 .app-theme-pearl .lp-primary-button,

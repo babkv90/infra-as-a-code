@@ -47,6 +47,7 @@ import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
 import AppLogo from '../components/AppLogo';
 import DeploymentModal from '../components/DeploymentModal';
+import GithubConsentInfo from '../components/GithubConsentInfo';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { PageAlert } from '../components/PageAlert';
 import ResourceInfoViewer from '../components/ResourceInfoViewer';
@@ -167,6 +168,7 @@ const dashboardPageIds = new Set<DashboardPage>(dashboardNavItems.map((item) => 
 const hiddenDashboardPages = new Set<DashboardPage>(['terraform', 'security']);
 const githubConnectionCacheKey = 'infraflow.github.connection';
 const githubRepositoriesCacheKey = 'infraflow.github.repositories';
+const githubRepositoriesCacheEvent = 'infraflow:github-repositories-cache';
 
 function readCachedGithubConnection(): GithubConnection {
   try {
@@ -205,6 +207,7 @@ function cacheGithubRepositories(repositories: GithubRepository[]) {
   } else {
     window.localStorage.removeItem(githubRepositoriesCacheKey);
   }
+  window.dispatchEvent(new CustomEvent(githubRepositoriesCacheEvent, { detail: repositories }));
 }
 
 function getInitialDashboardPage(): DashboardPage {
@@ -3000,6 +3003,23 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const githubStatus = params.get('github');
+    if (!githubStatus) return;
+
+    if (githubStatus === 'connected') {
+      setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+      void refreshGithubConnection();
+    } else {
+      setError(params.get('github_message') || 'GitHub connection failed.');
+    }
+    params.delete('github');
+    params.delete('github_message');
+    params.delete('github_reconnect_required');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`);
+  }, []);
+
+  useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
       if (event.data?.type !== 'infraflow:github-connected') return;
       if (event.data.success) {
@@ -3024,6 +3044,16 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
 
     window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
     return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+
+  useEffect(() => {
+    function handleGithubRepositoriesCache(event: Event) {
+      const nextRepositories = (event as CustomEvent<GithubRepository[]>).detail;
+      if (Array.isArray(nextRepositories)) setGithubRepos(nextRepositories);
+    }
+
+    window.addEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
+    return () => window.removeEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
   }, []);
 
   useEffect(() => {
@@ -3248,7 +3278,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }
 
   async function refreshGithubConnection(options: { silent?: boolean } = {}) {
-    if (!options.silent) setIsGithubLoading(true);
+    if (!options.silent || !githubRepos.length) setIsGithubLoading(true);
     try {
       const connection = await getGithubStatus();
       setGithubConnection(connection);
@@ -3273,14 +3303,22 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
           setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
         }
       } catch (repoError) {
-        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
+        setGithubRepos(readCachedGithubRepositories());
+        const message = repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.';
+        if (!options.silent) setError(message);
+        else setMessage(message);
       }
       return true;
     } catch (githubError) {
-      if (options.silent && readCachedGithubConnection().connected) return false;
+      const cachedConnection = readCachedGithubConnection();
+      if (options.silent && cachedConnection.connected) {
+        setGithubConnection(cachedConnection);
+        setGithubRepos(readCachedGithubRepositories());
+        return true;
+      }
       setGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
-        cacheGithubRepositories([]);
+      cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -3288,7 +3326,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       if (!options.silent) setError(githubError instanceof Error ? githubError.message : 'Unable to load GitHub connection.');
       return false;
     } finally {
-      if (!options.silent) setIsGithubLoading(false);
+      setIsGithubLoading(false);
     }
   }
 
@@ -3681,13 +3719,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
             </button>
           ) : (
             <div className="legal-connect-group legal-connect-group--compact">
-              <p className="legal-inline-notice">
-                By connecting GitHub, you authorize infraflow to sync files per our{' '}
-                <a href="/legal/terms" rel="noreferrer" target="_blank">
-                  Terms of Service
-                </a>
-                .
-              </p>
+              <GithubConsentInfo />
               <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
                 <Github size={14} />
                 {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
@@ -4184,6 +4216,23 @@ function ApplicationPipelinePage() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const githubStatus = params.get('github');
+    if (!githubStatus) return;
+
+    if (githubStatus === 'connected') {
+      setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+      void refreshGithubConnection();
+    } else {
+      setError(params.get('github_message') || 'GitHub connection failed.');
+    }
+    params.delete('github');
+    params.delete('github_message');
+    params.delete('github_reconnect_required');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`);
+  }, []);
+
+  useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
       if (event.data?.type !== 'infraflow:github-connected') return;
       if (event.data.success) {
@@ -4208,6 +4257,16 @@ function ApplicationPipelinePage() {
 
     window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
     return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+
+  useEffect(() => {
+    function handleGithubRepositoriesCache(event: Event) {
+      const nextRepositories = (event as CustomEvent<GithubRepository[]>).detail;
+      if (Array.isArray(nextRepositories)) setGithubRepos(nextRepositories);
+    }
+
+    window.addEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
+    return () => window.removeEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
   }, []);
   useEffect(() => {
     function handleRunningPipelinesChanged() {
@@ -4467,7 +4526,7 @@ function ApplicationPipelinePage() {
   }
 
   async function refreshGithubConnection(options: { silent?: boolean } = {}) {
-    if (!options.silent) setIsGithubLoading(true);
+    if (!options.silent || !githubRepos.length) setIsGithubLoading(true);
     try {
       const connection = await getGithubStatus();
       setGithubConnection(connection);
@@ -4492,14 +4551,22 @@ function ApplicationPipelinePage() {
           setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
         }
       } catch (repoError) {
-        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
+        setGithubRepos(readCachedGithubRepositories());
+        const message = repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.';
+        if (!options.silent) setError(message);
+        else setMessage(message);
       }
       return true;
     } catch (githubError) {
-      if (options.silent && readCachedGithubConnection().connected) return false;
+      const cachedConnection = readCachedGithubConnection();
+      if (options.silent && cachedConnection.connected) {
+        setGithubConnection(cachedConnection);
+        setGithubRepos(readCachedGithubRepositories());
+        return true;
+      }
       setGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
-        cacheGithubRepositories([]);
+      cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -4507,7 +4574,7 @@ function ApplicationPipelinePage() {
       if (!options.silent) setError(githubError instanceof Error ? githubError.message : 'Unable to load GitHub connection.');
       return false;
     } finally {
-      if (!options.silent) setIsGithubLoading(false);
+      setIsGithubLoading(false);
     }
   }
 
@@ -4830,13 +4897,7 @@ function ApplicationPipelinePage() {
                 </button>
               ) : (
                 <div className="legal-connect-group legal-connect-group--compact">
-                  <p className="legal-inline-notice">
-                    By connecting GitHub, you authorize infraflow to sync files per our{' '}
-                    <a href="/legal/terms" rel="noreferrer" target="_blank">
-                      Terms of Service
-                    </a>
-                    .
-                  </p>
+                  <GithubConsentInfo />
                   <button className="pipeline-primary-compact" onClick={connectGithub} type="button">
                     <Github size={14} />
                     Connect GitHub
@@ -4863,9 +4924,11 @@ function ApplicationPipelinePage() {
               <label className="pipeline-field">
                 <span>Repository</span>
                 <select
-                  disabled={!githubConnection.connected || isGithubLoading || (!githubRepos.length && !selectedGithubRepo)}
+                  disabled={!githubConnection.connected || isGithubLoading}
                   value={selectedGithubRepo}
                   onChange={(event) => chooseGithubRepository(event.target.value)}
+                  onFocus={() => void refreshGithubConnection({ silent: true })}
+                  onPointerDown={() => void refreshGithubConnection({ silent: true })}
                 >
                   <option value="">{isGithubLoading ? 'Loading repositories...' : 'Choose repository'}</option>
                   {selectedGithubRepo && !githubRepos.some((repo) => repo.fullName === selectedGithubRepo) && (

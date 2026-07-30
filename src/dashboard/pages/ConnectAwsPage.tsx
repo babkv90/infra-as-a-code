@@ -1,4 +1,4 @@
-import { Plug, RefreshCw, Trash2 } from 'lucide-react';
+import { Info, Plug, RefreshCw, Trash2, X } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { PageAlert } from '../../components/PageAlert';
@@ -16,6 +16,7 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
   const [isConnecting, setIsConnecting] = useState(false);
   const [deployerIdentity, setDeployerIdentity] = useState<{ arn: string; accountId: string }>();
   const [isLoadingIdentity, setIsLoadingIdentity] = useState(false);
+  const [isRoleSetupOpen, setIsRoleSetupOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const trustPolicy = useMemo(
@@ -133,34 +134,28 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
             })}
           </div>
         </Panel>
-        <Panel title="AWS role setup" action={isLoadingIdentity ? 'Loading identity' : deployerIdentity ? 'Ready' : 'Missing backend credentials'}>
+        <Panel
+          title="AWS role setup"
+          action={
+            deployerIdentity ? (
+              <button className="dash-info-action" onClick={() => setIsRoleSetupOpen(true)} title="View AWS role setup details" type="button">
+                <Info size={15} />
+                Setup details
+              </button>
+            ) : (
+              isLoadingIdentity ? 'Loading identity' : 'Missing backend credentials'
+            )
+          }
+        >
           {deployerIdentity ? (
             <div className="dash-role-setup">
               <p>
-                Create an IAM role in the AWS account you want to connect. Use this trust policy, attach the permissions policy, then paste the role ARN into the form.
+                Create an IAM role in the AWS account you want to connect, then paste the role ARN into the form. Open setup details for the deployer ARN, trust policy, and permissions policy.
               </p>
-              <label>
-                Infraflow deployer ARN
-                <input readOnly value={deployerIdentity.arn} />
-              </label>
-              <div className="dash-role-policy-card">
-                <div>
-                  <strong>Trust policy</strong>
-                  <button className="dash-secondary-action" onClick={() => copyText(trustPolicy, 'Trust policy copied.')} type="button">
-                    Copy
-                  </button>
-                </div>
-                <pre>{trustPolicy}</pre>
-              </div>
-              <div className="dash-role-policy-card">
-                <div>
-                  <strong>Permissions policy</strong>
-                  <button className="dash-secondary-action" onClick={() => copyText(permissionsPolicy, 'Permissions policy copied.')} type="button">
-                    Copy
-                  </button>
-                </div>
-                <pre>{permissionsPolicy}</pre>
-              </div>
+              <button className="dash-role-setup-open" onClick={() => setIsRoleSetupOpen(true)} type="button">
+                <Info size={16} />
+                View AWS role setup data
+              </button>
             </div>
           ) : (
             <EmptyState>
@@ -212,6 +207,35 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
           </form>
         </Panel>
       </div>
+      {deployerIdentity && isRoleSetupOpen && (
+        <div className="dash-role-setup-modal-backdrop" role="presentation" onClick={() => setIsRoleSetupOpen(false)}>
+          <section className="dash-role-setup-modal" role="dialog" aria-modal="true" aria-label="AWS role setup details" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span className="dash-eyebrow">IAM AssumeRole setup</span>
+                <h2>AWS role setup data</h2>
+                <p>Use these values in AWS IAM, then paste the created role ARN into the connection form.</p>
+              </div>
+              <button className="dash-icon-button" onClick={() => setIsRoleSetupOpen(false)} type="button" aria-label="Close AWS role setup details">
+                <X size={17} />
+              </button>
+            </header>
+            <div className="dash-role-setup-modal-body">
+              <label className="dash-role-setup-field">
+                <span>Infraflow deployer ARN</span>
+                <div>
+                  <input readOnly value={deployerIdentity.arn} />
+                  <button className="dash-secondary-action" onClick={() => copyText(deployerIdentity.arn, 'Infraflow deployer ARN copied.')} type="button">
+                    Copy
+                  </button>
+                </div>
+              </label>
+              <RolePolicyCard title="Trust policy" value={trustPolicy} onCopy={() => copyText(trustPolicy, 'Trust policy copied.')} />
+              <RolePolicyCard title="Permissions policy" value={permissionsPolicy} onCopy={() => copyText(permissionsPolicy, 'Permissions policy copied.')} />
+            </div>
+          </section>
+        </div>
+      )}
       <Panel title="Connected accounts" action={`${accounts.length} accounts`}>
         <div className="dash-account-list">
           {accounts.length ? (
@@ -240,6 +264,20 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
           )}
         </div>
       </Panel>
+    </div>
+  );
+}
+
+function RolePolicyCard({ title, value, onCopy }: { title: string; value: string; onCopy: () => void }) {
+  return (
+    <div className="dash-role-policy-card">
+      <div>
+        <strong>{title}</strong>
+        <button className="dash-secondary-action" onClick={onCopy} type="button">
+          Copy
+        </button>
+      </div>
+      <pre>{value}</pre>
     </div>
   );
 }
