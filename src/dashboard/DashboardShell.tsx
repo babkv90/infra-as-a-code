@@ -38,6 +38,7 @@ import {
   Upload,
   Workflow,
   X,
+  Zap,
 } from 'lucide-react';
 import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
@@ -82,11 +83,15 @@ import {
 import { TerraformPage } from './pages/TerraformPage';
 import {
   getAwsInsights,
+  getBillingRealtimeInsights,
+  getLambdaRealtimeInsights,
   listAwsAccounts,
   listAwsRegions,
   syncAwsAccount,
   type AwsAccountRecord,
   type AwsInsights,
+  type BillingRealtimeMetrics,
+  type LambdaRealtimeMetrics,
 } from './awsApi';
 import { AgentPage } from './pages/AgentPage';
 import { ConnectAwsPage } from './pages/ConnectAwsPage';
@@ -484,36 +489,59 @@ function OverviewPage({
   isSyncingAws: boolean;
   onSyncAws: () => Promise<void>;
 }) {
+  const [billingRealtimeMetrics, setBillingRealtimeMetrics] = useState<BillingRealtimeMetrics>();
+  const [lambdaRealtimeMetrics, setLambdaRealtimeMetrics] = useState<LambdaRealtimeMetrics>();
+
+  async function refreshBillingRealtimeMetrics() {
+    try {
+      setBillingRealtimeMetrics(await getBillingRealtimeInsights());
+    } catch {
+      setBillingRealtimeMetrics(undefined);
+    }
+  }
+
+  async function refreshLambdaRealtimeMetrics() {
+    try {
+      setLambdaRealtimeMetrics(await getLambdaRealtimeInsights());
+    } catch {
+      setLambdaRealtimeMetrics(undefined);
+    }
+  }
+
+  useEffect(() => {
+    if (!insights) return undefined;
+    void refreshBillingRealtimeMetrics();
+    void refreshLambdaRealtimeMetrics();
+    const interval = window.setInterval(() => {
+      void refreshBillingRealtimeMetrics();
+    }, 300000);
+    return () => window.clearInterval(interval);
+  }, [insights?.syncedAt]);
+
+  useEffect(() => {
+    if (!insights) return undefined;
+    const interval = window.setInterval(() => {
+      void refreshLambdaRealtimeMetrics();
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, [insights?.syncedAt]);
+
   return (
     <div className="dash-page dash-page--overview">
-      <div className="dash-page-head-group">
-        <header className="pipeline-console-header">
-          <div>
-            <span className="dash-eyebrow">Cloud operations</span>
-            <h2>Overview</h2>
-          </div>
-          <div className="pipeline-header-badges">
-            <button className="pipeline-link-button" onClick={() => setActivePage('connect-aws')} type="button">
-              Connect AWS Account
-              <ExternalLink size={14} />
-            </button>
-            <button className="pipeline-primary-compact" disabled={isSyncingAws} onClick={() => void onSyncAws()} type="button">
-              <CloudCog size={14} />
-              {isSyncingAws ? 'Syncing AWS...' : 'Sync live AWS data'}
-            </button>
-            <button className="pipeline-primary-compact" onClick={() => setActivePage('builder')} type="button">
-              Start Building
-              <ArrowRight size={14} />
-            </button>
-          </div>
-        </header>
+      <div className="dash-page-head-group dash-page-head-group--aws-insights">
+        <OverviewInsightsTop
+          billingRealtimeMetrics={billingRealtimeMetrics}
+          insights={insights}
+          isSyncingAws={isSyncingAws}
+          lambdaRealtimeMetrics={lambdaRealtimeMetrics}
+          onConnectAws={() => setActivePage('connect-aws')}
+          onStartBuilding={() => setActivePage('builder')}
+          onSyncAws={onSyncAws}
+        />
       </div>
 
       <div className="dash-overview-scroll">
         {insights && <PermissionErrorList insights={insights} />}
-        <KpiGrid insights={insights} />
-
-        <OverviewAwsGraphs insights={insights} />
 
         {insights && (
           <div className="dash-two-col dash-two-col--wide">
@@ -524,14 +552,6 @@ function OverviewPage({
               <RecentAwsEvents insights={insights} />
             </Panel>
           </div>
-        )}
-
-        {insights ? (
-          <Panel title="Cost Explorer by service" action="Current month">
-            <BillingServiceTable insights={insights} />
-          </Panel>
-        ) : (
-          <EmptyState>Connect AWS to load live AWS insights and Cost Explorer billing data.</EmptyState>
         )}
 
         <CostRecommendationGrid insights={insights} />
@@ -556,6 +576,319 @@ function OverviewPage({
       </div>
     </div>
   );
+}
+
+type AwsInsightTone = 'cyan' | 'violet' | 'emerald' | 'blue' | 'amber';
+
+type AwsInsightMetric = {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ size?: number }>;
+  tone: AwsInsightTone;
+};
+
+type AwsInsightMiniChart = {
+  title: string;
+  summary?: string;
+  tone: AwsInsightTone;
+  variant?: 'bars' | 'curve';
+  emptyLabel: string;
+  bars: Array<{
+    label: string;
+    value: number;
+    display: string;
+    height: number;
+  }>;
+};
+
+function OverviewInsightsTop({
+  billingRealtimeMetrics,
+  insights,
+  isSyncingAws,
+  lambdaRealtimeMetrics,
+  onConnectAws,
+  onStartBuilding,
+  onSyncAws,
+}: {
+  billingRealtimeMetrics?: BillingRealtimeMetrics;
+  insights?: AwsInsights;
+  isSyncingAws: boolean;
+  lambdaRealtimeMetrics?: LambdaRealtimeMetrics;
+  onConnectAws: () => void;
+  onStartBuilding: () => void;
+  onSyncAws: () => Promise<void>;
+}) {
+  const metrics = buildAwsInsightMetrics(insights);
+  const charts = buildAwsInsightMiniCharts(insights, lambdaRealtimeMetrics, billingRealtimeMetrics);
+
+  return (
+    <section className="dash-aws-insights-top" aria-labelledby="dash-aws-insights-title">
+      <header className="dash-aws-insights-head">
+        <div>
+          <span id="dash-aws-insights-title">AWS Insights</span>
+          <p>{insights?.syncedAt ? `Live data synced ${new Date(insights.syncedAt).toLocaleString()}` : 'Connect or sync AWS to populate live infrastructure data.'}</p>
+        </div>
+        <div className="dash-aws-insights-actions" aria-label="Dashboard quick actions">
+          <button className="pipeline-link-button" onClick={onConnectAws} type="button">
+            Connect AWS Account
+            <ExternalLink size={14} />
+          </button>
+          <button className="pipeline-primary-compact" disabled={isSyncingAws} onClick={() => void onSyncAws()} type="button">
+            <CloudCog size={14} />
+            {isSyncingAws ? 'Syncing AWS...' : 'Sync live AWS data'}
+          </button>
+          <button className="pipeline-primary-compact" onClick={onStartBuilding} type="button">
+            Start Building
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </header>
+
+      <div className="dash-aws-insights-metrics">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <article className={`dash-aws-insight-card dash-aws-insight-card--${metric.tone}`} key={metric.label}>
+              <Icon size={20} />
+              <strong>{metric.value}</strong>
+              <span>{metric.label}</span>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="dash-aws-insights-charts" aria-label="AWS usage chart previews">
+        {charts.map((chart) => (
+          <article className={`dash-aws-mini-chart dash-aws-mini-chart--${chart.tone}`} key={chart.title}>
+            <header className="dash-aws-mini-chart-head">
+              <h3>{chart.title}</h3>
+              {chart.summary && <strong>{chart.summary}</strong>}
+            </header>
+            {chart.bars.length ? (
+              <>
+                {chart.variant === 'curve' ? (
+                  <DailyBillingCurveChart points={chart.bars} />
+                ) : (
+                  <>
+                    <div className="dash-aws-mini-bars" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
+                      {chart.bars.map((bar) => (
+                        <i key={`${chart.title}-${bar.label}`} style={{ height: `${bar.height}%` }} title={`${bar.label}: ${bar.display}`} />
+                      ))}
+                    </div>
+                    <div className="dash-aws-mini-labels" aria-label={`${chart.title} values`} style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
+                      {chart.bars.map((bar) => (
+                        <span key={`${chart.title}-${bar.label}-label`}>
+                          <b>{bar.label}</b>
+                          <em>{bar.display}</em>
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="dash-aws-mini-empty">{chart.emptyLabel}</p>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DailyBillingCurveChart({ points }: { points: AwsInsightMiniChart['bars'] }) {
+  const width = 320;
+  const height = 118;
+  const paddingX = 10;
+  const paddingY = 12;
+  const innerWidth = width - paddingX * 2;
+  const innerHeight = height - paddingY * 2;
+  const coordinates = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : paddingX + (index / (points.length - 1)) * innerWidth;
+    const y = paddingY + ((100 - point.height) / 100) * innerHeight;
+    return { ...point, x, y };
+  });
+  const linePath = coordinates.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+  const areaPath = `${linePath} L ${coordinates[coordinates.length - 1]?.x.toFixed(2) ?? paddingX} ${height - paddingY} L ${coordinates[0]?.x.toFixed(2) ?? paddingX} ${height - paddingY} Z`;
+  const detailPoints = getDailyBillingDetailPoints(points);
+
+  return (
+    <>
+      <div className="dash-aws-curve" aria-label="Current month daily billing values">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img">
+          <defs>
+            <linearGradient id="daily-billing-fill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <path className="dash-aws-curve__grid" d={`M ${paddingX} ${height - paddingY} H ${width - paddingX}`} />
+          <path className="dash-aws-curve__area" d={areaPath} />
+          <path className="dash-aws-curve__line" d={linePath} />
+          {coordinates.map((point) => (
+            <circle className="dash-aws-curve__point" cx={point.x} cy={point.y} key={`${point.label}-${point.display}`} r="3.4">
+              <title>{`${point.label}: ${point.display}`}</title>
+            </circle>
+          ))}
+        </svg>
+      </div>
+      <div className="dash-aws-mini-labels dash-aws-mini-labels--curve" aria-label="Current month daily billing details">
+        {detailPoints.map((point) => (
+          <span key={`${point.label}-${point.display}`}>
+            <b>{point.label}</b>
+            <em>{point.display}</em>
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function getDailyBillingDetailPoints(points: AwsInsightMiniChart['bars']) {
+  const total = points.reduce((sum, point) => sum + point.value, 0);
+  const peakPoint = points.reduce((currentMax, point) => (point.value > currentMax.value ? point : currentMax), points[0]);
+  const todayPoint = points[points.length - 1];
+  const average = points.length ? total / points.length : 0;
+
+  return [
+    { label: 'Total', display: formatCurrency(total), value: total, height: 100 },
+    { label: 'Today', display: todayPoint?.display ?? formatCurrency(0), value: todayPoint?.value ?? 0, height: todayPoint?.height ?? 0 },
+    { label: `Peak ${peakPoint?.label ?? ''}`.trim(), display: peakPoint?.display ?? formatCurrency(0), value: peakPoint?.value ?? 0, height: peakPoint?.height ?? 0 },
+    { label: 'Avg/day', display: formatCurrency(average), value: average, height: 0 },
+  ];
+}
+
+function buildAwsInsightMetrics(insights?: AwsInsights): AwsInsightMetric[] {
+  const resources = insights?.resources ?? {};
+  const activeResourceCount = insights?.inventory.reduce((sum, resource) => sum + Number(resource.count ?? 0), 0) ?? 0;
+  return [
+    { label: 'Monthly Spend', value: `$${(insights?.billing.monthlySpend ?? 0).toFixed(2)}`, icon: BadgeDollarSign, tone: 'cyan' },
+    { label: 'Active Resources', value: String(activeResourceCount), icon: Server, tone: 'blue' },
+    { label: 'Security Warnings', value: String(resources.securityWarnings ?? 0), icon: ShieldCheck, tone: 'amber' },
+    { label: 'Estimated Savings', value: `$${insights?.billing.estimatedSavings ?? 0}/mo`, icon: CheckCircle2, tone: 'emerald' },
+    { label: 'EC2 Instances', value: String(resources.ec2Instances ?? 0), icon: Server, tone: 'blue' },
+    { label: 'Active Lambda Functions', value: String(resources.lambdaFunctions ?? 0), icon: Zap, tone: 'violet' },
+    { label: 'S3 Buckets', value: String(resources.s3Buckets ?? 0), icon: Database, tone: 'emerald' },
+    { label: 'Idle Resources Found', value: String(resources.idleResources ?? 0), icon: AlertTriangle, tone: 'amber' },
+  ];
+}
+
+function buildAwsInsightMiniCharts(insights?: AwsInsights, lambdaRealtimeMetrics?: LambdaRealtimeMetrics, billingRealtimeMetrics?: BillingRealtimeMetrics): AwsInsightMiniChart[] {
+  const resources = insights?.resources ?? {};
+  const dailyBillingSource = billingRealtimeMetrics?.dailyTrend?.length ? billingRealtimeMetrics.dailyTrend : insights?.billing.dailyTrend ?? [];
+  const dailyBillingTrend = dailyBillingSource.map((item) => ({
+    label: item.label,
+    value: Number(item.cost ?? 0),
+    display: `$${Number(item.cost ?? 0).toFixed(2)}`,
+  }));
+  const dailyBillingTotal = dailyBillingTrend.reduce((sum, item) => sum + item.value, 0);
+  const resourceHealth = (insights?.inventory ?? [])
+    .filter((resource) => Number(resource.count ?? 0) > 0)
+    .sort((left, right) => Number(right.count ?? 0) - Number(left.count ?? 0))
+    .slice(0, 5)
+    .map((resource) => ({
+      label: shortAwsLabel(resource.service),
+      value: Number(resource.count ?? 0),
+      display: resource.health,
+    }));
+  const lambdaInvocations = lambdaRealtimeMetrics?.points.length
+    ? lambdaRealtimeMetrics.points.map((item) => ({
+        label: item.label,
+        value: Number(item.invocations ?? 0),
+        display: `${Number(item.invocations ?? 0)} inv / ${Number(item.errors ?? 0)} err`,
+      }))
+    : (insights?.lambdaMetrics?.daily ?? []).map((item) => ({
+        label: item.label,
+        value: Number(item.invocations ?? 0),
+        display: `${Number(item.invocations ?? 0)} inv / ${Number(item.errors ?? 0)} err`,
+      }));
+  const lambdaInvocationSummary = lambdaRealtimeMetrics
+    ? `${lambdaRealtimeMetrics.totalInvocations} inv / ${lambdaRealtimeMetrics.totalErrors} err`
+    : undefined;
+  const billingTrend = insights?.billing.monthlyTrend?.length
+    ? insights.billing.monthlyTrend.map((item) => ({
+        label: item.label,
+        value: Number(item.cost ?? 0),
+        display: `$${Number(item.cost ?? 0).toFixed(2)}`,
+      }))
+    : (insights?.billing.trend ?? []).map((value, index) => ({
+        label: index === (insights?.billing.trend.length ?? 0) - 1 ? 'Now' : `T-${(insights?.billing.trend.length ?? 0) - index - 1}`,
+        value: Number(value ?? 0),
+        display: `$${Number(value ?? 0).toFixed(2)}`,
+      }));
+  const serviceCosts = (insights?.billing.byService ?? [])
+    .filter((service) => Number(service.cost ?? 0) > 0)
+    .slice(0, 6)
+    .map((service) => ({
+      label: shortAwsLabel(service.service),
+      value: Number(service.cost ?? 0),
+      display: `${formatCurrency(Number(service.cost ?? 0))} · ${formatPercentOfTotal(Number(service.cost ?? 0), insights?.billing.monthlySpend ?? 0)}`,
+    }));
+  const serviceCostTotal = (insights?.billing.byService ?? []).reduce((sum, service) => sum + Number(service.cost ?? 0), 0);
+
+  return [
+    {
+      title: billingRealtimeMetrics ? 'Realtime current month billing' : 'Current month daily billing',
+      summary: `${formatCurrency(dailyBillingTotal)} total`,
+      tone: 'cyan',
+      variant: 'curve',
+      emptyLabel: 'No current month daily billing returned yet.',
+      bars: normalizeMiniCurvePoints(dailyBillingTrend),
+    },
+    {
+      title: 'Resource health',
+      tone: 'violet',
+      emptyLabel: 'No top resource health data found in the latest sync.',
+      bars: normalizeMiniChartBars(resourceHealth),
+    },
+    {
+      title: lambdaRealtimeMetrics ? 'Realtime Lambda invocations' : 'Lambda invocations',
+      summary: lambdaInvocationSummary,
+      tone: 'blue',
+      emptyLabel: 'No Lambda invocation metrics returned yet.',
+      bars: normalizeMiniChartBars(lambdaInvocations),
+    },
+    {
+      title: 'Cost by service',
+      summary: `${formatCurrency(serviceCostTotal)} total`,
+      tone: 'amber',
+      emptyLabel: 'No service cost returned yet.',
+      bars: normalizeMiniChartBars(serviceCosts.length ? serviceCosts : billingTrend),
+    },
+  ];
+}
+
+function normalizeMiniChartBars(items: Array<{ label: string; value: number; display: string }>) {
+  const validItems = items.filter((item) => Number.isFinite(item.value) && item.value > 0).slice(0, 6);
+  const maxValue = Math.max(...validItems.map((item) => item.value), 0);
+  if (!validItems.length || maxValue <= 0) return [];
+  return validItems.map((item) => ({
+    ...item,
+    height: Math.max(24, Math.round((item.value / maxValue) * 100)),
+  }));
+}
+
+function normalizeMiniCurvePoints(items: Array<{ label: string; value: number; display: string }>) {
+  const validItems = items.filter((item) => Number.isFinite(item.value));
+  const maxValue = Math.max(...validItems.map((item) => item.value), 0);
+  if (!validItems.length || maxValue <= 0) return [];
+  return validItems.map((item) => ({
+    ...item,
+    height: Math.max(5, Math.round((item.value / maxValue) * 100)),
+  }));
+}
+
+function formatCurrency(value: number) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function formatPercentOfTotal(value: number, total: number) {
+  if (!total) return '0%';
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function shortAwsLabel(label: string) {
+  return label.replace(/^Amazon\s+/i, '').replace(/^AWS\s+/i, '').replace(/\s+Service$/i, '').slice(0, 12);
 }
 
 function OverviewAwsGraphs({ insights }: { insights?: AwsInsights }) {
@@ -659,6 +992,8 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [isLoadingDirectory, setIsLoadingDirectory] = useState(false);
   const [isSavingDiagram, setIsSavingDiagram] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSaveNameDialogOpen, setIsSaveNameDialogOpen] = useState(false);
+  const [saveDiagramName, setSaveDiagramName] = useState(currentDiagramName);
   const [directoryMessage, setDirectoryMessage] = useState('');
   const [creditMessage, setCreditMessage] = useState('');
   const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved, isDirty } = useDiagramStore();
@@ -883,9 +1218,18 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   async function saveCurrentDiagram() {
     if (!canWriteDiagrams || isSavingDiagram) return;
 
-    const firstSaveName = currentDiagramId ? currentDiagramName : window.prompt('Diagram name', currentDiagramName);
-    const name = (firstSaveName ?? '').trim();
-    if (!name) return;
+    if (!currentDiagramId) {
+      setSaveDiagramName(currentDiagramName);
+      setIsSaveNameDialogOpen(true);
+      return;
+    }
+
+    await saveDiagramWithName(currentDiagramName);
+  }
+
+  async function saveDiagramWithName(diagramName: string) {
+    const name = diagramName.trim();
+    if (!name) return false;
 
     setIsSavingDiagram(true);
     setDirectoryMessage('');
@@ -898,11 +1242,22 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       markSaved();
       setSavedDiagrams(await listSavedDiagrams());
       setDirectoryMessage(`Saved ${saved.name}`);
+      return true;
     } catch (error) {
       setDirectoryMessage(error instanceof Error ? error.message : 'Unable to save this diagram.');
+      return false;
     } finally {
       setIsSavingDiagram(false);
     }
+  }
+
+  async function submitSaveNameDialog(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = saveDiagramName.trim();
+    if (!name || isSavingDiagram) return;
+
+    const saved = await saveDiagramWithName(name);
+    if (saved) setIsSaveNameDialogOpen(false);
   }
 
   async function deleteCurrentDiagram() {
@@ -1102,6 +1457,43 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                 {isLoadingDirectory ? 'Deleting...' : 'Delete'}
               </button>
             </div>
+          </section>
+        </div>
+      )}
+      {isSaveNameDialogOpen && (
+        <div className="diagram-delete-dialog-backdrop" role="presentation" onMouseDown={() => !isSavingDiagram && setIsSaveNameDialogOpen(false)}>
+          <section
+            aria-modal="true"
+            className="diagram-delete-dialog diagram-save-dialog"
+            role="dialog"
+            aria-labelledby="save-diagram-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <form onSubmit={(event) => void submitSaveNameDialog(event)}>
+              <div>
+                <span className="dash-eyebrow">Save diagram</span>
+                <h3 id="save-diagram-title">Name this diagram</h3>
+                <p>Choose a clear name so it can be reopened from saved diagrams later.</p>
+              </div>
+              <label className="diagram-save-dialog__field">
+                <span>Diagram name</span>
+                <input
+                  autoFocus
+                  disabled={isSavingDiagram}
+                  onChange={(event) => setSaveDiagramName(event.target.value)}
+                  placeholder="Production VPC"
+                  value={saveDiagramName}
+                />
+              </label>
+              <div className="diagram-delete-dialog__actions">
+                <button className="dash-secondary-action" disabled={isSavingDiagram} onClick={() => setIsSaveNameDialogOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="dash-secondary-action diagram-save-dialog__save" disabled={isSavingDiagram || !saveDiagramName.trim()} type="submit">
+                  {isSavingDiagram ? 'Saving...' : 'Save diagram'}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
       )}

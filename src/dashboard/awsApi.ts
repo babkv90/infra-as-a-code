@@ -18,7 +18,14 @@ export type AwsInsights = {
     monthlySpend: number;
     estimatedSavings: number;
     trend: number[];
+    monthlyTrend?: Array<{ month: string; label: string; start: string; end: string; cost: number }>;
+    dailyTrend?: Array<{ date: string; label: string; start: string; end: string; cost: number }>;
     byService: Array<{ service: string; cost: number }>;
+  };
+  lambdaMetrics?: {
+    totalInvocations: number;
+    totalErrors: number;
+    daily: Array<{ date: string; label: string; invocations: number; errors: number }>;
   };
   resources: Record<string, number>;
   recommendations: Array<{ title: string; savings: number; effort: string }>;
@@ -27,6 +34,25 @@ export type AwsInsights = {
   events?: Array<{ id?: string; name?: string; source?: string; username?: string; at?: string; resources?: Array<{ name?: string; type?: string }> }>;
   permissionErrors?: Array<{ service: string; message: string; code?: string }>;
   syncedAt?: string;
+};
+
+export type LambdaRealtimeMetrics = {
+  region: string;
+  updatedAt: string;
+  windowMinutes: number;
+  periodSeconds: number;
+  functionCount: number;
+  totalInvocations: number;
+  totalErrors: number;
+  points: Array<{ at: string; label: string; invocations: number; errors: number }>;
+};
+
+export type BillingRealtimeMetrics = {
+  updatedAt: string;
+  start: string;
+  end: string;
+  total: number;
+  dailyTrend: Array<{ date: string; label: string; start: string; end: string; cost: number }>;
 };
 
 export type ConnectAwsPayload = {
@@ -62,6 +88,14 @@ export async function disconnectAwsAccount(id: string) {
 
 export async function getAwsInsights() {
   return apiRequest<AwsInsights>('/aws/insights');
+}
+
+export async function getLambdaRealtimeInsights() {
+  return apiRequest<LambdaRealtimeMetrics>('/aws/insights/lambda-realtime');
+}
+
+export async function getBillingRealtimeInsights() {
+  return apiRequest<BillingRealtimeMetrics>('/aws/insights/billing-realtime');
 }
 
 export async function getDeployerIdentity() {

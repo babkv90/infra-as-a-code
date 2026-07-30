@@ -54,17 +54,17 @@ export type DiagramEdge = {
   bend?: number;
 };
 
-export const navItems = ['Product', 'Visual Builder', 'AI Agent', 'Terraform Export', /* 'Pricing', */ 'Docs'];
+export const navItems = ['Product', 'Visual Builder', 'AWS Insights', 'Terraform', /* 'Pricing', */ 'Workflow'];
 
 export const problemCards: IconItem[] = [
   {
     title: 'Manual AWS setup is slow',
-    description: 'Creating Lambda, IAM roles, API Gateway, S3, and monitoring manually takes time and creates mistakes.',
+    description: 'Creating Lambda, IAM, API Gateway, S3, queues, and monitoring by hand is repetitive and easy to misconfigure.',
     icon: Zap,
   },
   {
-    title: 'Terraform is powerful but hard to visualize',
-    description: 'Teams often struggle to understand what their Terraform code will actually create.',
+    title: 'Terraform is hard to reason about visually',
+    description: 'Infrastructure code is reviewable, but teams still need a clear diagram of what it creates and connects.',
     icon: Code2,
   },
   {
@@ -74,25 +74,25 @@ export const problemCards: IconItem[] = [
   },
   {
     title: 'Cloud visibility is scattered',
-    description: 'Billing, resources, logs, security, and deployment status are usually spread across multiple AWS screens.',
+    description: 'Inventory, billing, CloudWatch, CloudTrail, IAM, and deployment status are split across different operational views.',
     icon: Layers3,
   },
 ];
 
 export const solutionCards: IconItem[] = [
   {
-    title: 'Drag-and-drop AWS builder',
-    description: 'Design infrastructure using visual AWS nodes and connections. Build serverless flows, event-driven architecture, APIs, storage, and jobs visually.',
+    title: 'Visual AWS architecture builder',
+    description: 'Model AWS infrastructure with nodes, connections, groups, labels, editable properties, and validation before deploy.',
     icon: Workflow,
   },
   {
-    title: 'Generate Terraform automatically',
-    description: 'Convert your architecture diagram into clean, reusable Terraform modules that can be exported, reviewed, and deployed.',
+    title: 'Terraform generated from diagrams',
+    description: 'Generate reviewable Terraform for supported AWS services, export it, copy it, or use the built-in deployment flow.',
     icon: Code2,
   },
   {
-    title: 'AI Agent for AWS insights',
-    description: 'Ask why your bill increased, which Lambda is failing, what resources are unused, or how to reduce cost this month.',
+    title: 'AWS insight workspace',
+    description: 'Connect an AWS role to sync cost, inventory, CloudWatch, CloudTrail, IAM, and resource signals in one dashboard.',
     icon: BrainCircuit,
   },
 ];
@@ -118,20 +118,18 @@ export const heroDiagramEdges: DiagramEdge[] = [
   { from: 'billing', to: 'agent' },
 ];
 
-export const floatingBadges = ['Terraform Ready', 'AWS Connected', 'AI Cost Advisor', 'Secure IAM Check'];
-
 export const builderServices = ['Lambda', 'API Gateway', 'S3', 'DynamoDB', 'SQS', 'EventBridge', 'IAM', 'CloudWatch', 'VPC', 'RDS'];
 
 export const aiBullets = [
-  'Real-time AWS billing insights',
-  'Resource inventory',
-  'Lambda health monitoring',
+  'Cost Explorer summaries',
+  'AWS resource inventory',
+  'CloudWatch and Lambda signals',
   'Cost optimization suggestions',
-  'IAM risk detection',
+  'IAM account visibility',
   'Unused resource discovery',
-  'CloudWatch log summary',
-  'Terraform drift detection',
-  'Architecture improvement suggestions',
+  'CloudTrail recent events',
+  'Terraform-managed drift checks',
+  'Architecture guidance context',
 ];
 
 // Change the Terraform preview code here.
@@ -160,22 +158,22 @@ export const awsMetrics = [
 ];
 
 export const useCases = [
-  'Serverless application builder',
-  'Startup infrastructure planning',
-  'DevOps automation',
-  'Terraform learning and generation',
-  'AWS cost monitoring',
-  'Cloud architecture documentation',
-  'AI-assisted cloud operations',
-  'Internal platform engineering',
+  'Serverless app infrastructure',
+  'AWS architecture planning',
+  'DevOps deployment workflows',
+  'Terraform generation and review',
+  'Cloud cost visibility',
+  'Infrastructure documentation',
+  'Workspace-scoped AWS operations',
+  'Platform engineering enablement',
 ];
 
 export const securityItems = [
-  'Read-only AWS account connection for insights',
+  'Workspace-level data isolation',
   'IAM role-based access',
-  'Least privilege recommendations',
+  'Least-privilege role guidance',
   'No hardcoded AWS keys',
-  'Encrypted secrets',
+  'Secrets-aware configuration',
   'Terraform review before deployment',
   'Audit logs',
   'Role-based dashboard access',
@@ -208,32 +206,32 @@ export const pricingPlans = [
 ];
 
 export const footerColumns = {
-  Product: ['Visual Builder', 'AI Agent', 'Terraform Export', 'AWS Insights'],
-  Resources: ['Docs', 'Tutorials', 'API Reference', 'Terraform Guide'],
-  Company: ['About', /* 'Pricing', */ 'Contact', 'Blog'],
-  Legal: ['Privacy', 'Terms', 'Security'],
+  Product: ['Visual Builder', 'AWS Insights', 'Terraform Export', 'Deployments'],
+  Resources: ['Workflow', 'AWS Connection', 'Terraform Guide', 'Support'],
+  Company: ['About Developer', /* 'Pricing', */ 'Contact'],
+  Legal: ['Privacy Policy', 'Terms of Service', 'Security'],
 };
 
 export const heroStats = [
-  { label: 'Terraform resources generated', value: '0' },
-  { label: 'Potential monthly savings found', value: '$0' },
-  { label: 'AWS services supported', value: '0' },
+  { label: 'Deployable AWS services', value: '12' },
+  { label: 'AWS sync categories', value: '15+' },
+  { label: 'Export formats', value: '4' },
 ];
 
 export const howItWorks = [
-  { title: 'Design', description: 'Drag AWS services onto the visual canvas.', icon: Workflow },
-  { title: 'Validate', description: 'Check missing IAM permissions, invalid connections, and deployment risks.', icon: ShieldCheck },
-  { title: 'Generate', description: 'Export Terraform code from the diagram.', icon: Code2 },
-  { title: 'Monitor', description: 'Connect AWS and ask the AI agent about billing, resources, and optimization.', icon: BrainCircuit },
+  { title: 'Design', description: 'Drag AWS services onto the visual canvas and connect the architecture flow.', icon: Workflow },
+  { title: 'Validate', description: 'Check diagram structure, missing configuration, and deployment readiness.', icon: ShieldCheck },
+  { title: 'Generate', description: 'Create Terraform from the diagram for review, export, GitHub, or deployment.', icon: Code2 },
+  { title: 'Operate', description: 'Sync AWS inventory, cost, security, logs, deployment status, and drift context.', icon: BrainCircuit },
 ];
 
 export const chartLabels = ['Billing usage trend', 'Resource usage breakdown', 'Lambda invocation graph', 'Cost by service'];
 
 export const trustSignals = [
-  { label: 'Read-only IAM mode', icon: LockKeyhole },
+  { label: 'STS role connection', icon: LockKeyhole },
   { label: 'Terraform review gate', icon: ShieldCheck },
-  { label: 'Live AWS telemetry', icon: Cloud },
-  { label: 'AI architecture advisor', icon: Sparkles },
-  { label: 'One-click deploy path', icon: Rocket },
-  { label: 'Secrets-aware workflows', icon: KeyRound },
+  { label: 'AWS live sync', icon: Cloud },
+  { label: 'AI-assisted context', icon: Sparkles },
+  { label: 'Terraform deploy path', icon: Rocket },
+  { label: 'Audit-ready actions', icon: KeyRound },
 ];

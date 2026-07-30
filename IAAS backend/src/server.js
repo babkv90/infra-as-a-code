@@ -2,6 +2,7 @@ import { env } from './config/env.js';
 import { connectDatabase } from './config/database.js';
 import { app } from './app.js';
 import { reconcileInterruptedDeployments } from './services/deploymentReconciliation.js';
+import { startDailyBillingTracker } from './services/awsDailyBillingTracker.js';
 import { cleanupOrphanedLambdaZipUploads } from './services/lambdaZipCleanup.js';
 
 const LAMBDA_ZIP_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -43,6 +44,8 @@ async function startServer() {
   // few hours for long-running production processes that never restart.
   runLambdaZipCleanup();
   setInterval(runLambdaZipCleanup, LAMBDA_ZIP_CLEANUP_INTERVAL_MS);
+
+  startDailyBillingTracker();
 }
 
 startServer().catch((error) => {
