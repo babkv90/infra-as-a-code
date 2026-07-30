@@ -214,7 +214,12 @@ jobs:
           # building, and a Lambda timeout kill never reaches our own error handler: API Gateway just
           # returns its own generic 500 with no detail, which is what showed up as this endpoint's
           # opaque failure.
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 30
+          #
+          # 2048MB ephemeral storage (up from the default 512MB): when DEPLOYMENT_GITHUB_OWNER/REPO
+          # aren't configured, terraformCliValidator.js falls back to running `terraform init` inline
+          # against /tmp — and the AWS provider plugin alone is 600MB+, so the 512MB default fills up
+          # mid-download ("no space left on device") before the plugin ever finishes installing.
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 30 --ephemeral-storage Size=2048
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
 
       - name: Bundle Terraform CLI for Lambda
