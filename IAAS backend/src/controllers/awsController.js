@@ -7,7 +7,10 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { getMockAwsInsights } from '../utils/awsInsightsMock.js';
+import { mergeTrackedDailyBilling, withTrackedDailyBilling } from '../services/awsBillingHistory.js';
+import { getRealtimeDailyBilling } from '../services/awsBillingRealtime.js';
 import { syncAwsAccountData } from '../services/awsLiveSync.js';
+import { getRealtimeLambdaMetrics } from '../services/awsLambdaRealtime.js';
 import { assumeAwsRole, makeEnvCredentials } from '../services/awsRoleCredentials.js';
 
 export const createAwsAccountSchema = z.object({
@@ -65,6 +68,7 @@ export const connectAwsAccount = asyncHandler(async (req, res) => {
 
   try {
     account.syncSummary = await syncAwsAccountData(account);
+    mergeTrackedDailyBilling(account, account.syncSummary);
     const syncedAccountId = account.syncSummary.identity?.accountId;
     if (syncedAccountId && syncedAccountId !== account.accountId) {
       const accountWithSyncedId = await AwsAccount.findOne({
@@ -81,6 +85,8 @@ export const connectAwsAccount = asyncHandler(async (req, res) => {
           status: 'connected',
           lastError: undefined,
           syncSummary: account.syncSummary,
+          dailyBillingStartedAt: account.dailyBillingStartedAt,
+          dailyBillingHistory: account.dailyBillingHistory,
           lastSyncAt: new Date(),
         });
         account = accountWithSyncedId;
@@ -110,6 +116,7 @@ export const syncAwsAccount = asyncHandler(async (req, res) => {
 
   try {
     account.syncSummary = await syncAwsAccountData(account);
+    mergeTrackedDailyBilling(account, account.syncSummary);
     account.accountId = account.syncSummary.identity?.accountId ?? account.accountId;
     account.status = 'connected';
     account.lastError = undefined;
@@ -174,7 +181,38 @@ export const disconnectAwsAccount = asyncHandler(async (req, res) => {
 
 export const getInsights = asyncHandler(async (req, res) => {
   const account = await AwsAccount.findOne({ workspace: req.user.workspace, status: 'connected' }).sort({ lastSyncAt: -1 });
-  res.json({ success: true, data: account?.syncSummary ?? getMockAwsInsights() });
+  res.json({ success: true, data: account ? withTrackedDailyBilling(account) : getMockAwsInsights() });
+});
+
+export const getLambdaRealtimeInsights = asyncHandler(async (req, res) => {
+  const account = await AwsAccount.findOne({ workspace: req.user.workspace, status: 'connected' }).sort({ lastSyncAt: -1 });
+  if (!account) throw new ApiError(404, 'Connected AWS account not found');
+
+  try {
+    const data = await getRealtimeLambdaMetrics(account);
+    res.json({ success: true, data });
+  } catch (error) {
+    throw new ApiError(502, `Could not load realtime Lambda invocations: ${addAwsConnectionHint(error.message)}`);
+  }
+});
+
+export const getBillingRealtimeInsights = asyncHandler(async (req, res) => {
+  const account = await AwsAccount.findOne({ workspace: req.user.workspace, status: 'connected' }).sort({ lastSyncAt: -1 });
+  if (!account) throw new ApiError(404, 'Connected AWS account not found');
+
+  try {
+    const data = await getRealtimeDailyBilling(account);
+    if (account.syncSummary?.billing) {
+      account.syncSummary.billing.dailyTrend = data.dailyTrend;
+      mergeTrackedDailyBilling(account, account.syncSummary);
+      await account.save();
+      data.dailyTrend = account.dailyBillingHistory.map(({ date, label, start, end, cost }) => ({ date, label, start, end, cost }));
+      data.total = data.dailyTrend.reduce((sum, item) => sum + Number(item.cost ?? 0), 0);
+    }
+    res.json({ success: true, data });
+  } catch (error) {
+    throw new ApiError(502, `Could not load realtime billing data: ${addAwsConnectionHint(error.message)}`);
+  }
 });
 
 function addAwsConnectionHint(message = '') {

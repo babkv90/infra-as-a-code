@@ -1,21 +1,31 @@
 import {
+  Activity,
   ArrowRight,
+  Boxes,
   Check,
   ChevronRight,
-  CircleDollarSign,
   Copy,
+  Database,
   ExternalLink,
   Github,
+  GitBranch,
+  KeyRound,
   LockKeyhole,
+  MousePointerClick,
   Moon,
+  Network,
   Play,
   Rocket,
+  ShieldCheck,
   Sparkles,
   Sun,
   TerminalSquare,
+  Zap,
+  type LucideIcon,
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type React from 'react';
 import AppLogo from '../components/AppLogo';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -27,14 +37,12 @@ import {
   awsMetrics,
   builderServices,
   chartLabels,
-  floatingBadges,
   footerColumns,
   heroDiagramEdges,
   heroDiagramNodes,
   heroStats,
   howItWorks,
   // pricingPlans,
-  problemCards,
   securityItems,
   solutionCards,
   terraformPreview,
@@ -74,6 +82,141 @@ const diagramBounds = {
   yMax: 86,
 };
 
+type HeroNetworkNode = {
+  id: string;
+  label: string;
+  meta: string;
+  icon: LucideIcon;
+  x: number;
+  y: number;
+};
+
+type PopupOrigin = {
+  x: number;
+  direction: 'down' | 'up';
+  anchor: number;
+  maxHeight: number;
+};
+
+type HeroResourceField = {
+  label: string;
+  value: string;
+  helper: string;
+};
+
+type HeroResourceConfig = {
+  summary: string;
+  fields: HeroResourceField[];
+  capabilities: string[];
+};
+
+const heroNetworkNodes: HeroNetworkNode[] = [
+  { id: 'apigw', label: 'API Gateway', meta: 'HTTP API ingress', icon: Network, x: 18, y: 34 },
+  { id: 'eventbridge', label: 'EventBridge', meta: 'Scheduled event', icon: GitBranch, x: 18, y: 56 },
+  { id: 'sqs', label: 'SQS', meta: 'Async queue', icon: Boxes, x: 18, y: 78 },
+  { id: 'iam', label: 'IAM Role', meta: 'Execution policy', icon: ShieldCheck, x: 50, y: 22 },
+  { id: 'lambda', label: 'Lambda', meta: 'Compute handler', icon: Zap, x: 50, y: 56 },
+  { id: 'secrets', label: 'Secrets Manager', meta: 'Runtime secret', icon: KeyRound, x: 50, y: 90 },
+  { id: 'dynamodb', label: 'DynamoDB', meta: 'Primary table', icon: Database, x: 82, y: 34 },
+  { id: 's3', label: 'S3', meta: 'Object storage', icon: Boxes, x: 82, y: 56 },
+  { id: 'cloudwatch', label: 'CloudWatch', meta: 'Logs + alarms', icon: Activity, x: 82, y: 78 },
+];
+
+const heroResourceConfigs: Record<string, HeroResourceConfig> = {
+  apigw: {
+    summary: 'Create an HTTP API front door and route requests to a Lambda integration.',
+    fields: [
+      { label: 'API name', value: 'orders-http-api', helper: 'Terraform aws_apigatewayv2_api name.' },
+      { label: 'Route key', value: 'POST /orders', helper: 'HTTP method and path exposed to clients.' },
+      { label: 'Integration target', value: 'Lambda function', helper: 'Connects API Gateway to the compute handler.' },
+    ],
+    capabilities: ['HTTP API resource', 'Lambda integration', 'Route and stage wiring', 'Invoke permission generation'],
+  },
+  eventbridge: {
+    summary: 'Trigger infrastructure workflows or Lambda jobs from a scheduled EventBridge rule.',
+    fields: [
+      { label: 'Rule name', value: 'nightly-order-sync', helper: 'Terraform aws_cloudwatch_event_rule name.' },
+      { label: 'Schedule expression', value: 'rate(1 day)', helper: 'EventBridge schedule expression.' },
+      { label: 'Target', value: 'Lambda function', helper: 'Supported target for this visual flow.' },
+    ],
+    capabilities: ['Scheduled rule', 'Lambda target', 'Execution permission', 'Event-driven topology'],
+  },
+  sqs: {
+    summary: 'Buffer asynchronous work with SQS before Lambda processes messages.',
+    fields: [
+      { label: 'Queue name', value: 'orders-processing-queue', helper: 'Terraform aws_sqs_queue name.' },
+      { label: 'Visibility timeout', value: '30 seconds', helper: 'Time a message stays hidden while processing.' },
+      { label: 'Retention period', value: '4 days', helper: 'How long unprocessed messages remain available.' },
+    ],
+    capabilities: ['Queue resource', 'Async decoupling', 'Lambda event source candidate', 'Retry-friendly architecture'],
+  },
+  iam: {
+    summary: 'Define the execution role Lambda needs to access connected AWS resources.',
+    fields: [
+      { label: 'Role name', value: 'orders-lambda-execution-role', helper: 'Terraform aws_iam_role name.' },
+      { label: 'Trusted service', value: 'lambda.amazonaws.com', helper: 'Service principal allowed to assume this role.' },
+      { label: 'Policy scope', value: 'DynamoDB, S3, CloudWatch logs', helper: 'Least-privilege permissions for this diagram.' },
+    ],
+    capabilities: ['Execution role', 'Trust policy', 'Least-privilege policy guidance', 'PassRole-aware deployment'],
+  },
+  lambda: {
+    summary: 'Run application logic behind API Gateway, EventBridge, or SQS workflows.',
+    fields: [
+      { label: 'Function name', value: 'process-user-order', helper: 'Terraform aws_lambda_function function_name.' },
+      { label: 'Runtime', value: 'nodejs20.x', helper: 'Runtime supported by AWS Lambda.' },
+      { label: 'Memory / timeout', value: '512 MB / 30 seconds', helper: 'Compute sizing surfaced in generated Terraform.' },
+    ],
+    capabilities: ['Lambda function', 'Generated stub package', 'Execution role connection', 'CloudWatch log output'],
+  },
+  secrets: {
+    summary: 'Store runtime configuration values without hardcoding secrets into source or Terraform UI copy.',
+    fields: [
+      { label: 'Secret name', value: 'orders/database-url', helper: 'Terraform aws_secretsmanager_secret name.' },
+      { label: 'Encryption', value: 'AWS managed KMS key', helper: 'Default secure storage behavior.' },
+      { label: 'Consumer', value: 'Lambda environment reference', helper: 'How the runtime consumes the value.' },
+    ],
+    capabilities: ['Secrets Manager resource', 'Runtime configuration', 'Secrets-aware workflow', 'IAM access planning'],
+  },
+  dynamodb: {
+    summary: 'Persist application records in a managed NoSQL table connected to Lambda.',
+    fields: [
+      { label: 'Table name', value: 'orders', helper: 'Terraform aws_dynamodb_table name.' },
+      { label: 'Partition key', value: 'orderId', helper: 'Primary hash key for item access.' },
+      { label: 'Billing mode', value: 'PAY_PER_REQUEST', helper: 'Serverless billing mode for variable workloads.' },
+    ],
+    capabilities: ['DynamoDB table', 'Primary key modeling', 'Lambda access path', 'Terraform table definition'],
+  },
+  s3: {
+    summary: 'Create object storage for uploads, artifacts, static assets, or generated outputs.',
+    fields: [
+      { label: 'Bucket name', value: 'orders-artifacts-bucket', helper: 'Globally unique S3 bucket name.' },
+      { label: 'Versioning', value: 'Enabled', helper: 'Preserve object history where required.' },
+      { label: 'Encryption', value: 'SSE-S3', helper: 'Default server-side encryption posture.' },
+    ],
+    capabilities: ['S3 bucket', 'Versioning option', 'Encryption posture', 'Lambda read/write integration'],
+  },
+  cloudwatch: {
+    summary: 'Collect runtime logs and alarms for deployed infrastructure.',
+    fields: [
+      { label: 'Log group', value: '/aws/lambda/process-user-order', helper: 'Terraform aws_cloudwatch_log_group name.' },
+      { label: 'Retention', value: '14 days', helper: 'Controls log storage lifecycle.' },
+      { label: 'Alarm signal', value: 'Lambda errors', helper: 'Metric context for operational visibility.' },
+    ],
+    capabilities: ['Log group', 'Retention policy', 'Alarm-ready signal', 'Dashboard insight source'],
+  },
+};
+
+const heroNetworkEdges = [
+  { from: 'apigw', to: 'lambda', className: 'lp-hero-network__line--api' },
+  { from: 'eventbridge', to: 'lambda', className: 'lp-hero-network__line--event' },
+  { from: 'sqs', to: 'lambda', className: 'lp-hero-network__line--queue' },
+  { from: 'iam', to: 'lambda', className: 'lp-hero-network__line--control' },
+  { from: 'secrets', to: 'lambda', className: 'lp-hero-network__line--control' },
+  { from: 'lambda', to: 'dynamodb', className: 'lp-hero-network__line--data' },
+  { from: 'lambda', to: 's3', className: 'lp-hero-network__line--data' },
+  { from: 'lambda', to: 'cloudwatch', className: 'lp-hero-network__line--telemetry' },
+];
+
 function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [detail, setDetail] = useState<LearningDetail | null>(null);
 
@@ -82,8 +225,8 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
       <Navbar theme={theme} onToggleTheme={onToggleTheme} />
       <main>
         <HeroSection />
+        <ProblemSection />
         <TrustBar />
-        <ProblemSection onOpenDetail={setDetail} />
         <SolutionSection onOpenDetail={setDetail} />
         <BuilderSection />
         <AgentSection />
@@ -107,6 +250,13 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
       <a className="lp-logo" href="/">
         <AppLogo className="app-logo--nav" />
       </a>
+      <nav className="lp-nav-links">
+        {navItems.map((item) => (
+          <a href={navHref(item)} key={item}>
+            {item}
+          </a>
+        ))}
+      </nav>
       <div className="lp-nav-actions">
         <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
           {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
@@ -134,48 +284,288 @@ function HeroSection() {
       <div className="lp-hero-content">
         <div className="lp-kicker">
           <Sparkles size={16} />
-          AI-powered visual IaaS automation
+          Visual AWS infrastructure automation
         </div>
-        <h1>Build AWS Infrastructure Visually. Deploy with Confidence.</h1>
+        <h1>Design, generate, and deploy AWS infrastructure from one visual workspace.</h1>
         <p>
-          Design Lambda, API Gateway, S3, DynamoDB, VPC, and more using an n8n-style infrastructure canvas. Generate
-          Terraform code, connect your AWS account, and let an AI agent monitor cost, usage, and resources in real time.
+          Infraflow helps teams model AWS architecture on a React Flow canvas, generate Terraform for supported
+          services, connect AWS through IAM roles, and monitor cost, inventory, security, logs, deployments, and drift.
         </p>
         <div className="lp-hero-actions">
           <a className="lp-primary-button" href={REGISTER_ROUTE}>
-            Start Building
+            Create Free Workspace
             <ArrowRight size={18} />
           </a>
           <a className="lp-secondary-button" href="#visual-builder">
             <Play size={17} />
-            View Live Demo
+            See Visual Builder
           </a>
           <a className="lp-inline-link" href="#terraform-export">
-            Export Terraform in seconds
+            Review Terraform workflow
             <ChevronRight size={16} />
           </a>
         </div>
-        <div className="lp-hero-stats">
-          {heroStats.map((stat) => (
-            <div key={stat.label}>
-              <strong>{stat.value}</strong>
-              <span>{stat.label}</span>
-            </div>
-          ))}
-        </div>
       </div>
       <div className="lp-hero-visual">
-        <DiagramMockup variant="hero" />
-        <div className="lp-badge-row">
-          {floatingBadges.map((badge) => (
-            <span className="lp-floating-badge" key={badge}>
-              {badge}
-            </span>
-          ))}
+        <div className="lp-hero-network-card">
+          <HeroNetworkBackground />
         </div>
       </div>
     </section>
   );
+}
+
+function HeroNetworkBackground() {
+  const networkRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number; startClientX: number; startClientY: number; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<HeroNetworkNode | null>(null);
+  const [popupOrigin, setPopupOrigin] = useState<PopupOrigin | null>(null);
+  const [nodes, setNodes] = useState(heroNetworkNodes);
+
+  function pointerToNetworkPosition(event: React.PointerEvent) {
+    const rect = networkRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * 100,
+      y: ((event.clientY - rect.top) / rect.height) * 100,
+    };
+  }
+
+  function moveNetworkNode(nodeId: string, x: number, y: number) {
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              x: clamp(x, 8, 92),
+              y: clamp(y, 10, 92),
+            }
+          : node,
+      ),
+    );
+  }
+
+  function handleNetworkNodePointerDown(event: React.PointerEvent<HTMLSpanElement>, node: HeroNetworkNode) {
+    const pointer = pointerToNetworkPosition(event);
+    if (!pointer) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      id: node.id,
+      offsetX: node.x - pointer.x,
+      offsetY: node.y - pointer.y,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      moved: false,
+    };
+    setActiveNodeId(node.id);
+  }
+
+  function handleNetworkPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    const pointer = pointerToNetworkPosition(event);
+    if (!pointer) return;
+
+    if (Math.hypot(event.clientX - dragRef.current.startClientX, event.clientY - dragRef.current.startClientY) > 4) {
+      dragRef.current.moved = true;
+    }
+    moveNetworkNode(dragRef.current.id, pointer.x + dragRef.current.offsetX, pointer.y + dragRef.current.offsetY);
+  }
+
+  function stopNetworkDragging() {
+    if (dragRef.current?.moved) {
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+    dragRef.current = null;
+    setActiveNodeId(null);
+  }
+
+  function computePopupOrigin(el: HTMLElement): PopupOrigin {
+    const rect = el.getBoundingClientRect();
+    const halfWidth = 180;
+    const margin = 16;
+    const x = clamp(rect.left + rect.width / 2, halfWidth + 12, window.innerWidth - halfWidth - 12);
+    const direction: 'down' | 'up' = rect.bottom + 380 > window.innerHeight ? 'up' : 'down';
+    const anchor = direction === 'down' ? rect.bottom - 6 : rect.top + 6;
+    const available = direction === 'down' ? window.innerHeight - anchor - margin : anchor - margin;
+    const maxHeight = clamp(available, 220, 640);
+    return { x, direction, anchor, maxHeight };
+  }
+
+  function handleNetworkNodeClick(event: React.MouseEvent<HTMLSpanElement>, node: HeroNetworkNode) {
+    if (suppressClickRef.current) return;
+    setPopupOrigin(computePopupOrigin(event.currentTarget));
+    setSelectedNode(node);
+  }
+
+  function handleNetworkNodeKeyDown(event: React.KeyboardEvent<HTMLSpanElement>, node: HeroNetworkNode) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setPopupOrigin(computePopupOrigin(event.currentTarget));
+      setSelectedNode(node);
+      return;
+    }
+
+    const step = event.shiftKey ? 4 : 2;
+    const movement = {
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+    }[event.key];
+
+    if (!movement) return;
+    event.preventDefault();
+    moveNetworkNode(node.id, node.x + movement[0], node.y + movement[1]);
+  }
+
+  return (
+    <>
+      <div className="lp-hero-network" onPointerCancel={stopNetworkDragging} onPointerMove={handleNetworkPointerMove} onPointerUp={stopNetworkDragging} ref={networkRef}>
+        <svg aria-hidden="true" className="lp-hero-network__svg" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+          <defs>
+            <marker id="lp-hero-arrow" markerHeight="5" markerWidth="5" orient="auto" refX="4.4" refY="2.5">
+              <path className="lp-hero-network__arrow" d="M0,0 L5,2.5 L0,5 Z" />
+            </marker>
+          </defs>
+          {heroNetworkEdges.map((edge, index) => {
+            const source = nodes.find((node) => node.id === edge.from);
+            const target = nodes.find((node) => node.id === edge.to);
+            if (!source || !target) return null;
+            return <path className={`lp-hero-network__line ${edge.className}`} d={heroNetworkPath(source, target, index)} key={`${edge.from}-${edge.to}`} markerEnd="url(#lp-hero-arrow)" />;
+          })}
+        </svg>
+        {nodes.map((node, index) => {
+          const Icon = node.icon;
+          return (
+            <span
+              aria-label={`Drag ${node.label} service node. Press Enter to configure it.`}
+              className={`lp-hero-network__node ${activeNodeId === node.id ? 'lp-hero-network__node--active' : ''} ${selectedNode?.id === node.id ? 'lp-hero-network__node--source' : ''}`}
+              key={node.id}
+              onClick={(event) => handleNetworkNodeClick(event, node)}
+              onKeyDown={(event) => handleNetworkNodeKeyDown(event, node)}
+              onPointerDown={(event) => handleNetworkNodePointerDown(event, node)}
+              role="button"
+              style={{ left: `${node.x}%`, top: `${node.y}%`, animationDelay: `${index * 260}ms` }}
+              tabIndex={0}
+            >
+              <em className="lp-hero-network__click-cue">
+                <MousePointerClick size={13} />
+              </em>
+              <Icon size={16} />
+              <span>
+                <strong>{node.label}</strong>
+                <small>{node.meta}</small>
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      {selectedNode && popupOrigin && (
+        <HeroResourceModal
+          node={selectedNode}
+          origin={popupOrigin}
+          onClose={() => {
+            setSelectedNode(null);
+            setPopupOrigin(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function HeroResourceModal({ node, origin, onClose }: { node: HeroNetworkNode; origin: PopupOrigin; onClose: () => void }) {
+  const config = heroResourceConfigs[node.id];
+  const Icon = node.icon;
+  const [values, setValues] = useState(() => Object.fromEntries((config?.fields ?? []).map((field) => [field.label, field.value])));
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    window.location.href = `${LOGIN_ROUTE}?next=${encodeURIComponent('/dashboard?view=builder')}`;
+  }
+
+  if (!config) return null;
+
+  const anchorStyle: React.CSSProperties = {
+    left: origin.x,
+    maxHeight: origin.maxHeight,
+    ...(origin.direction === 'down' ? { top: origin.anchor } : { bottom: window.innerHeight - origin.anchor }),
+  };
+
+  return createPortal(
+    <div className="lp-resource-modal-backdrop" role="presentation" onClick={onClose}>
+      <form
+        className={`lp-resource-modal lp-resource-modal--tongue lp-resource-modal--${origin.direction}`}
+        aria-labelledby="lp-resource-modal-title"
+        onClick={(event) => event.stopPropagation()}
+        onSubmit={handleSubmit}
+        style={anchorStyle}
+      >
+        <span className="lp-resource-modal__stalk" aria-hidden="true" />
+        <span className="lp-resource-modal__grip" aria-hidden="true" />
+        <header>
+          <span className="lp-resource-modal__icon">
+            <Icon size={18} />
+          </span>
+          <div>
+            <small>{node.meta}</small>
+            <h3 id="lp-resource-modal-title">{node.label} properties</h3>
+          </div>
+          <button aria-label="Close resource properties" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </header>
+        <p>{config.summary}</p>
+        <div className="lp-resource-modal__fields">
+          {config.fields.map((field) => (
+            <label key={field.label}>
+              <span>{field.label}</span>
+              <input value={values[field.label] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.label]: event.target.value }))} />
+              <small>{field.helper}</small>
+            </label>
+          ))}
+        </div>
+        <div className="lp-resource-modal__capabilities">
+          <strong>Generated workflow support</strong>
+          <ul>
+            {config.capabilities.map((capability) => (
+              <li key={capability}>
+                <Check size={13} />
+                {capability}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <button className="lp-primary-button" type="submit">
+          Create infra from this resource
+          <ArrowRight size={16} />
+        </button>
+      </form>
+    </div>,
+    document.body,
+  );
+}
+
+function heroNetworkPath(
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  index: number,
+) {
+  const x1 = source.x;
+  const y1 = source.y;
+  const x2 = target.x;
+  const y2 = target.y;
+  const bend = Math.abs(y1 - y2) < 4 ? 0 : index % 2 === 0 ? 5 : -5;
+  const midX = (x1 + x2) / 2;
+  return `M ${x1} ${y1} C ${midX} ${y1 + bend}, ${midX} ${y2 - bend}, ${x2} ${y2}`;
 }
 
 function TrustBar() {
@@ -194,12 +584,15 @@ function TrustBar() {
   );
 }
 
-function ProblemSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
+function ProblemSection() {
   return (
-    <Section id="product-pain" eyebrow="Problem" title="Cloud infrastructure is powerful, but still too complex.">
-      <div className="lp-card-grid lp-card-grid--4">
-        {problemCards.map((card) => (
-          <InfoCard detail={getLandingInfoDetail('problem', card.title, card.description)} key={card.title} onOpenDetail={onOpenDetail} {...card} />
+    <Section id="product-pain" eyebrow="Platform Snapshot" title="What Infraflow connects from the start.">
+      <div className="lp-hero-stats lp-hero-stats--section">
+        {heroStats.map((stat) => (
+          <div key={stat.label}>
+            <strong>{stat.value}</strong>
+            <span>{stat.label}</span>
+          </div>
         ))}
       </div>
     </Section>
@@ -276,13 +669,13 @@ function BuilderSection() {
 
 function AgentSection() {
   return (
-    <section className="lp-split-section section-reveal">
+    <section className="lp-split-section section-reveal" id="ai-agent">
       <div>
-        <div className="lp-section-eyebrow">AI Agent</div>
-        <h2>Connect your AWS account to an AI cloud engineer.</h2>
+        <div className="lp-section-eyebrow">AWS Insights</div>
+        <h2>Connect AWS once, then work from normalized cloud context.</h2>
         <p>
-          The AI agent helps users understand their AWS account in simple language, from billing changes to failing
-          Lambda functions, idle resources, IAM risks, and architecture optimization.
+          The dashboard syncs account identity, billing, inventory, CloudWatch, CloudTrail, IAM, and service metadata
+          so teams can reason about infrastructure without jumping between AWS console screens.
         </p>
         <div className="lp-bullet-grid">
           {aiBullets.map((item) => (
@@ -294,7 +687,7 @@ function AgentSection() {
         </div>
         <div className="lp-section-actions">
           <a className="lp-primary-button" href={DASHBOARD_ROUTE}>
-            Connect AWS Account
+            Open Dashboard
             <ExternalLink size={17} />
           </a>
         </div>
@@ -308,9 +701,9 @@ function TerraformSection() {
   return (
     <section className="lp-split-section lp-split-section--code section-reveal" id="terraform-export">
       <div className="lp-mini-diagram-card">
-        <div className="lp-section-eyebrow">Terraform Export</div>
-        <h2>From diagram to Terraform code.</h2>
-        <p>Turn architecture diagrams into reviewable infrastructure code that your team can copy, export, push, or deploy.</p>
+        <div className="lp-section-eyebrow">Terraform</div>
+        <h2>From architecture diagram to reviewable Terraform.</h2>
+        <p>Generate Terraform for supported AWS nodes, inspect the plan, export assets, push to GitHub, or deploy through the app.</p>
         <DiagramMockup variant="mini" />
       </div>
       <div className="lp-code-card">
@@ -390,7 +783,7 @@ function UseCasesSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDeta
 
 function SecuritySection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
-    <section className="lp-security section-reveal">
+    <section className="lp-security section-reveal" id="security">
       <div>
         <div className="lp-section-eyebrow">Security</div>
         <h2>Secure by design.</h2>
@@ -467,14 +860,14 @@ function FinalCTA() {
   return (
     <section className="lp-final-cta section-reveal">
       <div className="lp-final-glow" />
-      <h2>Ready to build your AWS infrastructure visually?</h2>
+      <h2>Start with a visual AWS diagram. Keep Terraform, deployment, and operations connected.</h2>
       <p>
-        Start with a diagram, generate Terraform, connect your AWS account, and let AI help you manage cloud cost,
-        resources, and reliability.
+        Create a workspace, design supported AWS services, generate Terraform, connect an IAM role, and operate from
+        one workspace-scoped dashboard.
       </p>
       <div className="lp-hero-actions">
         <a className="lp-secondary-button" href={DASHBOARD_ROUTE}>
-          Start Building Now
+          Open Infraflow
           <ArrowRight size={17} />
         </a>
       </div>
@@ -489,13 +882,13 @@ function Footer() {
         <a className="lp-logo" href="/">
           <AppLogo className="app-logo--footer" />
         </a>
-        <p>Design, generate, and deploy AWS infrastructure visually with AI.</p>
+        <p>Visual AWS infrastructure design, Terraform generation, deployment tracking, and live account insights.</p>
       </div>
       {Object.entries(footerColumns).map(([title, links]) => (
         <div className="lp-footer-column" key={title}>
           <h4>{title}</h4>
           {links.map((link) => (
-            <a href={footerLinkHref(link)} key={link}>
+            <a href={footerHref(link)} key={link} rel={footerHref(link).startsWith('http') ? 'noreferrer' : undefined} target={footerHref(link).startsWith('http') ? '_blank' : undefined}>
               {link}
             </a>
           ))}
@@ -826,6 +1219,38 @@ function Section({ id, eyebrow, title, children }: { id: string; eyebrow: string
       {children}
     </section>
   );
+}
+
+function navHref(label: string): string {
+  const routes: Record<string, string> = {
+    Product: '#product',
+    'Visual Builder': '#visual-builder',
+    'AWS Insights': '#aws-insights',
+    Terraform: '#terraform-export',
+    Workflow: '#docs',
+  };
+
+  return routes[label] ?? '#product';
+}
+
+function footerHref(label: string): string {
+  const routes: Record<string, string> = {
+    'Visual Builder': '#visual-builder',
+    'AWS Insights': '#aws-insights',
+    'Terraform Export': '#terraform-export',
+    Deployments: '#docs',
+    Workflow: '#docs',
+    'AWS Connection': '#ai-agent',
+    'Terraform Guide': '#terraform-export',
+    Support: '/dashboard?view=support',
+    'About Developer': 'https://www.abinashkumar.com',
+    Contact: 'https://www.linkedin.com/in/abiece32',
+    'Privacy Policy': '/legal/privacy',
+    'Terms of Service': '/legal/terms',
+    Security: '#security',
+  };
+
+  return routes[label] ?? '/';
 }
 
 export default LandingPage;

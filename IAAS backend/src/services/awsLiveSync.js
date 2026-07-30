@@ -1,5 +1,5 @@
 import { ApiGatewayV2Client, GetApisCommand } from '@aws-sdk/client-apigatewayv2';
-import { CloudWatchClient, DescribeAlarmsCommand } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchClient, DescribeAlarmsCommand, GetMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DescribeLogGroupsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { CloudTrailClient, LookupEventsCommand } from '@aws-sdk/client-cloudtrail';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
@@ -30,6 +30,31 @@ function monthRange() {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
   };
+}
+
+function monthlyTrendRange(monthCount = 6) {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthCount - 1), 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+}
+
+function dailyTrendRange() {
+  return monthRange();
+}
+
+function monthLabelFromDate(dateValue) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  return date.toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+function dayLabelFromDate(dateValue) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  return date.toLocaleString('en-US', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 
 function makeCredentials(stsCredentials) {
@@ -155,6 +180,109 @@ async function countAll(sendPage, getItems, getNextToken) {
   return total;
 }
 
+async function listAllLambdaFunctions(lambda) {
+  let marker;
+  const functions = [];
+
+  do {
+    const page = await lambda.send(new ListFunctionsCommand({ Marker: marker }));
+    functions.push(...(page.Functions ?? []));
+    marker = page.NextMarker;
+  } while (marker);
+
+  return functions;
+}
+
+function dateKeyFromTimestamp(timestamp) {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+async function getLambdaDailyMetrics(cloudwatch, lambdaFunctionNames, start, end) {
+  if (!lambdaFunctionNames.length) {
+    return {
+      totalInvocations: 0,
+      totalErrors: 0,
+      daily: [],
+    };
+  }
+
+  const daily = new Map();
+  const queriedFunctions = lambdaFunctionNames.slice(0, 100);
+  const metricDataQueries = queriedFunctions.flatMap((functionName, index) => [
+    {
+      Id: `inv${index}`,
+      Label: `${functionName} invocations`,
+      MetricStat: {
+        Metric: {
+          Namespace: 'AWS/Lambda',
+          MetricName: 'Invocations',
+          Dimensions: [{ Name: 'FunctionName', Value: functionName }],
+        },
+        Period: 86400,
+        Stat: 'Sum',
+      },
+      ReturnData: true,
+    },
+    {
+      Id: `err${index}`,
+      Label: `${functionName} errors`,
+      MetricStat: {
+        Metric: {
+          Namespace: 'AWS/Lambda',
+          MetricName: 'Errors',
+          Dimensions: [{ Name: 'FunctionName', Value: functionName }],
+        },
+        Period: 86400,
+        Stat: 'Sum',
+      },
+      ReturnData: true,
+    },
+  ]);
+
+  const response = await cloudwatch.send(
+    new GetMetricDataCommand({
+      StartTime: new Date(`${start}T00:00:00.000Z`),
+      EndTime: new Date(`${end}T00:00:00.000Z`),
+      MetricDataQueries: metricDataQueries,
+      ScanBy: 'TimestampAscending',
+    }),
+  );
+
+  for (const result of response.MetricDataResults ?? []) {
+    const isErrorMetric = result.Id?.startsWith('err');
+    (result.Timestamps ?? []).forEach((timestamp, index) => {
+      const date = dateKeyFromTimestamp(timestamp);
+      const existing = daily.get(date) ?? {
+        date,
+        label: dayLabelFromDate(date),
+        invocations: 0,
+        errors: 0,
+      };
+      const value = Number(result.Values?.[index] ?? 0);
+      if (isErrorMetric) {
+        existing.errors += value;
+      } else {
+        existing.invocations += value;
+      }
+      daily.set(date, existing);
+    });
+  }
+
+  const dailyMetrics = [...daily.values()]
+    .map((item) => ({
+      ...item,
+      invocations: Math.round(item.invocations),
+      errors: Math.round(item.errors),
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  return {
+    totalInvocations: dailyMetrics.reduce((sum, item) => sum + item.invocations, 0),
+    totalErrors: dailyMetrics.reduce((sum, item) => sum + item.errors, 0),
+    daily: dailyMetrics,
+  };
+}
+
 export async function syncAwsAccountData(account = {}) {
   const errors = [];
 
@@ -191,17 +319,13 @@ export async function syncAwsAccountData(account = {}) {
   const eks = new EKSClient({ region, credentials });
   const cloudTrail = new CloudTrailClient({ region, credentials });
 
-  const lambdaFunctions = await capture(
+  const lambdaFunctionList = await capture(
     'Lambda',
     errors,
-    () =>
-      countAll(
-        (Marker) => lambda.send(new ListFunctionsCommand({ Marker })),
-        (page) => page.Functions ?? [],
-        (page) => page.NextMarker,
-      ),
-    0,
+    () => listAllLambdaFunctions(lambda),
+    [],
   );
+  const lambdaFunctions = lambdaFunctionList.length;
 
   const ec2Reservations = await capture(
     'EC2',
@@ -371,6 +495,8 @@ export async function syncAwsAccountData(account = {}) {
   );
 
   const { start, end } = monthRange();
+  const trendRange = monthlyTrendRange(6);
+  const dailyRange = dailyTrendRange();
 
   const cost = await capture(
     'Cost Explorer',
@@ -395,6 +521,53 @@ export async function syncAwsAccountData(account = {}) {
     undefined,
   );
 
+  const monthlyCostTrend = await capture(
+    'Cost Explorer monthly trend',
+    errors,
+    async () =>
+      costExplorer.send(
+        new GetCostAndUsageCommand({
+          TimePeriod: {
+            Start: trendRange.start,
+            End: trendRange.end,
+          },
+          Granularity: 'MONTHLY',
+          Metrics: ['UnblendedCost'],
+        }),
+      ),
+    undefined,
+  );
+
+  const dailyCostTrend = await capture(
+    'Cost Explorer daily trend',
+    errors,
+    async () =>
+      costExplorer.send(
+        new GetCostAndUsageCommand({
+          TimePeriod: {
+            Start: dailyRange.start,
+            End: dailyRange.end,
+          },
+          Granularity: 'DAILY',
+          Metrics: ['UnblendedCost'],
+        }),
+      ),
+    undefined,
+  );
+
+  const lambdaMetrics = await capture(
+    'CloudWatch Lambda metrics',
+    errors,
+    () =>
+      getLambdaDailyMetrics(
+        cloudwatch,
+        lambdaFunctionList.map((item) => item.FunctionName).filter(Boolean),
+        dailyRange.start,
+        dailyRange.end,
+      ),
+    { totalInvocations: 0, totalErrors: 0, daily: [] },
+  );
+
   const serviceCosts =
     cost?.ResultsByTime?.[0]?.Groups?.map((group) => ({
       service: group.Keys?.[0] ?? 'Unknown',
@@ -404,11 +577,39 @@ export async function syncAwsAccountData(account = {}) {
       .sort((a, b) => b.cost - a.cost) ?? [];
 
   const monthlySpend = roundCurrency(serviceCosts.reduce((sum, item) => sum + item.cost, 0));
+  const monthlyTrend =
+    monthlyCostTrend?.ResultsByTime?.map((result) => {
+      const startDate = result.TimePeriod?.Start ?? '';
+      const endDate = result.TimePeriod?.End ?? '';
+      const costAmount = roundCurrency(result.Total?.UnblendedCost?.Amount);
+
+      return {
+        month: startDate,
+        label: monthLabelFromDate(startDate),
+        start: startDate,
+        end: endDate,
+        cost: costAmount,
+      };
+    }) ?? [];
+  const dailyTrend =
+    dailyCostTrend?.ResultsByTime?.map((result) => {
+      const startDate = result.TimePeriod?.Start ?? '';
+      const endDate = result.TimePeriod?.End ?? '';
+      const costAmount = roundCurrency(result.Total?.UnblendedCost?.Amount);
+
+      return {
+        date: startDate,
+        label: dayLabelFromDate(startDate),
+        start: startDate,
+        end: endDate,
+        cost: costAmount,
+      };
+    }) ?? [];
 
   const estimatedSavings = 0;
   const securityWarnings = alarms.filter((alarm) => alarm.StateValue === 'ALARM').length;
   const idleResources = stoppedEc2Instances + unattachedVolumes;
-  const failedInvocations = 0;
+  const failedInvocations = lambdaMetrics.totalErrors;
 
   return {
     identity: {
@@ -421,9 +622,13 @@ export async function syncAwsAccountData(account = {}) {
     billing: {
       monthlySpend,
       estimatedSavings,
-      trend: [0, 0, 0, 0, 0, 0, monthlySpend],
+      trend: monthlyTrend.map((item) => item.cost),
+      monthlyTrend,
+      dailyTrend,
       byService: serviceCosts.slice(0, 10),
     },
+
+    lambdaMetrics,
 
     resources: {
       lambdaFunctions,

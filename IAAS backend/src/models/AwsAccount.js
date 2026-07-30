@@ -13,6 +13,17 @@ const awsAccountSchema = new mongoose.Schema(
     lastSyncAt: Date,
     lastError: String,
     syncSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
+    dailyBillingStartedAt: Date,
+    dailyBillingHistory: [
+      {
+        date: String,
+        label: String,
+        start: String,
+        end: String,
+        cost: Number,
+        recordedAt: Date,
+      },
+    ],
   },
   { timestamps: true },
 );
