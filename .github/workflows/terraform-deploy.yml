@@ -66,8 +66,14 @@ jobs:
       run:
         working-directory: ${{ inputs.working_directory }}
     steps:
-      # Must run before anything else logs or echoes these values.
+      # Must run before anything else logs or echoes these values. Explicit working-directory: . to
+      # override the job's default (inputs.working_directory) — that path doesn't exist until
+      # Checkout repository (the next step) actually creates it, so inheriting the default here made
+      # every single run fail immediately with "No such file or directory" before checkout ever ran.
+      # This is the real, unconditional cause of every apply/destroy failure so far — unrelated to the
+      # commit-SHA checkout fix below, which is still correct and worth keeping.
       - name: Mask sensitive inputs
+        working-directory: .
         run: |
           echo "::add-mask::${{ inputs.aws_access_key_id }}"
           echo "::add-mask::${{ inputs.aws_secret_access_key }}"
