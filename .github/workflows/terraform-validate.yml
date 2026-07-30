@@ -19,6 +19,10 @@ on:
         description: Path within this repo holding the generated main.tf for this deployment
         required: true
         type: string
+      commit_sha:
+        description: Exact commit that pushed working_directory's files — checked out by SHA (not branch HEAD) so this workflow can never race the push that creates them.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -38,6 +42,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # By commit SHA, not the branch's moving HEAD — see githubTerraformValidator.js's identical
+          # comment for why (a checkout of branch HEAD can race the push that creates these files).
+          ref: ${{ inputs.commit_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3

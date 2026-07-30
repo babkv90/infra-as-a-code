@@ -254,6 +254,26 @@ export async function dispatchGithubWorkflow({ token, owner, repo, workflowId, b
   throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
 }
 
+// syncFilesToGithub commits each file separately via the Contents API and its returned commitSha is
+// unreliable as "the commit that has everything we just pushed" — an unchanged (skipped) file reports
+// its blob sha there instead of a commit sha, and even for real commits, callers pushing multiple
+// files only see the last one. Call this right after syncFilesToGithub instead: a fresh read of the
+// branch's actual current HEAD, which is guaranteed to include every file just pushed to it (git
+// commits are cumulative), safe to check out by SHA with no race against the branch's moving HEAD.
+export async function getBranchHeadSha({ token, owner, repo, branch }) {
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/ref/${encodeURIComponentPath(`heads/${branch}`)}`,
+    { headers: githubApiHeaders(token) },
+  );
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+  if (!response.ok) {
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? `Unable to read ${branch}'s current commit.`));
+  }
+  const sha = result?.object?.sha;
+  if (!sha) throw new ApiError(409, `GitHub branch ${branch} did not return a commit SHA.`);
+  return sha;
+}
+
 export async function getGithubRepositoryDefaultBranch({ token, owner, repo }) {
   const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
     headers: githubApiHeaders(token),

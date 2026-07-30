@@ -5,6 +5,7 @@ import { assumeAwsRole } from './awsRoleCredentials.js';
 import { assertDeployable, failDeployment, handleDeployFailureCleanup } from './deploymentGuards.js';
 import {
   dispatchGithubWorkflow,
+  getBranchHeadSha,
   getWorkflowRun,
   syncFilesToGithub,
   waitForLatestWorkflowRun,
@@ -287,6 +288,10 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
   deployment.logs.push({ message: `Pushing generated Terraform to ${owner}/${repo}@${branch}:${deploymentPath}/`, level: 'info' });
   await deployment.save();
   await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow ${action} — deployment ${deployment._id}`, files });
+  // Read back the branch's real HEAD after pushing, rather than trusting syncFilesToGithub's own
+  // per-file commitSha (see getBranchHeadSha's comment) — this is what terraform-deploy.yml checks
+  // out by SHA, so it can never race a checkout of the branch's moving HEAD against this push.
+  const commitSha = await getBranchHeadSha({ token, owner, repo, branch });
 
   // Same short-lived STS credentials the local executor would assume, just handed to the runner as
   // dispatch inputs instead of a local child-process env. The workflow masks these immediately (see
@@ -308,6 +313,7 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
       action,
       is_update: String(isUpdate),
       working_directory: deploymentPath,
+      commit_sha: commitSha,
       aws_region: account.defaultRegion,
       aws_access_key_id: credentials.accessKeyId,
       aws_secret_access_key: credentials.secretAccessKey,

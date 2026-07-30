@@ -1,6 +1,6 @@
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
-import { dispatchGithubWorkflow, syncFilesToGithub, waitForLatestWorkflowRun } from './githubActionsClient.js';
+import { dispatchGithubWorkflow, getBranchHeadSha, syncFilesToGithub, waitForLatestWorkflowRun } from './githubActionsClient.js';
 import { lambdaSourceHashesTfvarsContent } from './githubTerraformRunner.js';
 import { githubTokenForUser } from '../controllers/githubController.js';
 
@@ -31,6 +31,9 @@ export async function dispatchTerraformValidation(deployment, { autoApply = fals
   deployment.logs.push({ message: `Pushing generated Terraform to ${owner}/${repo}@${branch}:${deploymentPath}/ for validation.`, level: 'info' });
   await deployment.save();
   await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow validate — deployment ${deployment._id}`, files });
+  // See githubTerraformRunner.js's identical call for why this is needed instead of trusting
+  // syncFilesToGithub's own commitSha.
+  const commitSha = await getBranchHeadSha({ token, owner, repo, branch });
 
   const dispatchedAt = new Date();
   await dispatchGithubWorkflow({
@@ -42,6 +45,7 @@ export async function dispatchTerraformValidation(deployment, { autoApply = fals
     inputs: {
       deployment_id: String(deployment._id),
       working_directory: deploymentPath,
+      commit_sha: commitSha,
     },
   });
 
