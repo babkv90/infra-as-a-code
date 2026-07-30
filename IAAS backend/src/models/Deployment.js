@@ -83,6 +83,17 @@ const deploymentSchema = new mongoose.Schema(
       githubRunId: String,
       startedAt: Date,
     },
+    // Set while status is 'validating' — a terraform-validate.yml run is in flight on GitHub Actions
+    // (see githubTerraformValidator.js) because the Lambda executor has nowhere reliable to run
+    // `terraform init`/`validate` itself. autoApply is remembered here (not just held in a request
+    // closure) so terraformValidateCallbackController.js — invoked fresh by GitHub's own callback POST,
+    // not a continuation of the original request — knows whether to kick off a real apply once
+    // validation comes back clean. Cleared the moment the callback lands.
+    pendingValidation: {
+      runId: String,
+      autoApply: Boolean,
+      startedAt: Date,
+    },
     logs: {
       type: [
         {

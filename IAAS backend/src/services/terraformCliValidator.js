@@ -46,20 +46,7 @@ export async function validateTerraformWithCli(terraform, lambdaZipUploadIds = [
     const parsed = JSON.parse(output || '{}');
 
     if (parsed.valid === true) return [];
-
-    const diagnostics = Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];
-    if (!diagnostics.length) {
-      return [{ severity: 'error', message: 'terraform validate reported the generated configuration as invalid but returned no diagnostic detail.' }];
-    }
-
-    return diagnostics
-      .filter((diagnostic) => diagnostic.severity === 'error')
-      .map((diagnostic) => {
-        const line = diagnostic.range?.start?.line;
-        const summary = diagnostic.summary ?? 'Invalid Terraform configuration.';
-        const detail = diagnostic.detail ? ` — ${diagnostic.detail}` : '';
-        return { severity: 'error', message: `terraform validate: ${summary}${detail}${line ? ` (line ${line})` : ''}` };
-      });
+    return terraformValidateDiagnosticsToIssues(parsed.diagnostics);
   } catch (error) {
     // Fail closed: if we can't even determine whether the config is valid (terraform binary
     // missing, init failed, unparseable output), block the deployment rather than let it through on
@@ -73,4 +60,24 @@ export async function validateTerraformWithCli(terraform, lambdaZipUploadIds = [
   } finally {
     await rm(scratchDir, { recursive: true, force: true });
   }
+}
+
+// Shared with terraformValidateCallbackController.js, which receives this same `terraform validate
+// -json` diagnostics array from terraform-validate.yml (the Lambda executor's async equivalent of
+// this file's inline CLI call) — one implementation of "diagnostic -> blocking issue" so the two
+// paths can never format this differently.
+export function terraformValidateDiagnosticsToIssues(diagnostics) {
+  const list = Array.isArray(diagnostics) ? diagnostics : [];
+  if (!list.length) {
+    return [{ severity: 'error', message: 'terraform validate reported the generated configuration as invalid but returned no diagnostic detail.' }];
+  }
+
+  return list
+    .filter((diagnostic) => diagnostic.severity === 'error')
+    .map((diagnostic) => {
+      const line = diagnostic.range?.start?.line;
+      const summary = diagnostic.summary ?? 'Invalid Terraform configuration.';
+      const detail = diagnostic.detail ? ` — ${diagnostic.detail}` : '';
+      return { severity: 'error', message: `terraform validate: ${summary}${detail}${line ? ` (line ${line})` : ''}` };
+    });
 }

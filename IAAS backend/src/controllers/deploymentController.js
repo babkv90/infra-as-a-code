@@ -14,6 +14,7 @@ import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
 import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
 import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
+import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 
 export const createDeploymentSchema = z.object({
@@ -165,8 +166,18 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   const deploymentId = new mongoose.Types.ObjectId();
   const executor = env.DEPLOYMENT_EXECUTOR;
-  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions' });
+  // The Lambda executor has no reliable terraform binary and no realistic time/network budget to
+  // download the AWS provider within a single request (see terraformCliValidator.js) — defer Layer 2
+  // (the real `terraform validate` CLI check) to an async GitHub Actions run instead of blocking this
+  // request on it. Local/dev keeps running it inline exactly as before: fast, no GitHub round trip.
+  // Only defer if that async dispatch is actually possible (DEPLOYMENT_GITHUB_OWNER/REPO configured)
+  // — deferring with nowhere to send it would silently skip Layer 2 validation entirely, which is
+  // worse than the synchronous fail-closed behavior it would otherwise fall back to.
+  const canDispatchAsyncValidation = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) && Boolean(env.DEPLOYMENT_GITHUB_OWNER) && Boolean(env.DEPLOYMENT_GITHUB_REPO);
+  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions', deferCliValidation: canDispatchAsyncValidation });
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
+  const needsAsyncValidation = canDispatchAsyncValidation && plan.cliValidationPending;
+  const autoApply = Boolean(req.validated.body.autoApply);
   const deployment = await Deployment.create({
     _id: deploymentId,
     workspace: req.user.workspace,
@@ -178,7 +189,9 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     // the runTerraformDeployment call below) — saving without autoApply must not leave one sitting
     // in 'queued' with nothing ever going to pick it up. 'draft' is also what makes a saved-without-
     // applying deployment eligible as a merge source (see MERGE_SOURCE_ELIGIBLE_STATUSES above).
-    status: hasBlockers || !req.validated.body.autoApply ? 'draft' : 'queued',
+    // 'validating' is the third option: real validation hasn't run yet at all, so neither 'draft' nor
+    // 'queued' would be accurate — terraformValidateCallbackController.js is what moves it out of here.
+    status: needsAsyncValidation ? 'validating' : hasBlockers || !autoApply ? 'draft' : 'queued',
     executor,
     resourceCount: plan.resourceCount,
     connectionCount: plan.connectionCount,
@@ -188,11 +201,13 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     lambdaZipUploadIds: lambdaZipUploadIdsFromNodes(diagramPayload.nodes),
     logs: [
       {
-        message: hasBlockers
-          ? 'Deployment draft created with blocking validation errors.'
-          : req.validated.body.autoApply
-            ? 'Deployment created. Terraform runner is starting.'
-            : 'Saved as draft. Click Apply when you\'re ready to run Terraform against the selected AWS account.',
+        message: needsAsyncValidation
+          ? 'Deployment draft created. Validating Terraform via GitHub Actions before it can be applied.'
+          : hasBlockers
+            ? 'Deployment draft created with blocking validation errors.'
+            : autoApply
+              ? 'Deployment created. Terraform runner is starting.'
+              : 'Saved as draft. Click Apply when you\'re ready to run Terraform against the selected AWS account.',
         level: hasBlockers ? 'warning' : 'info',
       },
     ],
@@ -203,7 +218,20 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     awsAccount: awsAccount._id,
   });
 
-  if (!hasBlockers && req.validated.body.autoApply) {
+  if (needsAsyncValidation) {
+    try {
+      await dispatchTerraformValidation(deployment, { autoApply });
+    } catch (error) {
+      deployment.status = 'draft';
+      deployment.pendingValidation = undefined;
+      deployment.validationIssues = [
+        ...deployment.validationIssues,
+        { severity: 'error', message: `Could not start async Terraform validation: ${error.message ?? String(error)}` },
+      ];
+      deployment.logs.push({ message: `Async Terraform validation failed to start: ${error.message ?? String(error)}`, level: 'error' });
+      await deployment.save();
+    }
+  } else if (!hasBlockers && autoApply) {
     void runTerraformDeployment(deployment._id);
   }
 

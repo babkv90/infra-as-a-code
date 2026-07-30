@@ -396,7 +396,11 @@ export function mapGithubStatusToDeploymentStatus(status, conclusion, { action =
   return 'failed';
 }
 
-async function lambdaSourceHashesTfvarsContent(deployment) {
+// Exported for githubTerraformValidator.js — the async validation workflow needs the exact same
+// tfvars content as a real apply/destroy run, since terraformGenerator.js emits the same
+// `lookup(var.lambda_source_code_hashes, ...)` reference either way (see stageLambdaZipUploads'
+// comment in terraformDeploymentRunner.js for why this only matters in s3 storage mode).
+export async function lambdaSourceHashesTfvarsContent(deployment) {
   if (!(deployment.lambdaZipUploadIds ?? []).length) return null;
 
   const hashes = {};
