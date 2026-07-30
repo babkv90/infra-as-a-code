@@ -5677,6 +5677,41 @@ button.lp-security-item {
   min-width: 0;
 }
 
+.dash-overview-style-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.dash-overview-style-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.dash-overview-style-toggle button:hover {
+  color: #e2e8f0;
+}
+
+.dash-overview-style-toggle button.is-active {
+  background: rgba(34, 211, 238, 0.16);
+  color: #67e8f9;
+}
+
 .dash-content:has(.dash-page--support) {
   height: calc(100vh - 78px);
   padding: 12px;
@@ -16596,6 +16631,24 @@ button.dash-kpi-card {
   border-color: var(--border-subtle);
   background: var(--bg-surface-hover);
   color: var(--text-secondary);
+}
+
+.app-theme-light .dash-overview-style-toggle {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+
+.app-theme-light .dash-overview-style-toggle button {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .dash-overview-style-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.app-theme-light .dash-overview-style-toggle button.is-active {
+  background: rgba(var(--accent-primary-rgb), 0.14);
+  color: var(--accent-primary);
 }
 
 .app-theme-light .pipeline-badge--success {
