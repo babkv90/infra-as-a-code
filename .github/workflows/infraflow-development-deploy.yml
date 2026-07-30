@@ -207,7 +207,14 @@ jobs:
             + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
             + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)'             lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
+          # 30s (up from the default 15s): createDeploymentFromCanvas's async-validation dispatch path
+          # (githubTerraformValidator.js) makes several sequential GitHub API calls — token lookup,
+          # push main.tf, dispatch the workflow, poll briefly to confirm it started — in a single
+          # request. 15s wasn't enough headroom on top of a cold start + DB connect + diagram/plan
+          # building, and a Lambda timeout kill never reaches our own error handler: API Gateway just
+          # returns its own generic 500 with no detail, which is what showed up as this endpoint's
+          # opaque failure.
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 30
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
 
       - name: Bundle Terraform CLI for Lambda
