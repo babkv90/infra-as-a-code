@@ -355,7 +355,22 @@ function verifyRefreshTokenFromCookie(req) {
 }
 
 function githubCallbackUrl(req) {
-  return env.GITHUB_OAUTH_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/v1/github/oauth/callback`;
+  return normalizeGithubCallbackUrl(env.GITHUB_OAUTH_CALLBACK_URL) || `${req.protocol}://${req.get('host')}/api/v1/github/oauth/callback`;
+}
+
+function normalizeGithubCallbackUrl(value) {
+  const callbackUrl = String(value ?? '').trim();
+  if (!callbackUrl) return '';
+
+  try {
+    const url = new URL(callbackUrl);
+    if (url.pathname === '/' || url.pathname === '') {
+      url.pathname = '/api/v1/github/oauth/callback';
+    }
+    return url.toString();
+  } catch {
+    return callbackUrl;
+  }
 }
 
 function safeReturnTo(value) {
