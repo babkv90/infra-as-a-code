@@ -1,4 +1,4 @@
-name: "nodeApplicationDep development CI/CD"
+name: "productionReactPipeline development CI/CD"
 
 on:
   workflow_dispatch:
@@ -27,12 +27,12 @@ jobs:
     env:
       DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
       AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'api-gateway-lambda-iam-role-app' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'react-vue-angular-static-frontend-app' }}
       ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'infraflow-cluster' }}
-      ECS_SERVICE: ${{ vars.ECS_SERVICE || 'serverless-api-service' }}
-      S3_BUCKET: ${{ vars.S3_BUCKET || 'replace-with-s3-bucket' }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE || 'react-app-service' }}
+      S3_BUCKET: ${{ vars.S3_BUCKET || 'infraflow-static-20260726153431179400000001' }}
       CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-      LAMBDA_FUNCTION: ${{ vars.LAMBDA_FUNCTION || 'infraflow-iaasnode-6a687b40b7d910ba' }}
+      LAMBDA_FUNCTION: ${{ vars.LAMBDA_FUNCTION || 'replace-with-lambda-function' }}
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'default' }}
       VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.INFRAFLOW_API_BASE_URL || vars.INFRAFLOW_API_BASE_URL }}
     steps:
@@ -49,25 +49,9 @@ jobs:
           echo "LAMBDA_FUNCTION=$CLEAN_LAMBDA_FUNCTION" >> "$GITHUB_ENV"
           echo "Deploying Lambda function: $CLEAN_LAMBDA_FUNCTION"
 
-      - name: Resolve Lambda app directory
-        run: |
-          if [ -f "IAAS backend/lambda.js" ] && [ -f "IAAS backend/package.json" ]; then
-            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
-          elif [ -f lambda.js ] && [ -f package.json ]; then
-            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
-          elif [ -f "IAAS backend/package.json" ]; then
-            echo "LAMBDA_APP_DIR=IAAS backend" >> "$GITHUB_ENV"
-          elif [ -f package.json ]; then
-            echo "LAMBDA_APP_DIR=." >> "$GITHUB_ENV"
-          else
-            echo "::error::No Lambda app found. Expected lambda.js plus package.json at repository root or IAAS backend/."
-            exit 1
-          fi
-          echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
-
 
       - name: Setup Node.js
-        if: contains('serverless-api', 'react') || contains('serverless-api', 'node') || contains('serverless-api', 'static') || contains('serverless-api', 'serverless') || contains('serverless-api', 'kubernetes')
+        if: contains('react-app', 'react') || contains('react-app', 'node') || contains('react-app', 'static') || contains('react-app', 'serverless') || contains('react-app', 'kubernetes')
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -77,13 +61,13 @@ jobs:
             IAAS backend/package-lock.json
 
       - name: Setup Python
-        if: contains('serverless-api', 'python')
+        if: contains('react-app', 'python')
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Setup Java
-        if: contains('serverless-api', 'java')
+        if: contains('react-app', 'java')
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -91,20 +75,44 @@ jobs:
 
       - name: Install dependencies
 
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: npm ci
 
       - name: Run tests
-        run: echo "Skipping Lambda tests by default. Set a custom test command in Infraflow to run deployment tests."
+        timeout-minutes: 3
+        env:
+          CI: true
+          NODE_ENV: test
 
+        run: |
+          if [ ! -f package.json ]; then
+            echo "No package.json found; skipping test step."
+            exit 0
+          fi
+          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
+          if [ -z "$TEST_SCRIPT" ]; then
+            echo "No npm test script found; skipping test step."
+            exit 0
+          fi
+          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
+            echo "Default placeholder npm test script found; skipping test step."
+            exit 0
+          fi
+          timeout 150s npm test -- --watch=false
+
+
+      - name: Verify frontend API URL
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Set GitHub variable VITE_API_BASE_URL or secret/variable INFRAFLOW_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            exit 1
+          fi
 
 
       - name: Build application
 
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
         env:
           VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
-        run: npm run build --if-present
+        run: npm run build
 
       - name: Verify AWS deploy role secret
         run: |
@@ -119,112 +127,31 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Prune dev dependencies
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
-        run: npm prune --omit=dev
-
-      - name: Verify Lambda handler file
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
+      - name: Verify build output
         run: |
-          if [ -f lambda.js ]; then
-            DESIRED_HANDLER="lambda.handler"
-          elif [ -f src/lambda.js ]; then
-            DESIRED_HANDLER="src/lambda.handler"
+          echo "Looking for a static build output directory (dist/ or build/)..."
+          if [ -d dist ]; then
+            echo "Found dist/ with $(find dist -type f | wc -l) file(s), $(du -sh dist | cut -f1) total."
+            find dist -maxdepth 2 -type f | head -20
+          elif [ -d build ]; then
+            echo "Found build/ with $(find build -type f | wc -l) file(s), $(du -sh build | cut -f1) total."
+            find build -maxdepth 2 -type f | head -20
           else
-            echo "::error::No Lambda entry file found. Expected lambda.js or src/lambda.js in $PWD."
-            find . -maxdepth 3 -type f | sort | head -80
+            echo "::error::No static build output found. Expected dist/ (Vite) or build/ (Create React App)."
+            echo "Contents of the repository root after the build step:"
+            ls -la
+            echo "If your build tool writes elsewhere (e.g. Angular's dist/<project-name>/), update this pipeline's build command or the target output directory."
             exit 1
           fi
 
-          HANDLER_MODULE="${DESIRED_HANDLER%.*}"
-          HANDLER_EXPORT="${DESIRED_HANDLER##*.}"
-          if ! grep -Eq "(^|[^A-Za-z0-9_])$HANDLER_EXPORT([^A-Za-z0-9_]|$)" "$HANDLER_MODULE.js"; then
-            echo "::error::$HANDLER_MODULE.js exists but does not reference handler export '$HANDLER_EXPORT'."
-            exit 1
-          fi
-
-          echo "Lambda package contains handler entry: $DESIRED_HANDLER"
-          echo "Leaving the existing AWS Lambda handler configuration unchanged."
-
-      - name: Configure Lambda application env
-        env:
-          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
-          CLIENT_ORIGINS: ${{ vars.CLIENT_ORIGINS }}
-          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST || vars.SMTP_HOST }}
-          SMTP_PORT: ${{ vars.SMTP_PORT }}
-          SMTP_SECURE: ${{ vars.SMTP_SECURE }}
-          SMTP_USER: ${{ secrets.SMTP_USER || vars.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
-          STORAGE_MODE: ${{ vars.STORAGE_MODE }}
-          STORAGE_S3_BUCKET: ${{ vars.STORAGE_S3_BUCKET }}
-          STORAGE_S3_REGION: ${{ vars.STORAGE_S3_REGION }}
-          STORAGE_DYNAMODB_LOCK_TABLE: ${{ vars.STORAGE_DYNAMODB_LOCK_TABLE }}
-          DEPLOYMENT_EXECUTOR: ${{ vars.DEPLOYMENT_EXECUTOR }}
-          DEPLOYMENT_GITHUB_OWNER: ${{ vars.DEPLOYMENT_GITHUB_OWNER }}
-          DEPLOYMENT_GITHUB_REPO: ${{ vars.DEPLOYMENT_GITHUB_REPO }}
-          DEPLOYMENT_GITHUB_BRANCH: ${{ vars.DEPLOYMENT_GITHUB_BRANCH }}
-          DEPLOYMENT_CALLBACK_SECRET: ${{ secrets.DEPLOYMENT_CALLBACK_SECRET }}
-          INFRAFLOW_APP_AWS_ACCESS_KEY_ID: ${{ secrets.INFRAFLOW_APP_AWS_ACCESS_KEY_ID }}
-          INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: ${{ secrets.INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY }}
-          INFRAFLOW_APP_AWS_SESSION_TOKEN: ${{ secrets.INFRAFLOW_APP_AWS_SESSION_TOKEN }}
-          INFRAFLOW_GITHUB_CLIENT_ID: ${{ secrets.INFRAFLOW_GITHUB_CLIENT_ID }}
-          INFRAFLOW_GITHUB_CLIENT_SECRET: ${{ secrets.INFRAFLOW_GITHUB_CLIENT_SECRET }}
-          INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: ${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL || secrets.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
-          INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: ${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
+      - name: Deploy static build to S3
         run: |
-          aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
-          jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID"             --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET"             --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL"             --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY"             '. + {
-              NODE_ENV: $nodeEnv
-            }
-            + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
-            + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
-            + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
-            + (if $appBaseUrl == "" then {} else { APP_BASE_URL: $appBaseUrl } end)
-            + (if $smtpHost == "" then {} else { SMTP_HOST: $smtpHost } end)
-            + (if $smtpPort == "" then {} else { SMTP_PORT: $smtpPort } end)
-            + (if $smtpSecure == "" then {} else { SMTP_SECURE: $smtpSecure } end)
-            + (if $smtpUser == "" then {} else { SMTP_USER: $smtpUser } end)
-            + (if $smtpPass == "" then {} else { SMTP_PASS: $smtpPass } end)
-            + (if $emailFrom == "" then {} else { EMAIL_FROM: $emailFrom } end)
-            + (if $storageMode == "" then {} else { STORAGE_MODE: $storageMode } end)
-            + (if $storageS3Bucket == "" then {} else { STORAGE_S3_BUCKET: $storageS3Bucket } end)
-            + (if $storageS3Region == "" then {} else { STORAGE_S3_REGION: $storageS3Region } end)
-            + (if $storageDynamodbLockTable == "" then {} else { STORAGE_DYNAMODB_LOCK_TABLE: $storageDynamodbLockTable } end)
-            + (if $deploymentExecutor == "" then {} else { DEPLOYMENT_EXECUTOR: $deploymentExecutor } end)
-            + (if $deploymentGithubOwner == "" then {} else { DEPLOYMENT_GITHUB_OWNER: $deploymentGithubOwner } end)
-            + (if $deploymentGithubRepo == "" then {} else { DEPLOYMENT_GITHUB_REPO: $deploymentGithubRepo } end)
-            + (if $deploymentGithubBranch == "" then {} else { DEPLOYMENT_GITHUB_BRANCH: $deploymentGithubBranch } end)
-            + (if $deploymentCallbackSecret == "" then {} else { DEPLOYMENT_CALLBACK_SECRET: $deploymentCallbackSecret } end)
-            + (if $accessKeyId == "" then {} else { INFRAFLOW_APP_AWS_ACCESS_KEY_ID: $accessKeyId } end)
-            + (if $secretAccessKey == "" then {} else { INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY: $secretAccessKey } end)
-            + (if $sessionToken == "" then {} else { INFRAFLOW_APP_AWS_SESSION_TOKEN: $sessionToken } end)
-            + (if $githubClientId == "" then {} else { INFRAFLOW_GITHUB_CLIENT_ID: $githubClientId } end)
-            + (if $githubClientSecret == "" then {} else { INFRAFLOW_GITHUB_CLIENT_SECRET: $githubClientSecret } end)
-            + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
-            + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)'             lambda-env.json > lambda-env-updated.json
-          jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
-          aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
+          if [ -d dist ]; then BUILD_DIR=dist; else BUILD_DIR=build; fi
+          echo "Syncing $BUILD_DIR/ to s3://${{ env.S3_BUCKET }} ..."
+          aws s3 sync "$BUILD_DIR/" s3://${{ env.S3_BUCKET }} --delete
+          echo "Sync complete. Bucket now contains:"
+          aws s3 ls "s3://${{ env.S3_BUCKET }}" --recursive --summarize | tail -5
 
-      - name: Package Lambda artifact
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
-        run: |
-          rm -rf shared
-          if [ -d "../shared" ]; then
-            cp -R ../shared shared
-          elif [ -d "../../shared" ]; then
-            cp -R ../../shared shared
-          elif [ -d "$GITHUB_WORKSPACE/shared" ]; then
-            cp -R "$GITHUB_WORKSPACE/shared" shared
-          else
-            echo "::error::Missing shared/resourceRegistry.json. Lambda packaging requires the repository shared/ directory."
-            exit 1
-          fi
-          test -f shared/resourceRegistry.json
-          zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
-
-      - name: Deploy Lambda function
-        run: aws lambda update-function-code --function-name ${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"${{ env.LAMBDA_APP_DIR }}/lambda.zip"
+      - name: Invalidate CloudFront cache
+        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
