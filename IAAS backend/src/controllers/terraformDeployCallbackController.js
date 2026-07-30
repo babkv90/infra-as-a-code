@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { Deployment } from '../models/Deployment.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { finishRun } from '../services/githubTerraformRunner.js';
 
 // Called by terraform-deploy.yml's own final step, not a logged-in user — there is no req.user here,
 // so this deliberately does NOT go through requireAuth (see deploymentRoutes.js, where this route is
@@ -20,10 +21,11 @@ export const callbackSchema = z.object({
   }),
 });
 
-// Persisted on the Deployment document (not held in this process's memory) so a callback that lands
-// while the backend happens to be mid-restart isn't lost — see githubTerraformRunner.js's
-// pollWorkflowStatus, which reads this same field back from the database rather than an in-memory
-// queue local to whichever process happened to dispatch the run.
+// This is what actually finalizes a deployment now — not a background poll loop watching GitHub
+// Actions (see githubTerraformRunner.js's top comment for why that was unreliable inside a
+// Lambda-hosted request). GitHub calls this once terraform-deploy.yml's "Report result to Infraflow"
+// step runs, independent of whether the backend process that originally dispatched the run is even
+// still alive, which is exactly the property that makes this reliable.
 export const receiveTerraformDeployCallback = asyncHandler(async (req, res) => {
   const provided = bearerToken(req);
   if (!env.DEPLOYMENT_CALLBACK_SECRET || provided !== env.DEPLOYMENT_CALLBACK_SECRET) {
@@ -31,22 +33,35 @@ export const receiveTerraformDeployCallback = asyncHandler(async (req, res) => {
   }
 
   const { runId, action, outcome, outputs, hasState, logExcerpt } = req.validated.body;
-  await Deployment.updateOne(
-    { _id: req.params.id },
-    {
-      $set: {
-        githubRun: {
-          runId: String(runId),
-          action,
-          outcome,
-          outputs,
-          hasState: hasState === true || hasState === 'true',
-          logExcerpt,
-          receivedAt: new Date(),
-        },
-      },
-    },
-  );
+  const deployment = await Deployment.findById(req.params.id);
+  if (!deployment) return res.json({ success: true });
+
+  // A stale callback from an earlier, superseded run on this same deployment (e.g. force-destroy
+  // re-dispatched while an old run's callback was still in flight) — ignore it rather than let it
+  // finalize over a newer run's own eventual callback.
+  if (String(deployment.activeRun?.githubRunId ?? '') !== String(runId)) {
+    return res.json({ success: true });
+  }
+
+  deployment.githubRun = {
+    runId: String(runId),
+    action,
+    outcome,
+    outputs,
+    hasState: hasState === true || hasState === 'true',
+    logExcerpt,
+    receivedAt: new Date(),
+  };
+
+  const isUpdate = Boolean(deployment.activeRun?.isUpdate);
+  const auto = Boolean(deployment.activeRun?.auto);
+  await finishRun(deployment, {
+    action,
+    isUpdate,
+    auto,
+    runId,
+    result: outcome === 'success' ? { outcome: 'success', outputs } : { outcome: 'failure', failureMessage: logExcerpt },
+  });
 
   res.json({ success: true });
 });

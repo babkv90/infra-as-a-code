@@ -17,6 +17,21 @@ import { runTerraformDeployment, runTerraformDestroy } from '../services/deploym
 import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 
+// runTerraformDeployment/runTerraformDestroy resolve differently depending on executor:
+// github-actions now only dispatches and returns (fast — see githubTerraformRunner.js's top comment
+// for why finalization moved to a callback instead of a poll loop this request would have to survive
+// past its own response), so it's safe and correct to await here. local runs the whole
+// apply/destroy synchronously as a child process — awaiting that in a Lambda-hosted request would
+// mean blocking on however long a real `terraform apply` takes, so it stays fire-and-forget,
+// unchanged from before.
+async function startTerraformRun(executor, run) {
+  if (executor === 'github-actions') {
+    await run();
+  } else {
+    void run();
+  }
+}
+
 export const createDeploymentSchema = z.object({
   body: z.object({
     name: z.string().min(2).optional(),
@@ -232,7 +247,7 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
       await deployment.save();
     }
   } else if (!hasBlockers && autoApply) {
-    void runTerraformDeployment(deployment._id);
+    await startTerraformRun(executor, () => runTerraformDeployment(deployment._id));
   }
 
   res.status(201).json({ success: true, data: deployment });
@@ -277,7 +292,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
-  void runTerraformDeployment(deployment._id);
+  await startTerraformRun(deployment.executor, () => runTerraformDeployment(deployment._id));
   res.json({ success: true, data: deployment });
 });
 
@@ -342,7 +357,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.update', 'Deployment', deployment._id, { diagram: diagram._id });
-  void runTerraformDeployment(deployment._id, { isUpdate: true });
+  await startTerraformRun(deployment.executor, () => runTerraformDeployment(deployment._id, { isUpdate: true }));
 
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
@@ -562,7 +577,7 @@ export const mergeDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.merge', 'Deployment', target._id, { sourceDeployment: sourceDeployment._id });
   await auditLog(req, 'deployment.merge_source_locked', 'Deployment', sourceDeployment._id, { targetDeployment: target._id });
-  void runTerraformDeployment(target._id, { isUpdate: true });
+  await startTerraformRun(target.executor, () => runTerraformDeployment(target._id, { isUpdate: true }));
 
   await target.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: { target, source: sourceDeployment } });
@@ -607,7 +622,7 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
-  void runTerraformDestroy(deployment._id);
+  await startTerraformRun(deployment.executor, () => runTerraformDestroy(deployment._id));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });
@@ -630,7 +645,7 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.force_destroy', 'Deployment', deployment._id, { previousStatus });
-  void runTerraformDestroy(deployment._id, { force: true });
+  await startTerraformRun(deployment.executor, () => runTerraformDestroy(deployment._id, { force: true }));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });

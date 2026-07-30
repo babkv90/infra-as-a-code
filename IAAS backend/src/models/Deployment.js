@@ -80,6 +80,12 @@ const deploymentSchema = new mongoose.Schema(
     activeRun: {
       action: { type: String, enum: ['apply', 'destroy'] },
       isUpdate: Boolean,
+      // Whether this destroy is the automatic cleanup-on-failure kind (see deploymentGuards.js's
+      // handleDeployFailureCleanup), not a user-initiated one. Read back by
+      // terraformDeployCallbackController.js when the workflow's callback lands — a separate, later
+      // request that can't rely on the `auto` argument the original dispatch call closed over, since
+      // finalization no longer happens inside that same call.
+      auto: Boolean,
       githubRunId: String,
       startedAt: Date,
     },
