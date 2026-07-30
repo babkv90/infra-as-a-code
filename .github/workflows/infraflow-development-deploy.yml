@@ -176,8 +176,9 @@ jobs:
           INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: ${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
         run: |
           aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
-          jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID"             --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET"             --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL"             --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY"             '. + {
-              NODE_ENV: $nodeEnv
+          jq             --arg nodeEnv "production"             --arg terraformBin "/var/task/bin/terraform"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID"             --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET"             --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL"             --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY"             '. + {
+              NODE_ENV: $nodeEnv,
+              TERRAFORM_BIN: $terraformBin
             }
             + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
             + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
@@ -208,6 +209,19 @@ jobs:
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
           aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
+
+      - name: Bundle Terraform CLI for Lambda
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
+        run: |
+          TF_VERSION="1.9.8"
+          rm -rf bin
+          mkdir -p bin
+          curl -sSL -o /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+          unzip -oq /tmp/terraform.zip -d bin
+          chmod +x bin/terraform
+          rm -f /tmp/terraform.zip
+          # Sanity-check it actually runs before it ever reaches Lambda's runtime.
+          bin/terraform version
 
       - name: Package Lambda artifact
         working-directory: ${{ env.LAMBDA_APP_DIR }}
