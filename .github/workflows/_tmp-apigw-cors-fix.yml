@@ -1,0 +1,67 @@
+name: "Temp: Fix API Gateway CORS for codemanus.in"
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  fix-cors:
+    name: Add codemanus.in to API Gateway CORS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Locate the HTTP API
+        run: |
+          aws apigatewayv2 get-apis --query "Items[?ApiId=='v72gcv51pi']" --output json > api.json
+          cat api.json
+          if [ "$(jq 'length' api.json)" -eq 0 ]; then
+            echo "::error::No API Gateway HTTP API found with ApiId v72gcv51pi."
+            exit 1
+          fi
+
+      - name: Show current CORS configuration
+        run: |
+          aws apigatewayv2 get-api --api-id v72gcv51pi --query 'CorsConfiguration' --output json | tee current-cors.json
+
+      - name: Merge codemanus.in into AllowOrigins and update
+        run: |
+          if [ "$(cat current-cors.json)" = "null" ]; then
+            echo "No existing CorsConfiguration on this API — API Gateway-level CORS is not the blocker here."
+            echo "Skipping update; the fix must be elsewhere (Lambda code / other layer)."
+            exit 0
+          fi
+
+          NEW_ORIGINS=$(jq -c '(.AllowOrigins // []) + ["https://codemanus.in", "https://www.codemanus.in"] | unique' current-cors.json)
+          echo "New AllowOrigins: $NEW_ORIGINS"
+
+          ALLOW_METHODS=$(jq -c '.AllowMethods // ["*"]' current-cors.json)
+          ALLOW_HEADERS=$(jq -c '.AllowHeaders // ["*"]' current-cors.json)
+          ALLOW_CREDENTIALS=$(jq -r '.AllowCredentials // false' current-cors.json)
+          EXPOSE_HEADERS=$(jq -c '.ExposeHeaders // []' current-cors.json)
+          MAX_AGE=$(jq -r '.MaxAge // 0' current-cors.json)
+
+          jq -n \
+            --argjson allowOrigins "$NEW_ORIGINS" \
+            --argjson allowMethods "$ALLOW_METHODS" \
+            --argjson allowHeaders "$ALLOW_HEADERS" \
+            --argjson exposeHeaders "$EXPOSE_HEADERS" \
+            --argjson allowCredentials "$ALLOW_CREDENTIALS" \
+            --argjson maxAge "$MAX_AGE" \
+            '{AllowOrigins: $allowOrigins, AllowMethods: $allowMethods, AllowHeaders: $allowHeaders, ExposeHeaders: $exposeHeaders, AllowCredentials: $allowCredentials, MaxAge: $maxAge}' \
+            > updated-cors.json
+
+          echo "Payload to apply:"
+          cat updated-cors.json
+
+          aws apigatewayv2 update-api --api-id v72gcv51pi --cors-configuration file://updated-cors.json
+
+      - name: Confirm updated configuration
+        run: aws apigatewayv2 get-api --api-id v72gcv51pi --query 'CorsConfiguration' --output json
