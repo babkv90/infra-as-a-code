@@ -585,9 +585,15 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
   const liveRefreshRef = useRef<{ inFlight: boolean; lastStartedAt: number; backoffUntil: number }>({ inFlight: false, lastStartedAt: 0, backoffUntil: 0 });
   const currentUser = getStoredUser();
 
-  async function refreshLiveUpdates() {
+  async function refreshLiveUpdates(options: { force?: boolean } = {}) {
     const now = Date.now();
-    if (liveRefreshRef.current.inFlight || now < liveRefreshRef.current.backoffUntil || now - liveRefreshRef.current.lastStartedAt < 3000) return;
+    if (
+      liveRefreshRef.current.inFlight ||
+      now < liveRefreshRef.current.backoffUntil ||
+      (!options.force && now - liveRefreshRef.current.lastStartedAt < 3000)
+    ) {
+      return;
+    }
     liveRefreshRef.current.inFlight = true;
     liveRefreshRef.current.lastStartedAt = now;
     setIsLoading(true);
@@ -624,7 +630,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
                   error: statusError instanceof Error ? statusError.message : 'Unable to read app pipeline status.',
                   checkedAt: Date.now(),
                 },
-              ] as const;``
+              ] as const;
             }
           }),
       );
@@ -646,17 +652,16 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
   }, [activePage]);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
-    void refreshLiveUpdates();
+    void refreshLiveUpdates({ force: true });
     const interval = window.setInterval(() => void refreshLiveUpdates(), 15000);
     return () => window.clearInterval(interval);
-  }, [isOpen]);
+  }, []);
 
   useEffect(() => {
     function handleDeploymentStarted() {
       liveRefreshRef.current.backoffUntil = 0;
       liveRefreshRef.current.lastStartedAt = 0;
-      void refreshLiveUpdates();
+      void refreshLiveUpdates({ force: true });
     }
 
     window.addEventListener(liveDeploymentStartedEvent, handleDeploymentStarted);
@@ -726,6 +731,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
       <button
         className={`live-updates-launcher ${activeCount ? 'live-updates-launcher--active' : ''}`}
         onClick={() => {
+          void refreshLiveUpdates({ force: true });
           setIsOpen((value) => !value);
         }}
         type="button"

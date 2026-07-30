@@ -98,10 +98,6 @@ async function githubRequest<T>(path: string, init: RequestInit = {}) {
     {
       ...init,
       cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache',
-        ...init.headers,
-      },
     },
     'GitHub request failed',
   );
