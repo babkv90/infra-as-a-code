@@ -207,7 +207,15 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
     await runTerraformCommand(deployment, workDir, ['destroy', '-input=false', '-auto-approve'], terraformEnv);
 
-    deployment.status = auto ? 'failed' : 'destroyed';
+    // Always 'destroyed' when the destroy Terraform run itself succeeds — auto or not, this is an
+    // objective fact about AWS state: nothing this deployment created still exists. Previously this
+    // was `auto ? 'failed' : 'destroyed'`, on the reasoning that the original *deploy* attempt never
+    // succeeded — true, but that fact is already preserved by the earlier 'failed' notification/log
+    // entry from the deploy attempt itself (still in deployment.logs below), and conflating "did the
+    // deploy succeed" with "what's the current state" is exactly what produced a confirmed real bug:
+    // a deployment whose destroy genuinely succeeded in AWS kept reading 'failed' on the Deployments
+    // page and in its own notification, with no state anywhere actually saying "destroyed".
+    deployment.status = 'destroyed';
     deployment.finishedAt = new Date();
     deployment.activeRun = undefined;
     deployment.logs.push({
@@ -233,13 +241,10 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     await createNotification({
       workspace: deployment.workspace,
       type: 'destroy',
-      // Mirrors deployment.status above (auto -> 'failed', not 'destroyed') rather than hardcoding
-      // 'success' — an auto-cleanup notification is genuinely good news ("nothing is left orphaned
-      // and billing"), but the deployment record itself is still 'failed', and a green checkmark
-      // here previously contradicted the red "Failed" the Deployments page shows for the same
-      // record. 'failed' renders the warning-triangle icon instead, distinguished from "Destroy
-      // failed" purely by this title/message still describing a successful cleanup.
-      status: auto ? 'failed' : 'success',
+      // Matches deployment.status above — both now say "this succeeded", because it did. The
+      // deploy-attempt-failed fact is preserved separately, in the earlier 'failed' notification
+      // failDeployment already created when the apply itself failed, not by keeping this one negative.
+      status: 'success',
       title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
       message: auto
         ? 'The deployment failed partway through. Resources it had already created in AWS were automatically destroyed, so nothing is left running or billing.'

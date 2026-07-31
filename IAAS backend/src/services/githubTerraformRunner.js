@@ -168,7 +168,14 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
     return;
   }
 
-  deployment.status = auto ? 'failed' : 'destroyed';
+  // Always 'destroyed' when the destroy Terraform run itself succeeds — see
+  // terraformDeploymentRunner.js's identical fix for the full reasoning. Confirmed via a real
+  // production run (deployment 6a6c805bbf0191d676d6e59b): the GitHub Actions destroy job completed
+  // successfully end-to-end, yet this line's previous `auto ? 'failed' : 'destroyed'` left the
+  // deployment reading 'failed' — status and reality had diverged. "Did the original deploy attempt
+  // succeed" is preserved separately, in the earlier 'failed' notification/log entry failDeployment
+  // already wrote when the apply failed; it doesn't need this field to also say so.
+  deployment.status = 'destroyed';
   deployment.finishedAt = new Date();
   deployment.activeRun = undefined;
   deployment.logs.push({
@@ -182,11 +189,8 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
   await createNotification({
     workspace: deployment.workspace,
     type: 'destroy',
-    // Mirrors deployment.status above (auto -> 'failed', not 'destroyed') rather than hardcoding
-    // 'success' — see terraformDeploymentRunner.js's identical fix for the full reasoning: a green
-    // checkmark on an auto-cleanup notification previously contradicted the red "Failed" the
-    // Deployments page shows for the same record.
-    status: auto ? 'failed' : 'success',
+    // Matches deployment.status above — both say "this succeeded", because it did.
+    status: 'success',
     title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
     message: auto
       ? 'The deployment failed partway through. Resources it had already created in AWS were automatically destroyed, so nothing is left running or billing.'

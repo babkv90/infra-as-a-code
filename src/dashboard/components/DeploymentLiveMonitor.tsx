@@ -13,11 +13,17 @@ import { buildResourceTimeline, type ResourceProgress } from '../../utils/deploy
 const GITHUB_ACTIVE_RUN_STATUSES = ['queued', 'in_progress', 'waiting', 'requested', 'pending'];
 const GITHUB_POLL_MS = 3000;
 
-// Scoped to the Visual Builder's deploy/update flow only — not destroys. 'deployed' and 'failed' are
-// the two terminal outcomes that end a deploy; reaching either one auto-closes this popup after a
-// short pause (see the effect below), rather than requiring a manual close.
-const ACTIVE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying'];
-const TERMINAL_STATUSES: DeploymentRecord['status'][] = ['deployed', 'failed'];
+// A failed first-time apply can trigger an automatic cleanup destroy behind the scenes (see
+// deploymentGuards.js) — deployment.status moves deploying -> failed -> destroying -> destroyed, all
+// without any user action. 'destroying' and 'failed' both have to stay in ACTIVE_STATUSES (not just
+// 'deploying'/'queued') so polling keeps following that whole chain instead of freezing on the first
+// 'failed' reading — the poll loop below stops fetching entirely the moment it sees a status outside
+// this list, which previously meant it never learned the auto-cleanup destroy that followed even
+// started, let alone that it finished. 'destroyed' has to be in TERMINAL_STATUSES for the same reason
+// in reverse: without it, a deployment that settles there just sits open forever instead of
+// auto-closing like every other finished outcome does.
+const ACTIVE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying', 'failed'];
+const TERMINAL_STATUSES: DeploymentRecord['status'][] = ['deployed', 'destroyed', 'failed'];
 const POLL_MS = 2500;
 const AUTO_CLOSE_DELAY_MS = 3000;
 const DEFAULT_POSITION = { x: 20, y: 76 };
