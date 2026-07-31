@@ -244,19 +244,22 @@ jobs:
             + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
             + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)'             lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
-          # 30s (up from the default 15s): createDeploymentFromCanvas's async-validation dispatch path
-          # (githubTerraformValidator.js) makes several sequential GitHub API calls — token lookup,
-          # push main.tf, dispatch the workflow, poll briefly to confirm it started — in a single
-          # request. 15s wasn't enough headroom on top of a cold start + DB connect + diagram/plan
-          # building, and a Lambda timeout kill never reaches our own error handler: API Gateway just
-          # returns its own generic 500 with no detail, which is what showed up as this endpoint's
-          # opaque failure.
+          # 60s (up from 30s, itself up from the default 15s): the apply/update/destroy dispatch path
+          # (githubTerraformRunner.js's dispatchWorkflow) does even more sequential network round trips
+          # than the validation path this was originally sized for — push main.tf (+ lambda hashes
+          # tfvars) via a GET-then-PUT per file, an AWS STS AssumeRole call, the workflow-dispatch POST,
+          # then up to 5 poll attempts (1.4s apart) confirming the run actually started — all inside one
+          # request, on top of a cold start + DB connect + diagram/plan building. 30s was tight enough
+          # that a slightly slow GitHub API moment or a cold start could still exceed it, and a Lambda
+          # timeout kill never reaches our own error handler or deployment.logs — API Gateway just
+          # returns its own generic error (seen in practice as a bare "Service Unavailable") with no
+          # detail and, from the deployment's own perspective, no GitHub Actions run ever dispatched.
           #
           # 2048MB ephemeral storage (up from the default 512MB): when DEPLOYMENT_GITHUB_OWNER/REPO
           # aren't configured, terraformCliValidator.js falls back to running `terraform init` inline
           # against /tmp — and the AWS provider plugin alone is 600MB+, so the 512MB default fills up
           # mid-download ("no space left on device") before the plugin ever finishes installing.
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 30 --ephemeral-storage Size=2048
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 60 --ephemeral-storage Size=2048
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
 
       - name: Bundle Terraform CLI for Lambda
