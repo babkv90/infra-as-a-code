@@ -1,8 +1,10 @@
 import {
+  ChevronDown,
   Download,
   FileCode2,
   FileJson,
   ImageDown,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Network,
@@ -11,13 +13,13 @@ import {
   Save,
   ScanLine,
   SearchCheck,
-  ShieldCheck,
   SquareDashedMousePointer,
   Tags,
   TerminalSquare,
   Trash2,
   Undo2,
   Upload,
+  Wand2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -78,7 +80,6 @@ function Toolbar({
     undo,
     redo,
     deleteSelection,
-    resetDiagramFocus,
     validate,
     importDiagram,
     markSaved,
@@ -229,16 +230,6 @@ function Toolbar({
         <button className="icon-button" title="Zoom in" onClick={() => flow.zoomIn()}>
           <ZoomIn size={18} />
         </button>
-        <button
-          className="text-button"
-          onClick={() => {
-            resetDiagramFocus();
-            requestAnimationFrame(() => flow.fitView({ padding: 0.12, maxZoom: 1.1 }));
-          }}
-        >
-          <Maximize2 size={16} />
-          Full diagram
-        </button>
       </div>
       <div className="toolbar__section toolbar__section--grow">
         <select
@@ -254,17 +245,27 @@ function Toolbar({
             </option>
           ))}
         </select>
-        <button className="text-button" onClick={autoLayout}>
-          Auto-layout
-        </button>
-        <button className="text-button" onClick={() => void handleValidate()}>
-          <SearchCheck size={16} />
-          Validate
-        </button>
-        <button className="text-button" onClick={exportHcl}>
-          <TerminalSquare size={16} />
-          Generate Terraform
-        </button>
+        <details className="toolbar-tools-menu">
+          <summary className="text-button toolbar-tools-menu__summary">
+            <Wand2 size={16} />
+            Diagram Tools
+            <ChevronDown size={14} />
+          </summary>
+          <div className="toolbar-tools-menu__content">
+            <button onClick={autoLayout} type="button">
+              <LayoutGrid size={15} />
+              Auto-layout
+            </button>
+            <button onClick={() => void handleValidate()} type="button">
+              <SearchCheck size={15} />
+              Validate
+            </button>
+            <button onClick={exportHcl} type="button">
+              <TerminalSquare size={15} />
+              Generate Terraform
+            </button>
+          </div>
+        </details>
         <button
           className="text-button deploy-toolbar-button"
           disabled={blockingErrorCount > 0}
