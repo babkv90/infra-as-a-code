@@ -65,19 +65,6 @@ jobs:
           fi
           echo "Lambda app directory: $(cat "$GITHUB_ENV" | grep '^LAMBDA_APP_DIR=' | tail -1 | cut -d= -f2-)"
 
-      # This job previously only ever built/deployed the Lambda backend — S3_BUCKET and
-      # CLOUDFRONT_DISTRIBUTION_ID were declared above but never actually used anywhere, so the
-      # frontend was never touched by this workflow at all despite its name. These two steps (plus
-      # "Deploy frontend to S3" and "Invalidate CloudFront cache" further down, after AWS credentials
-      # are configured) are what actually ship it.
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build frontend
-        env:
-          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
-        run: npm run build
-
 
       - name: Setup Node.js
         if: contains('serverless-api', 'react') || contains('serverless-api', 'node') || contains('serverless-api', 'static') || contains('serverless-api', 'serverless') || contains('serverless-api', 'kubernetes')
@@ -131,26 +118,6 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      # continue-on-error: the AWS_DEPLOY_ROLE_ARN role is currently scoped to Lambda only (no
-      # s3:ListBucket/PutObject or cloudfront:CreateInvalidation on these resources yet) — a frontend
-      # permissions gap must never block the Lambda backend deploy later in this same job. Until that
-      # role's policy is widened, these two steps will fail visibly (check the run) without stopping
-      # the rest of the pipeline.
-      - name: Deploy frontend to S3
-        if: env.S3_BUCKET != '' && env.S3_BUCKET != 'replace-with-s3-bucket'
-        continue-on-error: true
-        run: |
-          aws s3 sync dist/ "s3://${{ env.S3_BUCKET }}/" --delete \
-            --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html"
-          aws s3 cp dist/index.html "s3://${{ env.S3_BUCKET }}/index.html" \
-            --cache-control "no-cache, no-store, must-revalidate"
-
-      - name: Invalidate CloudFront cache
-        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
-        continue-on-error: true
-        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
 
       - name: Prune dev dependencies
         working-directory: ${{ env.LAMBDA_APP_DIR }}
@@ -207,14 +174,11 @@ jobs:
           INFRAFLOW_GITHUB_CLIENT_SECRET: ${{ secrets.INFRAFLOW_GITHUB_CLIENT_SECRET }}
           INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: ${{ vars.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL || secrets.INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL }}
           INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: ${{ secrets.INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY }}
-          TERRAFORM_APPLY_ENABLED: ${{ vars.TERRAFORM_APPLY_ENABLED }}
         run: |
           aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query 'Environment.Variables' --output json > lambda-env.json
-          jq             --arg nodeEnv "production"             --arg terraformBin "/var/task/bin/terraform"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID"             --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET"             --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL"             --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY"             --arg terraformApplyEnabled "$TERRAFORM_APPLY_ENABLED"             '. + {
-              NODE_ENV: $nodeEnv,
-              TERRAFORM_BIN: $terraformBin
+          jq             --arg nodeEnv "production"             --arg jwtAccessSecret "$JWT_ACCESS_SECRET"             --arg jwtRefreshSecret "$JWT_REFRESH_SECRET"             --arg clientOrigins "$CLIENT_ORIGINS"             --arg appBaseUrl "$APP_BASE_URL"             --arg smtpHost "$SMTP_HOST"             --arg smtpPort "$SMTP_PORT"             --arg smtpSecure "$SMTP_SECURE"             --arg smtpUser "$SMTP_USER"             --arg smtpPass "$SMTP_PASS"             --arg emailFrom "$EMAIL_FROM"             --arg storageMode "$STORAGE_MODE"             --arg storageS3Bucket "$STORAGE_S3_BUCKET"             --arg storageS3Region "$STORAGE_S3_REGION"             --arg storageDynamodbLockTable "$STORAGE_DYNAMODB_LOCK_TABLE"             --arg deploymentExecutor "$DEPLOYMENT_EXECUTOR"             --arg deploymentGithubOwner "$DEPLOYMENT_GITHUB_OWNER"             --arg deploymentGithubRepo "$DEPLOYMENT_GITHUB_REPO"             --arg deploymentGithubBranch "$DEPLOYMENT_GITHUB_BRANCH"             --arg deploymentCallbackSecret "$DEPLOYMENT_CALLBACK_SECRET"             --arg accessKeyId "$INFRAFLOW_APP_AWS_ACCESS_KEY_ID"             --arg secretAccessKey "$INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY"             --arg sessionToken "$INFRAFLOW_APP_AWS_SESSION_TOKEN"             --arg githubClientId "$INFRAFLOW_GITHUB_CLIENT_ID"             --arg githubClientSecret "$INFRAFLOW_GITHUB_CLIENT_SECRET"             --arg githubOauthCallbackUrl "$INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL"             --arg githubTokenEncryptionKey "$INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY"             '. + {
+              NODE_ENV: $nodeEnv
             }
-            + (if $terraformApplyEnabled == "" then {} else { TERRAFORM_APPLY_ENABLED: $terraformApplyEnabled } end)
             + (if ($jwtAccessSecret == "" or ($jwtAccessSecret | startswith("replace-with-")) or $jwtAccessSecret == "dev-access-secret-change-me") then {} else { JWT_ACCESS_SECRET: $jwtAccessSecret } end)
             + (if ($jwtRefreshSecret == "" or ($jwtRefreshSecret | startswith("replace-with-")) or $jwtRefreshSecret == "dev-refresh-secret-change-me") then {} else { JWT_REFRESH_SECRET: $jwtRefreshSecret } end)
             + (if $clientOrigins == "" then {} else { CLIENT_ORIGINS: $clientOrigins } end)
@@ -242,33 +206,8 @@ jobs:
             + (if $githubOauthCallbackUrl == "" then {} else { INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL: $githubOauthCallbackUrl } end)
             + (if $githubTokenEncryptionKey == "" then {} else { INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY: $githubTokenEncryptionKey } end)'             lambda-env.json > lambda-env-updated.json
           jq -c '{Variables: .}' lambda-env-updated.json > lambda-env-payload.json
-          # 30s (up from the default 15s): createDeploymentFromCanvas's async-validation dispatch path
-          # (githubTerraformValidator.js) makes several sequential GitHub API calls — token lookup,
-          # push main.tf, dispatch the workflow, poll briefly to confirm it started — in a single
-          # request. 15s wasn't enough headroom on top of a cold start + DB connect + diagram/plan
-          # building, and a Lambda timeout kill never reaches our own error handler: API Gateway just
-          # returns its own generic 500 with no detail, which is what showed up as this endpoint's
-          # opaque failure.
-          #
-          # 2048MB ephemeral storage (up from the default 512MB): when DEPLOYMENT_GITHUB_OWNER/REPO
-          # aren't configured, terraformCliValidator.js falls back to running `terraform init` inline
-          # against /tmp — and the AWS provider plugin alone is 600MB+, so the 512MB default fills up
-          # mid-download ("no space left on device") before the plugin ever finishes installing.
-          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json --timeout 30 --ephemeral-storage Size=2048
+          aws lambda update-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --environment file://lambda-env-payload.json
           aws lambda wait function-updated --function-name "${{ env.LAMBDA_FUNCTION }}"
-
-      - name: Bundle Terraform CLI for Lambda
-        working-directory: ${{ env.LAMBDA_APP_DIR }}
-        run: |
-          TF_VERSION="1.9.8"
-          rm -rf bin
-          mkdir -p bin
-          curl -sSL -o /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
-          unzip -oq /tmp/terraform.zip -d bin
-          chmod +x bin/terraform
-          rm -f /tmp/terraform.zip
-          # Sanity-check it actually runs before it ever reaches Lambda's runtime.
-          bin/terraform version
 
       - name: Package Lambda artifact
         working-directory: ${{ env.LAMBDA_APP_DIR }}
