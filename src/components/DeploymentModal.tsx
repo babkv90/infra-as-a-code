@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Circle, Copy, Download, ExternalLink, Eye, Loader2, Rocket, ScrollText, Save, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Circle, Code2, Copy, Download, ExternalLink, Eye, Loader2, Rocket, ScrollText, Save, ShieldAlert, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
@@ -69,6 +69,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const [isConfirmingForceDestroy, setIsConfirmingForceDestroy] = useState(false);
   const [isForceDestroying, setIsForceDestroying] = useState(false);
   const [forceDestroyError, setForceDestroyError] = useState('');
+  const [isTerraformPreviewOpen, setIsTerraformPreviewOpen] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubRunStatus>();
   const [githubStatusError, setGithubStatusError] = useState('');
   const [selectedGithubJobId, setSelectedGithubJobId] = useState<number>();
@@ -769,7 +770,13 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           </section>
 
           <section className="deployment-panel">
-            <div className="deployment-panel__title">Deployment checks</div>
+            <div className="deployment-panel__title-row">
+              <span className="deployment-panel__title">Deployment checks</span>
+              <button className="text-button" onClick={() => setIsTerraformPreviewOpen(true)} type="button">
+                <Code2 size={14} />
+                View Terraform Preview
+              </button>
+            </div>
             <div className="deployment-steps">
               {plan.steps.map((step) => (
                 <div className={`deployment-step deployment-step--${step.status}`} key={step.label}>
@@ -787,14 +794,37 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
               </div>
             )}
           </section>
-
-          <section className="deployment-panel">
-            <div className="deployment-panel__title">Terraform preview</div>
-            <pre className="deployment-code">{terraform}</pre>
-          </section>
         </aside>
       </div>
     </section>
+    {isTerraformPreviewOpen && (
+      <div className="deployment-terraform-preview-backdrop" role="presentation" onClick={() => setIsTerraformPreviewOpen(false)}>
+        <section
+          className="deployment-terraform-preview-popup"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="terraform-preview-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <header>
+            <div>
+              <span className="deployment-panel__title">Terraform preview</span>
+              <h2 id="terraform-preview-title">{queuedDeployment?.name ?? plan.name}</h2>
+            </div>
+            <div className="deployment-terraform-preview-popup__actions">
+              <button className="text-button" onClick={copyTerraform} type="button">
+                <Copy size={16} />
+                Copy
+              </button>
+              <button className="text-button" onClick={() => setIsTerraformPreviewOpen(false)} type="button" aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+          </header>
+          <pre className="deployment-code">{terraform}</pre>
+        </section>
+      </div>
+    )}
     {showDeploymentSuccess && (
       <div className="deployment-success-backdrop" role="presentation" onClick={() => setShowDeploymentSuccess(false)}>
         <section className="deployment-success-popup" role="dialog" aria-modal="true" aria-labelledby="deployment-success-title" onClick={(event) => event.stopPropagation()}>
