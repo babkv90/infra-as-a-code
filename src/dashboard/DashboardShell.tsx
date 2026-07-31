@@ -252,6 +252,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const { showScrollHint } = useScrollHint([activePage]);
   const [awsAccounts, setAwsAccounts] = useState<AwsAccountRecord[]>([]);
   const [awsInsights, setAwsInsights] = useState<AwsInsights | undefined>();
+  const [overviewDeployments, setOverviewDeployments] = useState<DeploymentRecord[]>([]);
   const [awsRegions, setAwsRegions] = useState<string[]>(['ap-south-1']);
   const [awsDataError, setAwsDataError] = useState('');
   const [awsDataMessage, setAwsDataMessage] = useState('');
@@ -306,9 +307,10 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
 
   async function refreshAwsData() {
     try {
-      const [accounts, insights, regions] = await Promise.all([listAwsAccounts(), getAwsInsights(), listAwsRegions()]);
+      const [accounts, insights, regions, deployments] = await Promise.all([listAwsAccounts(), getAwsInsights(), listAwsRegions(), listDeployments()]);
       setAwsAccounts(accounts);
       setAwsInsights(insights);
+      setOverviewDeployments(deployments);
       setAwsRegions(regions);
       setAwsDataError('');
     } catch (error) {
@@ -405,10 +407,10 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
 
   return (
     <div className="dash-shell">
+      <a className="dash-brand" href="/">
+        <AppLogo className="app-logo--dash-gap" />
+      </a>
       <aside className="dash-sidebar">
-        <a className="dash-brand" href="/">
-          <AppLogo className="app-logo--nav app-logo--dashboard" />
-        </a>
         <div className="dash-sidebar-actions">
           <button aria-label="New Diagram" className="dash-new-button" onClick={() => goToDashboardPage('builder')} title="New Diagram">
             <Plus size={15} />
@@ -505,6 +507,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             awsAccounts,
             awsInsights,
             awsRegions,
+            deployments: overviewDeployments,
             onAwsChanged: refreshAwsData,
             onSyncAws: syncActiveAwsAccount,
             isSyncingAws,
@@ -521,6 +524,7 @@ type DashboardAwsContext = {
   awsAccounts: AwsAccountRecord[];
   awsInsights?: AwsInsights;
   awsRegions: string[];
+  deployments: DeploymentRecord[];
   onAwsChanged: () => Promise<void>;
   onSyncAws: () => Promise<void>;
   isSyncingAws: boolean;
@@ -837,7 +841,15 @@ function renderPage(
     case 'super-admin':
       return <SuperAdminPage />;
     default:
-      return <OverviewPage setActivePage={setActivePage} insights={awsContext.awsInsights} isSyncingAws={awsContext.isSyncingAws} onSyncAws={awsContext.onSyncAws} />;
+      return (
+        <OverviewPage
+          setActivePage={setActivePage}
+          deployments={awsContext.deployments}
+          insights={awsContext.awsInsights}
+          isSyncingAws={awsContext.isSyncingAws}
+          onSyncAws={awsContext.onSyncAws}
+        />
+      );
   }
 }
 
@@ -855,11 +867,13 @@ function readStoredOverviewStyle(): OverviewStyle {
 
 function OverviewPage({
   setActivePage,
+  deployments,
   insights,
   isSyncingAws,
   onSyncAws,
 }: {
   setActivePage: (page: DashboardPage) => void;
+  deployments: DeploymentRecord[];
   insights?: AwsInsights;
   isSyncingAws: boolean;
   onSyncAws: () => Promise<void>;
@@ -982,7 +996,7 @@ function OverviewPage({
         {insights && (
           <div className="dash-two-col dash-two-col--wide">
             <Panel title="Resource inventory" action={insights.syncedAt ? `Synced ${new Date(insights.syncedAt).toLocaleString()}` : 'No live sync'}>
-              <ResourceTable insights={insights} />
+              <ResourceTable deployments={deployments} insights={insights} />
             </Panel>
             <Panel title="Recent AWS events" action="CloudTrail">
               <RecentAwsEvents insights={insights} />
@@ -6183,22 +6197,16 @@ function KpiGrid({ insights }: { insights?: AwsInsights }) {
   );
 }
 
-function ResourceTable({ insights }: { insights?: AwsInsights }) {
+function ResourceTable({ deployments = [], insights }: { deployments?: DeploymentRecord[]; insights?: AwsInsights }) {
   const [detail, setDetail] = useState<RuntimeLabDetail | null>(null);
   const inventory = insights
-    ? insights.inventory.map((resource) => ({
-        service: resource.service,
-        count: resource.count,
-        health: resource.health,
-        spend: `$${resource.spend.toFixed(2)}`,
-        icon: resourceInventory.find((item) => item.service === resource.service)?.icon ?? CloudCog,
-      }))
+    ? buildInfraflowCreatedInventory(deployments, insights)
     : resourceInventory;
 
   return (
     <>
       <div className="dash-resource-table">
-        {inventory.map((resource) => {
+        {inventory.length ? inventory.map((resource) => {
           const Icon = resource.icon;
           return (
             <button key={resource.service} onClick={() => setDetail(getResourceCardDetail(resource))} type="button">
@@ -6209,11 +6217,43 @@ function ResourceTable({ insights }: { insights?: AwsInsights }) {
               <em>{resource.spend}</em>
             </button>
           );
-        })}
+        }) : <p className="pipeline-muted">No Infraflow-created AWS resources found. Deploy from the dashboard, then sync AWS data.</p>}
       </div>
       {detail && <RuntimeLabDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </>
   );
+}
+
+function buildInfraflowCreatedInventory(deployments: DeploymentRecord[], insights: AwsInsights) {
+  const createdResources = deployments
+    .filter((deployment) => deployment.status === 'deployed')
+    .flatMap((deployment) =>
+      Object.entries(deployment.outputs ?? {})
+        .map(([key, output]) => normalizeDeploymentOutputResource(key, output))
+        .filter((resource): resource is { key: string; label: string; service: string; resourceId: string } => Boolean(resource)),
+    );
+
+  const resourcesByService = new Map<string, { service: string; count: number; spend: number; health: string; icon: React.ComponentType<{ size?: number }> }>();
+  for (const resource of dedupeDeploymentResources(createdResources)) {
+    const service = canonicalAwsService(resource.service);
+    const current = resourcesByService.get(service);
+    const insightInventory = findInsightInventory(service, insights);
+    const spend = insightInventory?.spend ?? findServiceSpend(service, insights);
+    resourcesByService.set(service, {
+      service,
+      count: (current?.count ?? 0) + 1,
+      health: insightInventory?.health ?? current?.health ?? 'No live data',
+      spend: current?.spend ?? spend,
+      icon: resourceInventory.find((item) => canonicalAwsService(item.service) === service)?.icon ?? CloudCog,
+    });
+  }
+
+  return Array.from(resourcesByService.values())
+    .sort((left, right) => left.service.localeCompare(right.service))
+    .map((resource) => ({
+      ...resource,
+      spend: `$${resource.spend.toFixed(2)}`,
+    }));
 }
 
 function getDashboardKpiDetail(kpi: { label: string; value: string; change: string }): RuntimeLabDetail {
@@ -6403,6 +6443,3 @@ function readFileAsText(file: File): Promise<{ name: string; content: string }> 
 }
 
 export default DashboardShell;
-
-
-

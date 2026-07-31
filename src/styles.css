@@ -2977,11 +2977,6 @@ textarea {
   object-fit: contain;
 }
 
-.dash-shell--expanded .app-logo--dashboard img {
-  width: 103px;
-  height: 56px;
-}
-
 .app-logo__suffix {
   color: inherit;
   font-size: 15px;
@@ -5426,6 +5421,7 @@ button.lp-security-item {
 .dash-shell {
   display: grid;
   grid-template-columns: var(--dash-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--dash-topbar-height) minmax(0, 1fr);
   min-height: 100vh;
   background:
     radial-gradient(circle at 84% 4%, rgba(37, 99, 235, 0.16), transparent 28%),
@@ -5439,13 +5435,14 @@ button.lp-security-item {
 }
 
 .dash-sidebar {
+  grid-column: 1;
+  grid-row: 2;
   position: sticky;
   top: var(--dash-topbar-height);
   display: grid;
-  grid-template-rows: auto auto auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   gap: var(--dash-gap-sm);
   height: calc(100vh - var(--dash-topbar-height));
-  margin-top: var(--dash-topbar-height);
   padding: 12px var(--dash-gap-sm) var(--dash-gap-sm);
   border-right: 1px solid rgba(148, 163, 184, 0.16);
   background: rgba(2, 6, 23, 0.82);
@@ -5458,16 +5455,23 @@ button.lp-security-item {
 }
 
 .dash-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
+  grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: block;
+  width: 100%;
+  height: var(--dash-topbar-height);
+  min-height: var(--dash-topbar-height);
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  background: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(18px);
   color: #fff;
   text-decoration: none;
-}
-
-.dash-shell--expanded .dash-brand {
-  justify-content: flex-start;
 }
 
 .dash-new-button span,
@@ -5499,27 +5503,23 @@ button.lp-security-item {
   flex-direction: column;
 }
 
-.dash-brand .app-logo {
-  display: grid;
-  place-items: center;
-  width: var(--dash-touch-target);
-  height: var(--dash-touch-target);
-  color: #67e8f9;
+.dash-brand .app-logo--dash-gap {
+  display: block;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 0;
 }
 
-.dash-brand .app-logo--dashboard img {
-  width: 34px;
-  height: 34px;
-}
-
-.dash-shell--expanded .dash-brand .app-logo {
-  width: 152px;
-  height: 82px;
-}
-
-.dash-shell--expanded .dash-brand .app-logo--dashboard img {
-  width: 152px;
-  height: 82px;
+.dash-brand .app-logo--dash-gap img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  object-fit: fill;
+  object-position: left top;
 }
 
 .dash-new-button,
@@ -5670,6 +5670,8 @@ button.lp-security-item {
 }
 
 .dash-main {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   min-width: 0;
   min-height: 100vh;
 }
@@ -14147,14 +14149,6 @@ button.dash-kpi-card {
     padding: 12px 14px 14px;
   }
 
-  .dash-brand {
-    justify-content: center;
-  }
-
-  .dash-shell--expanded .dash-brand {
-    justify-content: flex-start;
-  }
-
   .dash-new-button {
     padding: 0;
   }
@@ -14237,9 +14231,20 @@ button.dash-kpi-card {
   .dash-shell,
   .dash-shell--expanded {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .dash-brand {
+    grid-column: 1;
+    grid-row: 1;
+    position: static;
+    padding: 0;
+    border-right: 0;
   }
 
   .dash-sidebar {
+    grid-column: 1;
+    grid-row: 2;
     position: static;
     height: auto;
     margin-top: 0;
@@ -14248,17 +14253,17 @@ button.dash-kpi-card {
     align-items: center;
   }
 
+  .dash-main {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
   .dash-sidebar-actions {
     width: auto;
   }
 
   .dash-new-button span {
     display: inline-flex;
-  }
-
-  .dash-brand {
-    display: flex;
-    justify-content: flex-start;
   }
 
   .dash-sidebar-toggle,
@@ -19584,16 +19589,10 @@ button.dash-kpi-card {
     padding: 12px 11px 11px;
   }
 
-  .app-theme .dash-brand .app-logo,
   .app-theme .dash-sidebar-toggle,
   .app-theme .dash-icon-button {
     width: var(--dash-touch-target);
     height: var(--dash-touch-target);
-  }
-
-  .app-theme .dash-shell--expanded .dash-brand .app-logo {
-    width: 152px;
-    height: 82px;
   }
 
   .app-theme .dash-topbar {
