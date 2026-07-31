@@ -383,11 +383,36 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     }
   }
 
+  // Every early exit below now sets requestError before returning — a silent no-op here is
+  // indistinguishable, from the user's side, from "the button did nothing," which is exactly what
+  // got reported when a redeploy attempt on a Lambda-incompatible local-executor deployment silently
+  // failed with no visible feedback at all. None of these conditions should normally be reachable
+  // through the primary button itself (its own `disabled` covers most of them), but this function is
+  // also reachable from other callers/edge cases, and a clear message here costs nothing.
   async function deployToAws() {
     if (isUpdateLikeMode) {
-      if (!updateDeploymentId || plan.resourceCount === 0 || plan.blockers > 0 || deploymentStatus === 'running') return;
-      if (isMergeMode && !hasMergeConnection) return;
+      if (!updateDeploymentId) {
+        setRequestError('No deployment is loaded to update — reopen it from the Deployments page.');
+        return;
+      }
+      if (plan.resourceCount === 0) {
+        setRequestError('Add at least one AWS resource to the canvas before deploying.');
+        return;
+      }
+      if (plan.blockers > 0) {
+        setRequestError('Fix all blocking validation errors before deploying.');
+        return;
+      }
+      if (deploymentStatus === 'running') {
+        setRequestError('A deploy is already running for this session — wait for it to finish.');
+        return;
+      }
+      if (isMergeMode && !hasMergeConnection) {
+        setRequestError('Draw a connection from the imported nodes to the existing infrastructure before merging.');
+        return;
+      }
     } else if (!canDeploy || !selectedAccount || isAlreadyDeployed || !isNameValid) {
+      setRequestError(deployButtonDisabledReason ?? 'This deployment cannot be started right now.');
       return;
     }
 

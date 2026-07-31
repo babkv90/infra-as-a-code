@@ -31,6 +31,26 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     });
     if (!canProceed) return;
 
+    // deployment.executor is pinned for life at creation time (see comment in
+    // deploymentController.js's updateDeploymentFromCanvas), so any deployment created before
+    // DEPLOYMENT_EXECUTOR=github-actions became the default is still routed here — this local
+    // executor spawns a real `terraform init/plan/apply` child process and awaits it synchronously
+    // within the request. On a normal server that's fine; on Lambda it isn't: no persistent process
+    // budget, and a real apply/destroy routinely exceeds the request timeout entirely, well past the
+    // 512MB/15s limits that already motivated moving new deployments onto the github-actions executor
+    // (see terraformCliValidator.js). Left unguarded, a click here just times out with no visible
+    // error and no GitHub Actions run to point to — confirmed as the actual cause behind exactly that
+    // report ("redeploy button triggered but no workflow triggered") on an old local-executor
+    // deployment. Fail fast with an actionable message instead of a silent timeout.
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      await failDeployment(
+        deployment,
+        "This deployment is pinned to the 'local' Terraform executor (set when it was created, before the github-actions executor became the default) — it can't run reliably on this Lambda-hosted backend, which has no budget for a real, synchronous terraform apply. Destroy and recreate this deployment (or contact support to migrate its state to the github-actions executor) before retrying.",
+        isUpdate ? 'update' : 'deploy',
+      );
+      return;
+    }
+
     const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
     if (!account) {
       await failDeployment(deployment, 'AWS account not found for deployment.', isUpdate ? 'update' : 'deploy');
@@ -142,6 +162,18 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
 
     if (!env.TERRAFORM_APPLY_ENABLED) {
       await failDeployment(deployment, 'Terraform apply is disabled. Set TERRAFORM_APPLY_ENABLED=true in IAAS backend/.env to run real AWS destroy operations.', 'destroy');
+      return;
+    }
+
+    // See the identical guard in runTerraformDeployment above for the full reasoning — same failure
+    // mode applies to destroy: a real, synchronous `terraform destroy` on this local executor has no
+    // realistic chance of finishing inside a Lambda request's timeout budget.
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      await failDeployment(
+        deployment,
+        "This deployment is pinned to the 'local' Terraform executor (set when it was created, before the github-actions executor became the default) — it can't run reliably on this Lambda-hosted backend, which has no budget for a real, synchronous terraform destroy. Contact support to migrate its state to the github-actions executor before retrying.",
+        'destroy',
+      );
       return;
     }
 
