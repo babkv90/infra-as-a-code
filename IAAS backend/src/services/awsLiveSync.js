@@ -119,16 +119,13 @@ async function capture(label, errors, fn, fallback) {
 }
 
 async function assumeAwsRole(account = {}) {
-  /*
-    Your current requirement:
-    You have only one AWS account.
-
-    So, if roleArn is not provided, we DO NOT call sts:AssumeRole.
-    We use INFRAFLOW_APP_AWS_ACCESS_KEY_ID and INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY from env.
-    Local development can also use AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from .env.
-  */
+  // Deliberately not a fallback to the platform's own AWS keys: every real caller passes a
+  // customer AwsAccount doc, whose roleArn is `required: true` on the schema and validated before
+  // it's ever saved. A missing roleArn here means a caller passed a malformed/empty account —
+  // surfacing that loudly beats silently syncing a customer's dashboard against the platform's own
+  // AWS account.
   if (!account.roleArn) {
-    return makeEnvCredentials();
+    throw new Error('AWS account has no roleArn — cannot assume a role without one.');
   }
 
   /*

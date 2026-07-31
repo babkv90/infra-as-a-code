@@ -11,7 +11,6 @@ import {
 } from './githubActionsClient.js';
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
-import { githubTokenForUser } from '../controllers/githubController.js';
 
 const WORKFLOW_ID = 'terraform-deploy.yml';
 const ACTIVE_STATUSES = ['deploying', 'destroying'];
@@ -212,8 +211,11 @@ async function hasStateFromCallback(deploymentId, runId) {
 // runTerraformDeployment's comment for why: this whole call must stay fast enough to safely await
 // inside a Lambda-hosted request).
 async function dispatchWorkflow({ deployment, account, action, isUpdate }) {
-  const token = await githubTokenForUser(deployment.requestedBy);
-  if (!token) throw new Error('Connect GitHub (as the deployment requester) before running Terraform via GitHub Actions.');
+  // Platform-owned token, not the requesting customer's — see DEPLOYMENT_GITHUB_TOKEN in env.js for
+  // why. This is the only thing that changed to make this executor multi-tenant-safe: the AWS side
+  // below (assumeAwsRole(account)) was already correctly scoped to the customer.
+  const token = env.DEPLOYMENT_GITHUB_TOKEN;
+  if (!token) throw new Error('DEPLOYMENT_GITHUB_TOKEN is not configured on the backend — cannot dispatch Terraform via GitHub Actions.');
 
   const owner = env.DEPLOYMENT_GITHUB_OWNER;
   const repo = env.DEPLOYMENT_GITHUB_REPO;

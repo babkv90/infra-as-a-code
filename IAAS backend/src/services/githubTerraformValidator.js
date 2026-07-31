@@ -2,7 +2,6 @@ import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 import { dispatchGithubWorkflow, getBranchHeadSha, syncFilesToGithub, waitForLatestWorkflowRun } from './githubActionsClient.js';
 import { lambdaSourceHashesTfvarsContent } from './githubTerraformRunner.js';
-import { githubTokenForUser } from '../controllers/githubController.js';
 
 const WORKFLOW_ID = 'terraform-validate.yml';
 
@@ -16,8 +15,10 @@ const WORKFLOW_ID = 'terraform-validate.yml';
 // terraformValidateCallbackController.js, which is what actually moves the deployment out of
 // 'validating'. This function's only job is to kick that off and confirm it started.
 export async function dispatchTerraformValidation(deployment, { autoApply = false } = {}) {
-  const token = await githubTokenForUser(deployment.requestedBy);
-  if (!token) throw new ApiError(409, 'Connect GitHub (as the deployment requester) before validating Terraform via GitHub Actions.');
+  // Platform-owned token, not the requesting customer's — same reasoning as githubTerraformRunner.js's
+  // dispatchWorkflow(). This push only ever touches our own deploy-runner repo, never a customer's.
+  const token = env.DEPLOYMENT_GITHUB_TOKEN;
+  if (!token) throw new ApiError(409, 'DEPLOYMENT_GITHUB_TOKEN is not configured on the backend — cannot validate Terraform via GitHub Actions.');
 
   const owner = env.DEPLOYMENT_GITHUB_OWNER;
   const repo = env.DEPLOYMENT_GITHUB_REPO;

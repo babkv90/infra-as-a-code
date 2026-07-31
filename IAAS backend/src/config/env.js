@@ -99,7 +99,16 @@ export const env = {
   GITHUB_CLIENT_ID: readFirstString(['INFRAFLOW_GITHUB_CLIENT_ID', 'GITHUB_CLIENT_ID']),
   GITHUB_CLIENT_SECRET: readFirstString(['INFRAFLOW_GITHUB_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET']),
   GITHUB_OAUTH_CALLBACK_URL: readFirstString(['INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL', 'GITHUB_OAUTH_CALLBACK_URL']),
-  GITHUB_TOKEN_ENCRYPTION_KEY: readFirstString(['INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY', 'GITHUB_TOKEN_ENCRYPTION_KEY']),
+  // Deliberately its own dev-default, distinct from the JWT_*_SECRET ones below — this key encrypts
+  // stored GitHub tokens, a different concern from signing login sessions. Sharing a value between
+  // them (which happened before this had its own fallback) means rotating one for a security reason
+  // silently invalidates the other. Falling back to a fixed dev value (rather than throwing) matches
+  // how JWT_ACCESS_SECRET/JWT_REFRESH_SECRET behave below: safe to boot locally without full prod
+  // config, loud in production because it's obviously not a real secret.
+  GITHUB_TOKEN_ENCRYPTION_KEY: readFirstString(
+    ['INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY', 'GITHUB_TOKEN_ENCRYPTION_KEY'],
+    'dev-github-token-encryption-key-change-me',
+  ),
   // Selects which runner NEW deployments are created with (src/services/deploymentExecutorDispatch.js).
   // Read once, at deployment-creation time only — Deployment.executor then pins that single record to
   // whichever value was in effect at that moment, for its entire lifecycle. Flipping this later never
@@ -110,6 +119,15 @@ export const env = {
   DEPLOYMENT_GITHUB_OWNER: readString('DEPLOYMENT_GITHUB_OWNER'),
   DEPLOYMENT_GITHUB_REPO: readString('DEPLOYMENT_GITHUB_REPO'),
   DEPLOYMENT_GITHUB_BRANCH: readString('DEPLOYMENT_GITHUB_BRANCH', 'main'),
+  // Platform-owned token for pushing to / dispatching workflows on our own repo above. Deliberately
+  // NOT the requesting customer's own GitHub OAuth token: a real third-party signup has no reason to
+  // have write/workflow-dispatch access to our private deploy-runner repo, so authenticating this step
+  // as them would fail for every customer except us. A fine-grained PAT (or GitHub App installation
+  // token) scoped to just DEPLOYMENT_GITHUB_OWNER/REPO with Contents + Actions write is what belongs
+  // here. The customer's own AWS session is still what the dispatched workflow acts under — see
+  // assumeAwsRole() in githubTerraformRunner.js — this token only ever gets that AWS session in front
+  // of a runner, never substitutes for it.
+  DEPLOYMENT_GITHUB_TOKEN: readString('DEPLOYMENT_GITHUB_TOKEN'),
   // Authenticates the workflow's own callback POST (see terraformDeployCallbackController.js) back to
   // this API with its run's outcome/outputs — a shared secret, not a user credential, since the caller
   // is a GitHub Actions job, not a logged-in user.
@@ -118,6 +136,14 @@ export const env = {
 
 if (!env.MONGODB_URI) {
   console.warn('MONGODB_URI is not set. Add it to IAAS backend/.env before running the API.');
+}
+
+if (env.GITHUB_TOKEN_ENCRYPTION_KEY === 'dev-github-token-encryption-key-change-me') {
+  console.warn(
+    'GITHUB_TOKEN_ENCRYPTION_KEY is not set — falling back to a shared, publicly-known dev value. ' +
+      'Every stored GitHub token is encrypted with this key; set INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY ' +
+      'to a real secret before any real user connects GitHub.',
+  );
 }
 
 if (env.STORAGE_MODE === 's3' && !env.STORAGE_S3_BUCKET) {
@@ -130,6 +156,9 @@ if (env.DEPLOYMENT_EXECUTOR === 'github-actions') {
   }
   if (!env.DEPLOYMENT_CALLBACK_SECRET) {
     throw new Error('DEPLOYMENT_CALLBACK_SECRET is required when DEPLOYMENT_EXECUTOR=github-actions.');
+  }
+  if (!env.DEPLOYMENT_GITHUB_TOKEN) {
+    throw new Error('DEPLOYMENT_GITHUB_TOKEN is required when DEPLOYMENT_EXECUTOR=github-actions — a platform-owned token with write+workflow access to DEPLOYMENT_GITHUB_OWNER/REPO, not a customer credential.');
   }
   if (env.STORAGE_MODE !== 's3') {
     throw new Error(
