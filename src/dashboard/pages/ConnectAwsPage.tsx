@@ -119,7 +119,19 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
       {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
       {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-connect-layout">
-        <Panel title="Connection steps" action="IAM setup">
+        <Panel
+          title="Connection steps"
+          action={
+            deployerIdentity ? (
+              <button className="dash-info-action" onClick={() => setIsRoleSetupOpen(true)} title="View AWS role setup details" type="button">
+                <Info size={15} />
+                IAM setup
+              </button>
+            ) : (
+              isLoadingIdentity ? 'Loading identity' : 'Missing backend credentials'
+            )
+          }
+        >
           <div className="dash-connect-steps">
             {awsConnectionSteps.map((step, index) => {
               const Icon = step.icon;
@@ -133,31 +145,7 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
               );
             })}
           </div>
-        </Panel>
-        <Panel
-          title="AWS role setup"
-          action={
-            deployerIdentity ? (
-              <button className="dash-info-action" onClick={() => setIsRoleSetupOpen(true)} title="View AWS role setup details" type="button">
-                <Info size={15} />
-                Setup details
-              </button>
-            ) : (
-              isLoadingIdentity ? 'Loading identity' : 'Missing backend credentials'
-            )
-          }
-        >
-          {deployerIdentity ? (
-            <div className="dash-role-setup">
-              <p>
-                Create an IAM role in the AWS account you want to connect, then paste the role ARN into the form. Open setup details for the deployer ARN, trust policy, and permissions policy.
-              </p>
-              <button className="dash-role-setup-open" onClick={() => setIsRoleSetupOpen(true)} type="button">
-                <Info size={16} />
-                View AWS role setup data
-              </button>
-            </div>
-          ) : (
+          {!deployerIdentity && !isLoadingIdentity && (
             <EmptyState>
               Production backend must have INFRAFLOW_APP_AWS_ACCESS_KEY_ID, INFRAFLOW_APP_AWS_SECRET_ACCESS_KEY, and AWS_REGION set before AWS accounts can connect.
             </EmptyState>
