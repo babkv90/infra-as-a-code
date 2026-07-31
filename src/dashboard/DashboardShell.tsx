@@ -407,7 +407,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
     <div className="dash-shell">
       <aside className="dash-sidebar">
         <a className="dash-brand" href="/">
-          <AppLogo className="app-logo--dashboard" />
+          <AppLogo className="app-logo--nav app-logo--dashboard" />
         </a>
         <div className="dash-sidebar-actions">
           <button aria-label="New Diagram" className="dash-new-button" onClick={() => goToDashboardPage('builder')} title="New Diagram">
@@ -566,6 +566,15 @@ function clearAppPipelineDeploymentRunning(id?: string) {
   writeRunningAppPipelineIds(readRunningAppPipelineIds().filter((runningId) => runningId !== id));
 }
 
+function syncAppPipelineDeploymentRunning(id: string, status: ApplicationDeploymentStatus) {
+  const runStatus = status.run?.status;
+  if (runStatus && LIVE_APP_RUN_STATUSES.has(runStatus)) {
+    markAppPipelineDeploymentRunning(id);
+  } else {
+    clearAppPipelineDeploymentRunning(id);
+  }
+}
+
 type LiveAppStatusRecord = {
   status?: ApplicationDeploymentStatus;
   error?: string;
@@ -614,11 +623,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
                 repo: repository.repo,
                 branch: pipeline.repository.branch || 'main',
               });
-              if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) {
-                markAppPipelineDeploymentRunning(pipeline._id);
-              } else if (status.run?.status === 'completed') {
-                clearAppPipelineDeploymentRunning(pipeline._id);
-              }
+              syncAppPipelineDeploymentRunning(pipeline._id, status);
               return [pipeline._id, { status, checkedAt: Date.now() }] as const;
             } catch (statusError) {
               return [
@@ -2855,11 +2860,11 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       .then((status) => {
         if (!isCurrent) return;
         setDeploymentStatus(status);
-        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
         setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .catch(() => {
+        clearAppPipelineDeploymentRunning(selectedPipeline._id);
         if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .finally(() => {
@@ -3216,6 +3221,8 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     try {
       const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
       if (status.run?.status !== 'completed') {
@@ -3244,8 +3251,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     try {
       const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
       setDeploymentStatus(status);
-      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
       setRunningPipelineIds(readRunningAppPipelineIds());
       if (!options.silent) setMessage('Deployment status refreshed.');
     } catch (statusError) {
@@ -3365,6 +3371,8 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
         branch: pipeline.repository.branch || 'main',
       });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(pipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       setIsDeploymentResultOpen(true);
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: pipeline._id } }));
@@ -4072,11 +4080,11 @@ function ApplicationPipelinePage() {
       .then((status) => {
         if (!isCurrent) return;
         setDeploymentStatus(status);
-        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
         setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .catch(() => {
+        clearAppPipelineDeploymentRunning(selectedPipeline._id);
         if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .finally(() => {
@@ -4473,6 +4481,8 @@ function ApplicationPipelinePage() {
     try {
       const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
       if (status.run?.status !== 'completed') {
@@ -4501,8 +4511,7 @@ function ApplicationPipelinePage() {
     try {
       const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
       setDeploymentStatus(status);
-      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
       setRunningPipelineIds(readRunningAppPipelineIds());
       if (!options.silent) setMessage('Deployment status refreshed.');
     } catch (statusError) {
@@ -6394,11 +6403,6 @@ function readFileAsText(file: File): Promise<{ name: string; content: string }> 
 }
 
 export default DashboardShell;
-
-
-
-
-
 
 
 

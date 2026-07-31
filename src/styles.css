@@ -5458,7 +5458,7 @@ button.lp-security-item {
 }
 
 .dash-brand {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 10px;
   justify-content: center;
@@ -5507,9 +5507,19 @@ button.lp-security-item {
   color: #67e8f9;
 }
 
+.dash-brand .app-logo--dashboard img {
+  width: 34px;
+  height: 34px;
+}
+
 .dash-shell--expanded .dash-brand .app-logo {
-  width: 120px;
-  height: 37px;
+  width: 152px;
+  height: 82px;
+}
+
+.dash-shell--expanded .dash-brand .app-logo--dashboard img {
+  width: 152px;
+  height: 82px;
 }
 
 .dash-new-button,
@@ -14466,8 +14476,11 @@ button.dash-kpi-card {
 .auth-brand {
   gap: 12px;
   margin-bottom: 28px;
+  width: max-content;
+  color: #e0f2fe;
   font-size: 17px;
   font-weight: 900;
+  text-decoration: none;
 }
 
 .auth-logo-mark {
@@ -14851,6 +14864,22 @@ button.dash-kpi-card {
   font-weight: 800;
 }
 
+.auth-field input[aria-invalid='true'] {
+  color: #fecaca;
+}
+
+.auth-field:has(input[aria-invalid='true']) div {
+  border-color: rgba(248, 113, 113, 0.56);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+}
+
+.auth-field-error {
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 .app-theme-dark .auth-field input {
   color: #ffffff;
   caret-color: #ffffff;
@@ -14863,6 +14892,7 @@ button.dash-kpi-card {
 .auth-consent {
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
   color: #cbd5e1;
   font-size: 13px;
@@ -14881,6 +14911,11 @@ button.dash-kpi-card {
 
 .auth-consent a:hover {
   color: #a5f3fc;
+}
+
+.auth-field-error--consent {
+  flex: 0 0 100%;
+  padding-left: 28px;
 }
 
 .auth-field input::selection {
@@ -15145,6 +15180,10 @@ button.dash-kpi-card {
   .auth-card-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .auth-submit {
+    width: 100%;
   }
 }
 
@@ -19550,6 +19589,11 @@ button.dash-kpi-card {
   .app-theme .dash-icon-button {
     width: var(--dash-touch-target);
     height: var(--dash-touch-target);
+  }
+
+  .app-theme .dash-shell--expanded .dash-brand .app-logo {
+    width: 152px;
+    height: 82px;
   }
 
   .app-theme .dash-topbar {
