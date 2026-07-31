@@ -11,7 +11,12 @@ import {
 import { buildResourceTimeline, type ResourceProgress } from '../../utils/deploymentResourceTimeline';
 
 const GITHUB_ACTIVE_RUN_STATUSES = ['queued', 'in_progress', 'waiting', 'requested', 'pending'];
-const GITHUB_POLL_MS = 3000;
+// 6s, not 3s: this polls two endpoints (run status + job logs) on top of everything else already
+// polling (deployment status, notifications, live-updates) — all sharing the same Lambda's reserved
+// concurrency. At 3s, this alone plus DeploymentModal's identical GitHub-log polling (when both are
+// open for the same deployment) was a real, confirmed contributor to hitting a concurrency limit of
+// 10 and getting throttled (503, no CloudWatch entry — the invocation never starts).
+const GITHUB_POLL_MS = 6000;
 
 // A failed first-time apply can trigger an automatic cleanup destroy behind the scenes (see
 // deploymentGuards.js) — deployment.status moves deploying -> failed -> destroying -> destroyed, all

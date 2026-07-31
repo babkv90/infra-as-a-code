@@ -27,7 +27,10 @@ type RunnerLog = DeploymentRecord['logs'][number];
 const STUCK_DEPLOYMENT_THRESHOLD_MS = 5 * 60 * 1000;
 const FORCE_DESTROY_ELIGIBLE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying'];
 const GITHUB_ACTIVE_RUN_STATUSES = ['queued', 'in_progress', 'waiting', 'requested', 'pending'];
-const GITHUB_LOG_POLL_MS = 3000;
+// 6s, not 3s — see the identical comment on GITHUB_POLL_MS in DeploymentLiveMonitor.tsx: this and
+// that component's polling both compete for the same Lambda's reserved concurrency (confirmed at 10)
+// alongside everything else already polling, and 3s was a real, confirmed contributor to throttling.
+const GITHUB_LOG_POLL_MS = 6000;
 
 type DeploymentModalProps = {
   nodes: AwsNode[];
