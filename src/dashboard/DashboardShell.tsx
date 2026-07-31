@@ -59,7 +59,7 @@ import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDem
 import { useDiagramStore } from '../store/diagramStore';
 import { normalizeTerraformFiles } from '../utils/importDiagram';
 import { DeploymentLiveMonitor } from './components/DeploymentLiveMonitor';
-import { EmptyState, Panel } from './components/DashPrimitives';
+import { EmptyState, Panel, TableSkeleton } from './components/DashPrimitives';
 import {
   createSavedDiagram,
   deleteSavedDiagram,
@@ -702,7 +702,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
           <header>
             <div>
               <span className="dash-eyebrow">Live deployments</span>
-              <strong>{activeCount ? `${activeCount} running` : 'No running deployments'}</strong>
+              {activeCount > 0 && <strong>{activeCount} running</strong>}
             </div>
             <div className="live-updates-panel__actions">
               <button aria-label="Refresh live updates" disabled={isLoading} onClick={() => void refreshLiveUpdates()} type="button">
@@ -2085,7 +2085,9 @@ function DiagramsPage() {
           <span>{diagrams.length} shown</span>
         </header>
         <div className="dash-deploy-table-wrap">
-          {diagrams.length ? (
+          {isLoading && !diagrams.length ? (
+            <TableSkeleton columnWidths={[3, 1, 2, 1, 1, 1]} />
+          ) : diagrams.length ? (
             <table className="dash-deploy-table">
               <thead>
                 <tr>
@@ -2415,7 +2417,9 @@ function DeploymentsPage({
             <span>{visibleDeployments.length} shown</span>
           </header>
           <div className="dash-deploy-table-wrap">
-            {visibleDeployments.length ? (
+            {isLoadingDeployments && !deploymentRecords.length ? (
+              <TableSkeleton columnWidths={[3, 1, 1, 1, 1, 1, 1]} />
+            ) : visibleDeployments.length ? (
               <table className="dash-deploy-table">
                 <thead>
                   <tr>

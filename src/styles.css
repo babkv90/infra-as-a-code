@@ -7140,6 +7140,75 @@ button.lp-security-item {
   text-align: center;
 }
 
+/* Facebook-style skeleton loader: the row shape is visible immediately, each cell shimmering
+   (gradient sweep) and pulsing (opacity "breathing") rather than the page showing nothing or a bare
+   "Loading..." string while a table's data is in flight. */
+.skeleton-table {
+  display: grid;
+  gap: 10px;
+}
+
+.skeleton-row {
+  display: grid;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.34);
+}
+
+.skeleton-cell {
+  display: block;
+  height: 13px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.14) 25%, rgba(148, 163, 184, 0.3) 50%, rgba(148, 163, 184, 0.14) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-breathe 1.7s ease-in-out infinite;
+}
+
+@keyframes skeleton-breathe {
+  0% {
+    opacity: 0.55;
+    background-position: 0% 50%;
+  }
+  50% {
+    opacity: 1;
+    background-position: 100% 50%;
+  }
+  100% {
+    opacity: 0.55;
+    background-position: 0% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-cell {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
+.app-theme-light .skeleton-row {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+
+.app-theme-light .skeleton-cell {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.08) 25%, rgba(15, 23, 42, 0.16) 50%, rgba(15, 23, 42, 0.08) 75%);
+  background-size: 200% 100%;
+}
+
+.app-theme-pearl .skeleton-row {
+  border-color: var(--pearl-border);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.app-theme-pearl .skeleton-cell {
+  background: linear-gradient(90deg, rgba(20, 33, 61, 0.08) 25%, rgba(20, 33, 61, 0.16) 50%, rgba(20, 33, 61, 0.08) 75%);
+  background-size: 200% 100%;
+}
+
 .dash-list-row,
 .dash-rec-list div,
 .dash-file-row,

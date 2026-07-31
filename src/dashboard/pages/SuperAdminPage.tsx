@@ -4,7 +4,7 @@ import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
 import { BacklogTab } from '../components/BacklogTab';
 import { ChangeLogTab } from '../components/ChangeLogTab';
-import { EmptyState, Panel } from '../components/DashPrimitives';
+import { EmptyState, Panel, TableSkeleton } from '../components/DashPrimitives';
 import { getSuperAdminOverview, grantSuperAdminCredits, updateSuperAdminUserRole, type SuperAdminOverview, type SuperAdminUser } from '../superAdminApi';
 
 const ADMIN_ROLE_OPTIONS = ['viewer', 'devops', 'architect', 'admin', 'owner', 'superadmin'];
@@ -250,6 +250,9 @@ export function SuperAdminPage() {
             </div>
           </header>
           <div className="admin-table-wrap">
+            {isLoading && !overview ? (
+              <TableSkeleton columnWidths={[2, 1, 1, 1, 1, 1, 1, 1]} />
+            ) : (
             <table className="admin-users-table">
               <thead>
                 <tr>
@@ -313,7 +316,8 @@ export function SuperAdminPage() {
                 ))}
               </tbody>
             </table>
-            {!filteredUsers.length && <EmptyState>No users match these filters.</EmptyState>}
+            )}
+            {!isLoading && !filteredUsers.length && <EmptyState>No users match these filters.</EmptyState>}
           </div>
         </section>
 
