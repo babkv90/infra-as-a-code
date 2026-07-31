@@ -11,6 +11,7 @@ import {
   GitBranch,
   KeyRound,
   LockKeyhole,
+  Menu,
   MousePointerClick,
   Moon,
   Network,
@@ -246,6 +247,8 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
 }
 
 function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   return (
     <header className="lp-nav">
       <a className="lp-logo" href="/">
@@ -272,7 +275,34 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
         <a className="lp-secondary-button lp-secondary-button--small" href={REGISTER_ROUTE}>
           Register
         </a>
+        <button
+          aria-expanded={isMobileMenuOpen}
+          aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+          className="lp-nav-hamburger"
+          onClick={() => setIsMobileMenuOpen((open) => !open)}
+        >
+          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
       </div>
+      {isMobileMenuOpen && (
+        <div className="lp-mobile-menu">
+          <nav className="lp-mobile-menu__links">
+            {navItems.map((item) => (
+              <a href={navHref(item)} key={item} onClick={() => setIsMobileMenuOpen(false)}>
+                {item}
+              </a>
+            ))}
+          </nav>
+          <div className="lp-mobile-menu__actions">
+            <a className="lp-link-button" href={LOGIN_ROUTE}>
+              Login
+            </a>
+            <a className="lp-secondary-button lp-secondary-button--small" href={REGISTER_ROUTE}>
+              Register
+            </a>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
