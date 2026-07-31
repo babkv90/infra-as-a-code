@@ -8,6 +8,8 @@ import {
   destroyDeployment,
   forceDestroyDeployment,
   getDeployment,
+  getDeploymentGithubRun,
+  getDeploymentGithubRunJobLogs,
   listDeployments,
   mergeDeploymentFromCanvas,
   mergeDeploymentSchema,
@@ -42,6 +44,8 @@ deploymentRouter.use(requireAuth);
 deploymentRouter.get('/', listDeployments);
 deploymentRouter.post('/lambda-zip', authorize(roles.DEVOPS), lambdaZipUpload('zip'), uploadLambdaZip);
 deploymentRouter.get('/:id', getDeployment);
+deploymentRouter.get('/:id/github-run', getDeploymentGithubRun);
+deploymentRouter.get('/:id/github-run/jobs/:jobId/logs', getDeploymentGithubRunJobLogs);
 deploymentRouter.post('/from-canvas', authorize(roles.DEVOPS), validateRequest(createCanvasDeploymentSchema), createDeploymentFromCanvas);
 deploymentRouter.post('/from-diagram/:diagramId', authorize(roles.DEVOPS), validateRequest(createDeploymentSchema), createDeploymentFromDiagram);
 deploymentRouter.post('/:id/apply', authorize(roles.DEVOPS), applyDeployment);

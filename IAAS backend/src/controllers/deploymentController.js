@@ -16,6 +16,7 @@ import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
 import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
+import { getWorkflowRun, getWorkflowJobLogsText, githubWorkflowRunJobs } from '../services/githubActionsClient.js';
 
 // runTerraformDeployment/runTerraformDestroy resolve differently depending on executor:
 // github-actions now only dispatches and returns (fast — see githubTerraformRunner.js's top comment
@@ -596,6 +597,60 @@ export const getDeployment = asyncHandler(async (req, res) => {
   const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name activeRegion nodes edges');
   if (!deployment) throw new ApiError(404, 'Deployment not found');
   res.json({ success: true, data: deployment });
+});
+
+// Which GitHub Actions run currently matters for this deployment, across every stage the
+// github-actions executor moves it through: pendingValidation.runId while a Layer-2 `validate` run
+// is in flight (§6.2), activeRun.githubRunId once a real apply/destroy is dispatched, falling back
+// to the last known finished run (githubRun.runId) once nothing is active anymore.
+function currentGithubRunId(deployment) {
+  return deployment.activeRun?.githubRunId || deployment.pendingValidation?.runId || deployment.githubRun?.runId || '';
+}
+
+export const getDeploymentGithubRun = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (deployment.executor !== 'github-actions') {
+    res.json({ success: true, data: { supported: false, run: null, jobs: [] } });
+    return;
+  }
+
+  const runId = currentGithubRunId(deployment);
+  if (!runId) {
+    res.json({ success: true, data: { supported: true, run: null, jobs: [] } });
+    return;
+  }
+  if (!env.DEPLOYMENT_GITHUB_TOKEN) throw new ApiError(409, 'DEPLOYMENT_GITHUB_TOKEN is not configured on the backend.');
+
+  const [run, jobs] = await Promise.all([
+    getWorkflowRun({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
+    githubWorkflowRunJobs({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
+  ]);
+
+  res.json({ success: true, data: { supported: true, run, jobs } });
+});
+
+// The deploy-runner repo (and its GitHub Actions run/job IDs) is shared across every workspace's
+// deployments — job IDs are not inherently scoped per tenant the way everything else in this app is.
+// So req.params.jobId is never trusted directly: it's only fetched after confirming it's actually one
+// of the jobs on THIS deployment's own run (already workspace-scoped by the query above), closing off
+// a cross-tenant path where one workspace could read another's Terraform run logs by guessing/
+// enumerating job IDs.
+export const getDeploymentGithubRunJobLogs = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (deployment.executor !== 'github-actions') throw new ApiError(409, 'This deployment does not run on the GitHub Actions executor.');
+
+  const runId = currentGithubRunId(deployment);
+  if (!runId) throw new ApiError(404, 'No GitHub Actions run associated with this deployment yet.');
+  if (!env.DEPLOYMENT_GITHUB_TOKEN) throw new ApiError(409, 'DEPLOYMENT_GITHUB_TOKEN is not configured on the backend.');
+
+  const jobs = await githubWorkflowRunJobs({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId });
+  const job = jobs.find((candidate) => String(candidate.id) === String(req.params.jobId));
+  if (!job) throw new ApiError(404, "That job does not belong to this deployment's run.");
+
+  const text = await getWorkflowJobLogsText({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, jobId: job.id });
+  res.json({ success: true, data: { text } });
 });
 
 // Renaming is just a label change — it never touches the diagram, Terraform config, or AWS

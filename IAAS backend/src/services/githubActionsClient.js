@@ -383,6 +383,21 @@ export async function githubWorkflowRunJobs({ token, owner, repo, runId }) {
   }));
 }
 
+// Raw text logs for a single job — GitHub responds 302 to a short-lived signed URL serving plain
+// text (works while the job is still running, not just after it finishes); fetch follows redirects
+// by default, so this returns the actual log content, not the redirect itself.
+export async function getWorkflowJobLogsText({ token, owner, repo, jobId }) {
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${encodeURIComponent(jobId)}/logs`,
+    { headers: githubApiHeaders(token) },
+  );
+  if (!response.ok) {
+    const result = await response.json().catch(async () => ({ message: await response.text() }));
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read job logs.'));
+  }
+  return response.text();
+}
+
 export function normalizeGithubWorkflowRun(run) {
   return {
     id: run.id,
