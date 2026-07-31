@@ -77,6 +77,14 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const [isLoadingGithubJobLog, setIsLoadingGithubJobLog] = useState(false);
   const [followGithubJobLog, setFollowGithubJobLog] = useState(true);
   const githubJobLogRef = useRef<HTMLPreElement | null>(null);
+  // Captured once, at load, from the deployment's status *before* this session's edits touch it —
+  // queuedDeployment.status itself moves on (queued -> deploying -> deployed/failed/destroyed again
+  // as a redeploy runs), so it can't be used directly to tell "was this destroyed when I opened it."
+  // Only meaningfully differs from a normal update when it's 'destroyed': Terraform is creating
+  // everything fresh against an empty state, not diffing against something currently running, and
+  // the UI copy below says so instead of the (here, false) "already-deployed" framing.
+  const [updateOriginStatus, setUpdateOriginStatus] = useState<DeploymentRecord['status']>();
+  const isRedeployFromDestroyed = isUpdateMode && updateOriginStatus === 'destroyed';
   const elapsedRunningMs = queuedDeployment?.startedAt ? Math.max(0, Date.now() - new Date(queuedDeployment.startedAt).getTime()) : 0;
   const isTakingUnusuallyLong =
     deploymentStatus === 'running' && Boolean(queuedDeployment) && FORCE_DESTROY_ELIGIBLE_STATUSES.includes(queuedDeployment!.status) && elapsedRunningMs >= STUCK_DEPLOYMENT_THRESHOLD_MS;
@@ -177,6 +185,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
       .then((deployment) => {
         if (!isMounted) return;
         setQueuedDeployment(deployment);
+        setUpdateOriginStatus(deployment.status);
         if (deployment.awsAccount) setSelectedAccountId(deployment.awsAccount);
         if (['queued', 'deploying'].includes(deployment.status)) watchDeployment(deployment._id);
       })
@@ -440,7 +449,15 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     <section className="deployment-page">
       <header className="deployment-modal__header">
         <div>
-          <span>{isMergeMode ? 'Merge into deployed infrastructure' : isUpdateMode ? 'Update deployed infrastructure' : 'Deploy drawn infrastructure'}</span>
+          <span>
+            {isMergeMode
+              ? 'Merge into deployed infrastructure'
+              : isRedeployFromDestroyed
+                ? 'Redeploy destroyed infrastructure'
+                : isUpdateMode
+                  ? 'Update deployed infrastructure'
+                  : 'Deploy drawn infrastructure'}
+          </span>
           <h3>{queuedDeployment?.name ?? plan.name}</h3>
         </div>
         <div className="deployment-modal__header-actions">
@@ -487,20 +504,26 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
               {deploymentStatus === 'running'
                 ? isMergeMode
                   ? 'Merging...'
-                  : isUpdateMode
-                    ? 'Updating...'
-                    : 'Deploying...'
+                  : isRedeployFromDestroyed
+                    ? 'Redeploying...'
+                    : isUpdateMode
+                      ? 'Updating...'
+                      : 'Deploying...'
                 : deploymentStatus === 'success'
                   ? isMergeMode
                     ? 'Merged'
-                    : isUpdateMode
-                      ? 'Updated'
-                      : 'Deployed'
+                    : isRedeployFromDestroyed
+                      ? 'Redeployed'
+                      : isUpdateMode
+                        ? 'Updated'
+                        : 'Deployed'
                   : isMergeMode
                     ? 'Merge Infrastructure'
-                    : isUpdateMode
-                      ? 'Update Infrastructure'
-                      : 'Deploy to AWS'}
+                    : isRedeployFromDestroyed
+                      ? 'Redeploy Infrastructure'
+                      : isUpdateMode
+                        ? 'Update Infrastructure'
+                        : 'Deploy to AWS'}
             </button>
           </div>
           <button className="text-button" onClick={onClose} type="button">
@@ -521,8 +544,12 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
       )}
       {isUpdateMode && (
         <div className="deployment-update-banner">
-          Editing an already-deployed infrastructure. Deploying now will run Terraform against the resources already in AWS and apply only
-          the differences from your edits — it will not recreate everything from scratch.
+          {isRedeployFromDestroyed ? (
+            <>This infrastructure was previously destroyed — nothing from it is currently running. Deploying now will recreate everything fresh from this (possibly edited) diagram, the same as a first-time deploy.</>
+          ) : (
+            <>Editing an already-deployed infrastructure. Deploying now will run Terraform against the resources already in AWS and apply only
+            the differences from your edits — it will not recreate everything from scratch.</>
+          )}
         </div>
       )}
 

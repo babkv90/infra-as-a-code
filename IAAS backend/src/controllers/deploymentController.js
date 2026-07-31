@@ -320,8 +320,17 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   if (['queued', 'deploying', 'destroying'].includes(deployment.status)) {
     throw new ApiError(409, 'This deployment is already running. Wait for it to finish before updating it.');
   }
-  if (!['deployed', 'failed'].includes(deployment.status)) {
-    throw new ApiError(409, 'Only deployed (or previously failed) infrastructure can be updated.');
+  // 'destroyed' is allowed alongside 'deployed'/'failed': Terraform apply against an empty state
+  // (which is exactly what a destroyed deployment's state is) just creates everything fresh — the
+  // same operation as a first deploy, expressed through the same diff-based update path rather than
+  // a separate "redeploy" endpoint. The one real tradeoff: auto-destroy-on-failure is intentionally
+  // skipped for updates (deploymentGuards.js — "must not tear down infrastructure that was working
+  // before"), which doesn't quite apply here since nothing was running beforehand, but there's also
+  // nothing pre-existing an auto-cleanup could wrongly destroy — worst case, a failed redeploy
+  // attempt leaves partially-created resources for another update attempt or a manual destroy to
+  // clean up, same as any other failed update would.
+  if (!['deployed', 'failed', 'destroyed'].includes(deployment.status)) {
+    throw new ApiError(409, 'Only deployed, previously failed, or destroyed infrastructure can be updated.');
   }
   if (!deployment.diagram) throw new ApiError(409, 'Deployment has no linked diagram to update.');
 

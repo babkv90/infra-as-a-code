@@ -2496,15 +2496,19 @@ function DeploymentsPage({
                             {deployment.status !== 'draft' && (
                               <button
                                 className="dash-secondary-action"
-                                disabled={!['deployed', 'failed'].includes(deployment.status)}
+                                disabled={!['deployed', 'failed', 'destroyed'].includes(deployment.status)}
                                 onClick={() => {
                                   window.location.href = `/dashboard?view=builder&updateDeployment=${encodeURIComponent(deployment._id)}`;
                                 }}
-                                title="Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                                title={
+                                  deployment.status === 'destroyed'
+                                    ? "Edit this deployment's diagram and redeploy it — Terraform recreates everything fresh, since nothing from it is currently running."
+                                    : "Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                                }
                                 type="button"
                               >
                                 <PencilLine size={15} />
-                                Update
+                                {deployment.status === 'destroyed' ? 'Redeploy' : 'Update'}
                               </button>
                             )}
                             {MERGE_SOURCE_ELIGIBLE_STATUSES.includes(deployment.status) && (
