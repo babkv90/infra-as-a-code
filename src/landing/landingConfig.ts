@@ -82,18 +82,18 @@ export const problemCards: IconItem[] = [
 export const solutionCards: IconItem[] = [
   {
     title: 'Visual AWS architecture builder',
-    description: 'Model AWS infrastructure with nodes, connections, groups, labels, editable properties, and validation before deploy.',
+    description: 'Model AWS infrastructure with 44 supported resource types, nodes, connections, groups, labels, editable properties, and validation before deploy.',
     icon: Workflow,
   },
   {
-    title: 'Terraform generated from diagrams',
-    description: 'Generate reviewable Terraform for supported AWS services, export it, copy it, or use the built-in deployment flow.',
+    title: 'Terraform generated and safely executed',
+    description: 'Generate reviewable Terraform for supported AWS services, then apply it through an isolated execution pipeline with remote state locking — a deploy in progress never gets lost mid-run.',
     icon: Code2,
   },
   {
-    title: 'AWS insight workspace',
-    description: 'Connect an AWS role to sync cost, inventory, CloudWatch, CloudTrail, IAM, and resource signals in one dashboard.',
-    icon: BrainCircuit,
+    title: 'CI/CD pipelines for your own app',
+    description: 'Generate a GitHub Actions workflow, Dockerfile, and a least-privilege AWS deploy role for your application repository — authenticated with short-lived OIDC tokens, never a stored AWS key.',
+    icon: GitBranch,
   },
 ];
 
@@ -124,7 +124,7 @@ export const aiBullets = [
   'Cost Explorer summaries',
   'AWS resource inventory',
   'CloudWatch and Lambda signals',
-  'Cost optimization suggestions',
+  'Daily and monthly spend trends',
   'IAM account visibility',
   'Unused resource discovery',
   'CloudTrail recent events',
@@ -133,9 +133,16 @@ export const aiBullets = [
 ];
 
 // Change the Terraform preview code here.
-export const terraformPreview = `resource "aws_lambda_function" "order_processor" {
+export const terraformPreview = `provider "aws" {
+  region = "ap-south-1"
+  default_tags {
+    tags = { ManagedBy = "infraflow" }
+  }
+}
+
+resource "aws_lambda_function" "order_processor" {
   function_name = "order-processor"
-  runtime       = "dotnet8"
+  runtime       = "nodejs20.x"
   memory_size   = 512
   timeout       = 30
 }
@@ -151,7 +158,7 @@ export const useCases = [
   'DevOps deployment workflows',
   'Terraform generation and review',
   'Cloud cost visibility',
-  'Infrastructure documentation',
+  'CI/CD pipeline generation for your app',
   'Workspace-scoped AWS operations',
   'Platform engineering enablement',
 ];
@@ -161,7 +168,7 @@ export const securityItems = [
   'IAM role-based access',
   'Least-privilege role guidance',
   'No hardcoded AWS keys',
-  'Secrets-aware configuration',
+  'GitHub OIDC deploy roles — zero long-lived AWS keys',
   'Terraform review before deployment',
   'Audit logs',
   'Role-based dashboard access',
@@ -180,7 +187,7 @@ export const pricingPlans = [
     name: 'Pro',
     price: '$29',
     description: 'For builders connecting real AWS accounts.',
-    features: ['Unlimited diagrams', 'AWS account connection', 'AI agent', 'Billing insights', 'Terraform export', 'Resource monitoring'],
+    features: ['Unlimited diagrams', 'AWS account connection', 'AI agent', 'Billing insights', 'Terraform export', 'CI/CD pipeline generation', 'Resource monitoring'],
     cta: 'Upgrade to Pro',
     featured: true,
   },
@@ -194,7 +201,7 @@ export const pricingPlans = [
 ];
 
 export const footerColumns = {
-  Product: ['Visual Builder', 'AWS Insights', 'Terraform Export', 'Deployments'],
+  Product: ['Visual Builder', 'AWS Insights', 'Terraform Export', 'CI/CD Pipelines', 'Deployments'],
   Resources: ['Workflow', 'AWS Connection', 'Terraform Guide', 'Support'],
   Company: ['About Developer', /* 'Pricing', */ 'Contact'],
   Legal: ['Privacy Policy', 'Terms of Service', 'Security'],
