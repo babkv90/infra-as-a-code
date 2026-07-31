@@ -233,7 +233,13 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     await createNotification({
       workspace: deployment.workspace,
       type: 'destroy',
-      status: 'success',
+      // Mirrors deployment.status above (auto -> 'failed', not 'destroyed') rather than hardcoding
+      // 'success' — an auto-cleanup notification is genuinely good news ("nothing is left orphaned
+      // and billing"), but the deployment record itself is still 'failed', and a green checkmark
+      // here previously contradicted the red "Failed" the Deployments page shows for the same
+      // record. 'failed' renders the warning-triangle icon instead, distinguished from "Destroy
+      // failed" purely by this title/message still describing a successful cleanup.
+      status: auto ? 'failed' : 'success',
       title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
       message: auto
         ? 'The deployment failed partway through. Resources it had already created in AWS were automatically destroyed, so nothing is left running or billing.'

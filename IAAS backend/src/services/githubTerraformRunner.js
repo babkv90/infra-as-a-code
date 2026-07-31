@@ -182,7 +182,11 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
   await createNotification({
     workspace: deployment.workspace,
     type: 'destroy',
-    status: 'success',
+    // Mirrors deployment.status above (auto -> 'failed', not 'destroyed') rather than hardcoding
+    // 'success' — see terraformDeploymentRunner.js's identical fix for the full reasoning: a green
+    // checkmark on an auto-cleanup notification previously contradicted the red "Failed" the
+    // Deployments page shows for the same record.
+    status: auto ? 'failed' : 'success',
     title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
     message: auto
       ? 'The deployment failed partway through. Resources it had already created in AWS were automatically destroyed, so nothing is left running or billing.'
