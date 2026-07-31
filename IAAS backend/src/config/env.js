@@ -68,7 +68,7 @@ export const env = {
   MONGODB_URI: readString('MONGODB_URI'),
   JWT_ACCESS_SECRET: readString('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
   JWT_REFRESH_SECRET: readString('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
-  JWT_ACCESS_EXPIRES_IN: readString('JWT_ACCESS_EXPIRES_IN', '15m'),
+  JWT_ACCESS_EXPIRES_IN: readString('JWT_ACCESS_EXPIRES_IN', '6h'),
   JWT_REFRESH_EXPIRES_IN: readString('JWT_REFRESH_EXPIRES_IN', '7d'),
   CLIENT_ORIGINS: readMergedList(
     ['CLIENT_ORIGIN', 'CLIENT_ORIGINS'],
