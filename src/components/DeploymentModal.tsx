@@ -216,16 +216,20 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   }, [queuedDeployment?._id, queuedDeployment?.status]);
 
   const isGithubExecutor = queuedDeployment?.executor === 'github-actions';
-  const isGithubRunActive = Boolean(
-    queuedDeployment && ['validating', 'queued', 'deploying', 'destroying'].includes(queuedDeployment.status),
-  );
 
   // Mirrors DeploymentLiveMonitor's live-log polling (same endpoints, same cadence) so this page's
   // "Terraform runner logs" panel can show the same real GitHub Actions run/job/step status and
   // streaming log text, not just the backend's own summarized log lines — kept as its own copy here
   // rather than a shared hook so this addition can't regress the already-verified floating monitor.
+  //
+  // Deliberately NOT gated on deployment.status being "active" (queued/deploying/destroying/...) —
+  // an earlier version of this effect was, and it meant a deployment that had *already* finished
+  // (e.g. 'destroyed') by the time this page loaded never fetched even once: githubStatus stayed
+  // undefined forever, and the panel showed "Waiting for GitHub to report this run..." permanently
+  // for a run that was, in fact, long since reported. Always fetch at least once; only stop
+  // re-polling once the *fetched run itself* (not the deployment's own status) is terminal.
   useEffect(() => {
-    if (!isGithubExecutor || !isGithubRunActive || !queuedDeployment?._id) return;
+    if (!isGithubExecutor || !queuedDeployment?._id) return;
     let isMounted = true;
     const deploymentId = queuedDeployment._id;
 
@@ -247,12 +251,16 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     }
 
     void poll();
+    const isRunTerminal = githubStatus?.run && !GITHUB_ACTIVE_RUN_STATUSES.includes(githubStatus.run.status);
+    if (isRunTerminal) return () => { isMounted = false; };
+
     const timer = window.setInterval(() => void poll(), GITHUB_LOG_POLL_MS);
     return () => {
       isMounted = false;
       window.clearInterval(timer);
     };
-  }, [isGithubExecutor, isGithubRunActive, queuedDeployment?._id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGithubExecutor, queuedDeployment?._id, githubStatus?.run?.status]);
 
   useEffect(() => {
     if (!isGithubExecutor || !queuedDeployment?._id || !selectedGithubJobId) return;
