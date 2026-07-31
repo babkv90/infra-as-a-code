@@ -17,6 +17,7 @@ import { runTerraformDeployment, runTerraformDestroy } from '../services/deploym
 import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 import { getWorkflowRun, getWorkflowJobLogsText, githubWorkflowRunJobs } from '../services/githubActionsClient.js';
+import { finishRun } from '../services/githubTerraformRunner.js';
 
 // runTerraformDeployment/runTerraformDestroy resolve differently depending on executor:
 // github-actions now only dispatches and returns (fast — see githubTerraformRunner.js's top comment
@@ -626,6 +627,35 @@ export const getDeploymentGithubRun = asyncHandler(async (req, res) => {
     getWorkflowRun({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
     githubWorkflowRunJobs({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
   ]);
+
+  // Self-heal a confirmed-real gap: terraform-deploy.yml's own "Report result to Infraflow" step is
+  // the primary way a run's outcome reaches us, but if that POST is ever lost (dropped, a stale-run
+  // mismatch from a second dispatch superseding this one, a transient network failure on GitHub's
+  // runner), the deployment can sit in 'destroying' forever even though the destroy genuinely
+  // finished on GitHub's side — this endpoint gets polled while that panel is open, so it's a natural
+  // place to notice and correct that. Re-fetches immediately before writing (not the `deployment`
+  // read above, which is now stale by however long the two GitHub API calls just took) and re-checks
+  // every condition against that fresh copy, to keep the race with a real, concurrently-arriving
+  // callback as narrow as possible. Scoped to destroy only, not apply: a destroy's outcome needs
+  // nothing from `run` beyond its conclusion, whereas reconciling a stuck apply would also need
+  // `outputs`, which this API doesn't expose — a larger, separate piece of work.
+  if (run?.status === 'completed') {
+    const fresh = await Deployment.findById(deployment._id);
+    if (fresh?.status === 'destroying' && String(fresh.activeRun?.githubRunId ?? '') === String(runId)) {
+      await finishRun(fresh, {
+        action: 'destroy',
+        isUpdate: Boolean(fresh.activeRun?.isUpdate),
+        auto: Boolean(fresh.activeRun?.auto),
+        runId,
+        result: run.conclusion === 'success'
+          ? { outcome: 'success', outputs: {} }
+          : {
+              outcome: 'failure',
+              failureMessage: `Terraform destroy did not complete successfully on GitHub Actions (run conclusion: ${run.conclusion}). Reconciled from the run's own status after its callback didn't arrive — check ${run.htmlUrl} for what happened.`,
+            },
+      });
+    }
+  }
 
   res.json({ success: true, data: { supported: true, run, jobs } });
 });

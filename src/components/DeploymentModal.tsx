@@ -1,11 +1,21 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, Download, Eye, Rocket, Save, ShieldAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Circle, Copy, Download, ExternalLink, Eye, Loader2, Rocket, ScrollText, Save, ShieldAlert, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { createDeploymentPlan } from '../utils/deploymentPlan';
 import { useDeploymentMonitorStore } from '../store/deploymentMonitorStore';
-import { createCanvasDeployment, forceDestroyDeployment, getDeployment, mergeDeployment, updateDeployment, type DeploymentRecord } from '../utils/deploymentApi';
+import {
+  createCanvasDeployment,
+  forceDestroyDeployment,
+  getDeployment,
+  getDeploymentGithubRun,
+  getDeploymentGithubRunJobLogs,
+  mergeDeployment,
+  updateDeployment,
+  type DeploymentRecord,
+  type GithubRunStatus,
+} from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
@@ -16,6 +26,8 @@ type DeploymentStatus = 'idle' | 'running' | 'success' | 'error' | 'destroyed';
 type RunnerLog = DeploymentRecord['logs'][number];
 const STUCK_DEPLOYMENT_THRESHOLD_MS = 5 * 60 * 1000;
 const FORCE_DESTROY_ELIGIBLE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying'];
+const GITHUB_ACTIVE_RUN_STATUSES = ['queued', 'in_progress', 'waiting', 'requested', 'pending'];
+const GITHUB_LOG_POLL_MS = 3000;
 
 type DeploymentModalProps = {
   nodes: AwsNode[];
@@ -57,6 +69,14 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const [isConfirmingForceDestroy, setIsConfirmingForceDestroy] = useState(false);
   const [isForceDestroying, setIsForceDestroying] = useState(false);
   const [forceDestroyError, setForceDestroyError] = useState('');
+  const [githubStatus, setGithubStatus] = useState<GithubRunStatus>();
+  const [githubStatusError, setGithubStatusError] = useState('');
+  const [selectedGithubJobId, setSelectedGithubJobId] = useState<number>();
+  const [githubJobLogText, setGithubJobLogText] = useState('');
+  const [githubJobLogError, setGithubJobLogError] = useState('');
+  const [isLoadingGithubJobLog, setIsLoadingGithubJobLog] = useState(false);
+  const [followGithubJobLog, setFollowGithubJobLog] = useState(true);
+  const githubJobLogRef = useRef<HTMLPreElement | null>(null);
   const elapsedRunningMs = queuedDeployment?.startedAt ? Math.max(0, Date.now() - new Date(queuedDeployment.startedAt).getTime()) : 0;
   const isTakingUnusuallyLong =
     deploymentStatus === 'running' && Boolean(queuedDeployment) && FORCE_DESTROY_ELIGIBLE_STATUSES.includes(queuedDeployment!.status) && elapsedRunningMs >= STUCK_DEPLOYMENT_THRESHOLD_MS;
@@ -194,6 +214,89 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
 
     return () => window.clearInterval(timer);
   }, [queuedDeployment?._id, queuedDeployment?.status]);
+
+  const isGithubExecutor = queuedDeployment?.executor === 'github-actions';
+  const isGithubRunActive = Boolean(
+    queuedDeployment && ['validating', 'queued', 'deploying', 'destroying'].includes(queuedDeployment.status),
+  );
+
+  // Mirrors DeploymentLiveMonitor's live-log polling (same endpoints, same cadence) so this page's
+  // "Terraform runner logs" panel can show the same real GitHub Actions run/job/step status and
+  // streaming log text, not just the backend's own summarized log lines — kept as its own copy here
+  // rather than a shared hook so this addition can't regress the already-verified floating monitor.
+  useEffect(() => {
+    if (!isGithubExecutor || !isGithubRunActive || !queuedDeployment?._id) return;
+    let isMounted = true;
+    const deploymentId = queuedDeployment._id;
+
+    async function poll() {
+      try {
+        const status = await getDeploymentGithubRun(deploymentId);
+        if (!isMounted) return;
+        setGithubStatus(status);
+        setGithubStatusError('');
+        setSelectedGithubJobId((current) => {
+          if (current && status.jobs.some((job) => job.id === current)) return current;
+          const active = status.jobs.find((job) => GITHUB_ACTIVE_RUN_STATUSES.includes(job.status));
+          return active?.id ?? status.jobs[status.jobs.length - 1]?.id;
+        });
+      } catch (error) {
+        if (!isMounted) return;
+        setGithubStatusError(error instanceof Error ? error.message : 'Could not load GitHub Actions status.');
+      }
+    }
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), GITHUB_LOG_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+  }, [isGithubExecutor, isGithubRunActive, queuedDeployment?._id]);
+
+  useEffect(() => {
+    if (!isGithubExecutor || !queuedDeployment?._id || !selectedGithubJobId) return;
+    let isMounted = true;
+    const deploymentId = queuedDeployment._id;
+    const jobId = selectedGithubJobId;
+
+    async function fetchLogs() {
+      setIsLoadingGithubJobLog(true);
+      try {
+        const result = await getDeploymentGithubRunJobLogs(deploymentId, jobId);
+        if (!isMounted) return;
+        setGithubJobLogText(result.text);
+        setGithubJobLogError('');
+      } catch (error) {
+        if (!isMounted) return;
+        setGithubJobLogError(error instanceof Error ? error.message : 'Logs for this job are not available yet.');
+      } finally {
+        if (isMounted) setIsLoadingGithubJobLog(false);
+      }
+    }
+
+    void fetchLogs();
+    const job = githubStatus?.jobs.find((candidate) => candidate.id === jobId);
+    const isJobActive = !job || GITHUB_ACTIVE_RUN_STATUSES.includes(job.status);
+    if (!isJobActive) return () => { isMounted = false; };
+
+    const timer = window.setInterval(() => void fetchLogs(), GITHUB_LOG_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+  }, [isGithubExecutor, queuedDeployment?._id, selectedGithubJobId, githubStatus?.jobs]);
+
+  useEffect(() => {
+    if (!followGithubJobLog || !githubJobLogRef.current) return;
+    githubJobLogRef.current.scrollTop = githubJobLogRef.current.scrollHeight;
+  }, [githubJobLogText, followGithubJobLog]);
+
+  function handleGithubJobLogScroll() {
+    const el = githubJobLogRef.current;
+    if (!el) return;
+    setFollowGithubJobLog(el.scrollHeight - el.scrollTop - el.clientHeight < 20);
+  }
 
   async function confirmForceDestroy() {
     if (!queuedDeployment?._id) return;
@@ -466,7 +569,93 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
       <div className="deployment-page__body">
         <section className="deployment-panel deployment-log-panel deployment-log-panel--primary">
           <div className="deployment-panel__title">Terraform runner logs</div>
-          {runnerLogs.length ? (
+          {isGithubExecutor ? (
+            <div className="deployment-log-panel__split">
+              {runnerLogs.length ? (
+                <div className="deployment-log-list">
+                  {runnerLogs.map((log, index) => (
+                    <div className={`deployment-log-line deployment-log-line--${deploymentLogLevel(log)}`} key={`${log.at ?? index}-${log.message}`}>
+                      <span>{deploymentLogLevel(log)}</span>
+                      <p>{log.message}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="deployment-log-empty">
+                  This area will show Terraform init, plan, and apply output after deployment starts.
+                </div>
+              )}
+
+              <div className="deployment-github-log">
+                <div className="deployment-github-log__header">
+                  <ScrollText size={14} />
+                  <span>GitHub Actions live log</span>
+                  {githubStatus?.run && (
+                    <a href={githubStatus.run.htmlUrl} target="_blank" rel="noreferrer" title="Open this run on GitHub">
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
+
+                {githubStatusError && <p className="deployment-github-log__error">{githubStatusError}</p>}
+
+                {!githubStatus?.run && !githubStatusError && (
+                  <div className="deployment-github-log__waiting">
+                    <Loader2 size={13} className="deployment-github-log__glyph deployment-github-log__glyph--active" />
+                    Waiting for GitHub to report this run…
+                  </div>
+                )}
+
+                {githubStatus?.run && (
+                  <div className="deployment-github-log__run">
+                    <RunGlyph status={githubStatus.run.status} conclusion={githubStatus.run.conclusion} />
+                    <span>Run #{githubStatus.run.runNumber} · {runGlyphLabel(githubStatus.run.status, githubStatus.run.conclusion)}</span>
+                  </div>
+                )}
+
+                {githubStatus && githubStatus.jobs.length > 1 && (
+                  <div className="deployment-github-log__jobs">
+                    {githubStatus.jobs.map((job) => (
+                      <button
+                        className={`deployment-github-log__job${job.id === selectedGithubJobId ? ' deployment-github-log__job--active' : ''}`}
+                        key={job.id}
+                        onClick={() => setSelectedGithubJobId(job.id)}
+                        type="button"
+                      >
+                        <RunGlyph status={job.status} conclusion={job.conclusion} small />
+                        {job.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {githubStatus?.jobs.find((job) => job.id === selectedGithubJobId)?.steps.map((step) => (
+                  <div className="deployment-github-log__step" key={step.number}>
+                    <RunGlyph status={step.status} conclusion={step.conclusion} small />
+                    <span>{step.name}</span>
+                  </div>
+                ))}
+
+                {githubJobLogError && <p className="deployment-github-log__error">{githubJobLogError}</p>}
+
+                <pre className="deployment-github-log__pane" onScroll={handleGithubJobLogScroll} ref={githubJobLogRef}>
+                  {githubJobLogText || (isLoadingGithubJobLog ? 'Loading logs…' : 'No log output yet.')}
+                </pre>
+                {!followGithubJobLog && (
+                  <button
+                    className="deployment-github-log__jump"
+                    onClick={() => {
+                      setFollowGithubJobLog(true);
+                      if (githubJobLogRef.current) githubJobLogRef.current.scrollTop = githubJobLogRef.current.scrollHeight;
+                    }}
+                    type="button"
+                  >
+                    Jump to latest
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : runnerLogs.length ? (
             <div className="deployment-log-list">
               {runnerLogs.map((log, index) => (
                 <div className={`deployment-log-line deployment-log-line--${deploymentLogLevel(log)}`} key={`${log.at ?? index}-${log.message}`}>
@@ -585,6 +774,29 @@ function deploymentLogLevel(log: RunnerLog): 'error' | 'warning' | 'info' {
   if (level.includes('error') || message.includes('error:') || message.includes('accessdenied') || message.includes('unauthorizedoperation') || message.includes('failed')) return 'error';
   if (level.includes('warn')) return 'warning';
   return 'info';
+}
+
+function RunGlyph({ status, conclusion, small }: { status: string; conclusion: string | null; small?: boolean }) {
+  const size = small ? 13 : 15;
+  if (status === 'completed') {
+    if (conclusion === 'success') return <CheckCircle2 className="deployment-github-log__glyph deployment-github-log__glyph--success" size={size} />;
+    if (conclusion === 'skipped') return <Circle className="deployment-github-log__glyph deployment-github-log__glyph--muted" size={size} />;
+    return <XCircle className="deployment-github-log__glyph deployment-github-log__glyph--error" size={size} />;
+  }
+  if (status === 'in_progress') return <Loader2 className="deployment-github-log__glyph deployment-github-log__glyph--active spin" size={size} />;
+  return <Circle className="deployment-github-log__glyph deployment-github-log__glyph--muted" size={size} />;
+}
+
+function runGlyphLabel(status: string, conclusion: string | null) {
+  if (status === 'completed') {
+    if (conclusion === 'success') return 'Succeeded';
+    if (conclusion === 'cancelled') return 'Cancelled';
+    if (conclusion === 'skipped') return 'Skipped';
+    return 'Failed';
+  }
+  if (status === 'in_progress') return 'Running…';
+  if (status === 'queued' || status === 'waiting' || status === 'requested' || status === 'pending') return 'Queued…';
+  return status;
 }
 
 export default DeploymentModal;
