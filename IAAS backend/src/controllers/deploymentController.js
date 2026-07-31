@@ -14,7 +14,34 @@ import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
 import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
 import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
+import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
+import { getWorkflowRun, getWorkflowJobLogsText, githubWorkflowRunJobs } from '../services/githubActionsClient.js';
+import { finishRun } from '../services/githubTerraformRunner.js';
+
+// runTerraformDeployment/runTerraformDestroy resolve differently depending on executor:
+// github-actions now only dispatches and returns (fast — see githubTerraformRunner.js's top comment
+// for why finalization moved to a callback instead of a poll loop this request would have to survive
+// past its own response), so it's safe and correct to await here. local runs the whole
+// apply/destroy synchronously as a child process — awaiting that in a Lambda-hosted request would
+// mean blocking on however long a real `terraform apply` takes, so it stays fire-and-forget,
+// unchanged from before.
+//
+// `run` operates on its own separate document instance (fetched fresh inside
+// deploymentExecutorDispatch.js), not the caller's `deployment` — so after awaiting a github-actions
+// dispatch, the caller's in-memory copy is stale (still whatever status it was set to right before
+// this call, e.g. 'queued') even though the DB has already moved on (e.g. to 'destroying'). Refresh
+// it here so the response the client gets back immediately reflects reality instead of waiting for
+// the next poll.
+async function startTerraformRun(deployment, run) {
+  if (deployment.executor === 'github-actions') {
+    await run();
+    const fresh = await Deployment.findById(deployment._id);
+    if (fresh) deployment.set(fresh.toObject());
+  } else {
+    void run();
+  }
+}
 
 export const createDeploymentSchema = z.object({
   body: z.object({
@@ -165,8 +192,18 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   const deploymentId = new mongoose.Types.ObjectId();
   const executor = env.DEPLOYMENT_EXECUTOR;
-  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions' });
+  // The Lambda executor has no reliable terraform binary and no realistic time/network budget to
+  // download the AWS provider within a single request (see terraformCliValidator.js) — defer Layer 2
+  // (the real `terraform validate` CLI check) to an async GitHub Actions run instead of blocking this
+  // request on it. Local/dev keeps running it inline exactly as before: fast, no GitHub round trip.
+  // Only defer if that async dispatch is actually possible (DEPLOYMENT_GITHUB_OWNER/REPO configured)
+  // — deferring with nowhere to send it would silently skip Layer 2 validation entirely, which is
+  // worse than the synchronous fail-closed behavior it would otherwise fall back to.
+  const canDispatchAsyncValidation = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) && Boolean(env.DEPLOYMENT_GITHUB_OWNER) && Boolean(env.DEPLOYMENT_GITHUB_REPO);
+  const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions', deferCliValidation: canDispatchAsyncValidation });
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
+  const needsAsyncValidation = canDispatchAsyncValidation && plan.cliValidationPending;
+  const autoApply = Boolean(req.validated.body.autoApply);
   const deployment = await Deployment.create({
     _id: deploymentId,
     workspace: req.user.workspace,
@@ -178,7 +215,9 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     // the runTerraformDeployment call below) — saving without autoApply must not leave one sitting
     // in 'queued' with nothing ever going to pick it up. 'draft' is also what makes a saved-without-
     // applying deployment eligible as a merge source (see MERGE_SOURCE_ELIGIBLE_STATUSES above).
-    status: hasBlockers || !req.validated.body.autoApply ? 'draft' : 'queued',
+    // 'validating' is the third option: real validation hasn't run yet at all, so neither 'draft' nor
+    // 'queued' would be accurate — terraformValidateCallbackController.js is what moves it out of here.
+    status: needsAsyncValidation ? 'validating' : hasBlockers || !autoApply ? 'draft' : 'queued',
     executor,
     resourceCount: plan.resourceCount,
     connectionCount: plan.connectionCount,
@@ -188,11 +227,13 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     lambdaZipUploadIds: lambdaZipUploadIdsFromNodes(diagramPayload.nodes),
     logs: [
       {
-        message: hasBlockers
-          ? 'Deployment draft created with blocking validation errors.'
-          : req.validated.body.autoApply
-            ? 'Deployment created. Terraform runner is starting.'
-            : 'Saved as draft. Click Apply when you\'re ready to run Terraform against the selected AWS account.',
+        message: needsAsyncValidation
+          ? 'Deployment draft created. Validating Terraform via GitHub Actions before it can be applied.'
+          : hasBlockers
+            ? 'Deployment draft created with blocking validation errors.'
+            : autoApply
+              ? 'Deployment created. Terraform runner is starting.'
+              : 'Saved as draft. Click Apply when you\'re ready to run Terraform against the selected AWS account.',
         level: hasBlockers ? 'warning' : 'info',
       },
     ],
@@ -203,8 +244,21 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     awsAccount: awsAccount._id,
   });
 
-  if (!hasBlockers && req.validated.body.autoApply) {
-    void runTerraformDeployment(deployment._id);
+  if (needsAsyncValidation) {
+    try {
+      await dispatchTerraformValidation(deployment, { autoApply });
+    } catch (error) {
+      deployment.status = 'draft';
+      deployment.pendingValidation = undefined;
+      deployment.validationIssues = [
+        ...deployment.validationIssues,
+        { severity: 'error', message: `Could not start async Terraform validation: ${error.message ?? String(error)}` },
+      ];
+      deployment.logs.push({ message: `Async Terraform validation failed to start: ${error.message ?? String(error)}`, level: 'error' });
+      await deployment.save();
+    }
+  } else if (!hasBlockers && autoApply) {
+    await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
   }
 
   res.status(201).json({ success: true, data: deployment });
@@ -249,7 +303,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
-  void runTerraformDeployment(deployment._id);
+  await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
   res.json({ success: true, data: deployment });
 });
 
@@ -266,8 +320,17 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   if (['queued', 'deploying', 'destroying'].includes(deployment.status)) {
     throw new ApiError(409, 'This deployment is already running. Wait for it to finish before updating it.');
   }
-  if (!['deployed', 'failed'].includes(deployment.status)) {
-    throw new ApiError(409, 'Only deployed (or previously failed) infrastructure can be updated.');
+  // 'destroyed' is allowed alongside 'deployed'/'failed': Terraform apply against an empty state
+  // (which is exactly what a destroyed deployment's state is) just creates everything fresh — the
+  // same operation as a first deploy, expressed through the same diff-based update path rather than
+  // a separate "redeploy" endpoint. The one real tradeoff: auto-destroy-on-failure is intentionally
+  // skipped for updates (deploymentGuards.js — "must not tear down infrastructure that was working
+  // before"), which doesn't quite apply here since nothing was running beforehand, but there's also
+  // nothing pre-existing an auto-cleanup could wrongly destroy — worst case, a failed redeploy
+  // attempt leaves partially-created resources for another update attempt or a manual destroy to
+  // clean up, same as any other failed update would.
+  if (!['deployed', 'failed', 'destroyed'].includes(deployment.status)) {
+    throw new ApiError(409, 'Only deployed, previously failed, or destroyed infrastructure can be updated.');
   }
   if (!deployment.diagram) throw new ApiError(409, 'Deployment has no linked diagram to update.');
 
@@ -314,7 +377,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.update', 'Deployment', deployment._id, { diagram: diagram._id });
-  void runTerraformDeployment(deployment._id, { isUpdate: true });
+  await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id, { isUpdate: true }));
 
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
@@ -534,7 +597,7 @@ export const mergeDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.merge', 'Deployment', target._id, { sourceDeployment: sourceDeployment._id });
   await auditLog(req, 'deployment.merge_source_locked', 'Deployment', sourceDeployment._id, { targetDeployment: target._id });
-  void runTerraformDeployment(target._id, { isUpdate: true });
+  await startTerraformRun(target, () => runTerraformDeployment(target._id, { isUpdate: true }));
 
   await target.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: { target, source: sourceDeployment } });
@@ -544,6 +607,89 @@ export const getDeployment = asyncHandler(async (req, res) => {
   const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name activeRegion nodes edges');
   if (!deployment) throw new ApiError(404, 'Deployment not found');
   res.json({ success: true, data: deployment });
+});
+
+// Which GitHub Actions run currently matters for this deployment, across every stage the
+// github-actions executor moves it through: pendingValidation.runId while a Layer-2 `validate` run
+// is in flight (§6.2), activeRun.githubRunId once a real apply/destroy is dispatched, falling back
+// to the last known finished run (githubRun.runId) once nothing is active anymore.
+function currentGithubRunId(deployment) {
+  return deployment.activeRun?.githubRunId || deployment.pendingValidation?.runId || deployment.githubRun?.runId || '';
+}
+
+export const getDeploymentGithubRun = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (deployment.executor !== 'github-actions') {
+    res.json({ success: true, data: { supported: false, run: null, jobs: [] } });
+    return;
+  }
+
+  const runId = currentGithubRunId(deployment);
+  if (!runId) {
+    res.json({ success: true, data: { supported: true, run: null, jobs: [] } });
+    return;
+  }
+  if (!env.DEPLOYMENT_GITHUB_TOKEN) throw new ApiError(409, 'DEPLOYMENT_GITHUB_TOKEN is not configured on the backend.');
+
+  const [run, jobs] = await Promise.all([
+    getWorkflowRun({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
+    githubWorkflowRunJobs({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId }),
+  ]);
+
+  // Self-heal a confirmed-real gap: terraform-deploy.yml's own "Report result to Infraflow" step is
+  // the primary way a run's outcome reaches us, but if that POST is ever lost (dropped, a stale-run
+  // mismatch from a second dispatch superseding this one, a transient network failure on GitHub's
+  // runner), the deployment can sit in 'destroying' forever even though the destroy genuinely
+  // finished on GitHub's side — this endpoint gets polled while that panel is open, so it's a natural
+  // place to notice and correct that. Re-fetches immediately before writing (not the `deployment`
+  // read above, which is now stale by however long the two GitHub API calls just took) and re-checks
+  // every condition against that fresh copy, to keep the race with a real, concurrently-arriving
+  // callback as narrow as possible. Scoped to destroy only, not apply: a destroy's outcome needs
+  // nothing from `run` beyond its conclusion, whereas reconciling a stuck apply would also need
+  // `outputs`, which this API doesn't expose — a larger, separate piece of work.
+  if (run?.status === 'completed') {
+    const fresh = await Deployment.findById(deployment._id);
+    if (fresh?.status === 'destroying' && String(fresh.activeRun?.githubRunId ?? '') === String(runId)) {
+      await finishRun(fresh, {
+        action: 'destroy',
+        isUpdate: Boolean(fresh.activeRun?.isUpdate),
+        auto: Boolean(fresh.activeRun?.auto),
+        runId,
+        result: run.conclusion === 'success'
+          ? { outcome: 'success', outputs: {} }
+          : {
+              outcome: 'failure',
+              failureMessage: `Terraform destroy did not complete successfully on GitHub Actions (run conclusion: ${run.conclusion}). Reconciled from the run's own status after its callback didn't arrive — check ${run.htmlUrl} for what happened.`,
+            },
+      });
+    }
+  }
+
+  res.json({ success: true, data: { supported: true, run, jobs } });
+});
+
+// The deploy-runner repo (and its GitHub Actions run/job IDs) is shared across every workspace's
+// deployments — job IDs are not inherently scoped per tenant the way everything else in this app is.
+// So req.params.jobId is never trusted directly: it's only fetched after confirming it's actually one
+// of the jobs on THIS deployment's own run (already workspace-scoped by the query above), closing off
+// a cross-tenant path where one workspace could read another's Terraform run logs by guessing/
+// enumerating job IDs.
+export const getDeploymentGithubRunJobLogs = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (deployment.executor !== 'github-actions') throw new ApiError(409, 'This deployment does not run on the GitHub Actions executor.');
+
+  const runId = currentGithubRunId(deployment);
+  if (!runId) throw new ApiError(404, 'No GitHub Actions run associated with this deployment yet.');
+  if (!env.DEPLOYMENT_GITHUB_TOKEN) throw new ApiError(409, 'DEPLOYMENT_GITHUB_TOKEN is not configured on the backend.');
+
+  const jobs = await githubWorkflowRunJobs({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, runId });
+  const job = jobs.find((candidate) => String(candidate.id) === String(req.params.jobId));
+  if (!job) throw new ApiError(404, "That job does not belong to this deployment's run.");
+
+  const text = await getWorkflowJobLogsText({ token: env.DEPLOYMENT_GITHUB_TOKEN, owner: env.DEPLOYMENT_GITHUB_OWNER, repo: env.DEPLOYMENT_GITHUB_REPO, jobId: job.id });
+  res.json({ success: true, data: { text } });
 });
 
 // Renaming is just a label change — it never touches the diagram, Terraform config, or AWS
@@ -574,12 +720,19 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'Only deployed infrastructure can be destroyed.');
   }
 
-  deployment.status = 'destroying';
+  // Deliberately 'queued', not 'destroying': runTerraformDestroy/runTerraformDeployment (see
+  // githubTerraformRunner.js) re-fetch the deployment and refuse to start if it's already in an
+  // ACTIVE_STATUSES status (deploying/destroying) — a reentrancy guard against double-dispatch.
+  // Pre-setting 'destroying' here collided with that guard and made it return immediately, doing
+  // nothing: every normal (non-force) GitHub Actions destroy silently no-op'd. 'queued' mirrors what
+  // applyDeployment already does below, and isn't in ACTIVE_STATUSES, so the runner is free to make
+  // its own (fast, awaited) transition to 'destroying' once it actually starts.
+  deployment.status = 'queued';
   deployment.logs.push({ message: 'Destroy requested. Terraform runner is starting.', level: 'warning' });
   await deployment.save();
 
   await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
-  void runTerraformDestroy(deployment._id);
+  await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });
@@ -602,7 +755,7 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.force_destroy', 'Deployment', deployment._id, { previousStatus });
-  void runTerraformDestroy(deployment._id, { force: true });
+  await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id, { force: true }));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
   res.json({ success: true, data: deployment });
 });

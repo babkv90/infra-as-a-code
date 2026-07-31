@@ -144,6 +144,9 @@ function parseScopes(value = '') {
 }
 
 function githubTokenKey() {
-  const secret = env.GITHUB_TOKEN_ENCRYPTION_KEY || env.JWT_REFRESH_SECRET || env.JWT_ACCESS_SECRET;
-  return crypto.createHash('sha256').update(secret).digest();
+  // No fallback to JWT_REFRESH_SECRET/JWT_ACCESS_SECRET here — env.js already guarantees
+  // GITHUB_TOKEN_ENCRYPTION_KEY has its own value (a real one, or its own dedicated dev default),
+  // distinct from the JWT signing secrets. Reusing a JWT secret for this meant rotating one for a
+  // security reason silently invalidated the other, since they were the same value.
+  return crypto.createHash('sha256').update(env.GITHUB_TOKEN_ENCRYPTION_KEY).digest();
 }

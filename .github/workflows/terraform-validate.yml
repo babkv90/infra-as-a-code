@@ -1,0 +1,99 @@
+name: Terraform Validate
+
+# Layer 2 of Infraflow's deployment validation pipeline (see IAAS backend/src/utils/deploymentPlanner.js),
+# run here instead of inline in the backend when the backend is the Lambda executor — Lambda has no
+# terraform binary reliably available and no realistic time/network budget within a single request to
+# download the ~600MB AWS provider (see terraformCliValidator.js and githubTerraformValidator.js,
+# which pushes the generated main.tf to deployments/<deployment_id>/ in this repo and dispatches this
+# workflow). No AWS credentials are used or needed: `terraform validate` only checks configuration
+# against provider schemas, it never talks to AWS or reads/writes state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Infraflow deployment id
+        required: true
+        type: string
+      working_directory:
+        description: Path within this repo holding the generated main.tf for this deployment
+        required: true
+        type: string
+      commit_sha:
+        description: Exact commit that pushed working_directory's files — checked out by SHA (not branch HEAD) so this workflow can never race the push that creates them.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_VERSION: "1.9.8"
+
+jobs:
+  validate:
+    name: Terraform validate — ${{ inputs.deployment_id }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # By commit SHA, not the branch's moving HEAD — see githubTerraformValidator.js's identical
+          # comment for why (a checkout of branch HEAD can race the push that creates these files).
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Restore Terraform provider plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', inputs.working_directory)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
+      - name: Configure Terraform plugin cache directory
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo "plugin_cache_dir = \"$HOME/.terraform.d/plugin-cache\"" > ~/.terraformrc
+
+      # -backend=false: a syntax/schema check, not a real run — no state or backend needed.
+      - name: Terraform init
+        run: terraform init -input=false -backend=false
+
+      - name: Terraform validate
+        id: validate
+        run: terraform validate -json > validate-result.json || true
+
+      # Always runs, success or failure — this is what terraformValidateCallbackController.js reads
+      # to fill in Deployment.validationIssues and move the deployment out of 'validating'.
+      - name: Report result to Infraflow
+        if: always()
+        run: |
+          if [ -f validate-result.json ]; then
+            RESULT=$(cat validate-result.json)
+          else
+            RESULT='{"valid":false,"diagnostics":[]}'
+          fi
+
+          VALID=$(echo "$RESULT" | jq -r '.valid // false')
+          DIAGNOSTICS=$(echo "$RESULT" | jq -c '.diagnostics // []')
+
+          PAYLOAD=$(jq -n \
+            --arg runId "${{ github.run_id }}" \
+            --argjson valid "$VALID" \
+            --argjson diagnostics "$DIAGNOSTICS" \
+            '{runId: $runId, valid: $valid, diagnostics: $diagnostics}')
+
+          curl -sS --fail-with-body -X POST "${{ vars.INFRAFLOW_API_BASE_URL }}/deployments/${{ inputs.deployment_id }}/terraform-validate-callback" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.INFRAFLOW_CALLBACK_SECRET }}" \
+            -d "$PAYLOAD"

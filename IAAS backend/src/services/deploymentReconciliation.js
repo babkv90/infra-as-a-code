@@ -1,22 +1,27 @@
 import { Deployment } from '../models/Deployment.js';
 import { failDeployment } from './deploymentGuards.js';
-import { resumeInterruptedRun } from './githubTerraformRunner.js';
 
 const ACTIVE_STATUSES = ['deploying', 'destroying'];
 
-// Run once, at server startup, after the database connection is ready. Any deployment still sitting
-// in deploying/destroying at the moment a fresh process boots was — by definition — interrupted: no
-// in-flight async work survives a process restart, so nothing could still be legitimately "in
-// progress" from this backend's point of view the instant it starts up.
+// Run once, at server startup (and once per fresh Lambda container — see lambda.js), after the
+// database connection is ready. Any deployment still sitting in deploying/destroying at the moment a
+// fresh process boots was — by definition — interrupted: no in-flight async work survives a process
+// restart, so nothing could still be legitimately "in progress" from this backend's point of view the
+// instant it starts up.
 //
 // What "interrupted" means differs by executor, and that's the whole reason this isn't a single
 // blanket fix:
 //   - local executor: the actual `terraform` child process was a child of this same Node process —
-//     it's gone. There's no way to resume it, only to find out what state it left behind.
+//     it's gone. There's no way to resume it, only to find out what state it left behind. Always
+//     marked interrupted.
 //   - github-actions executor: the actual Terraform run happens on GitHub's infrastructure,
-//     independent of this backend. Only the polling loop watching it died — the run itself may still
-//     be going, or may have already finished while nobody was watching. That case is resumable (see
-//     githubTerraformRunner.js's resumeInterruptedRun), and is tried first.
+//     independent of this backend, and reports back via its own callback request
+//     (terraformDeployCallbackController.js) whenever it finishes — regardless of whether this
+//     backend process is still the one that dispatched it. If activeRun.githubRunId is set, a real
+//     run was confirmed dispatched before whatever interrupted this process, so its callback is still
+//     coming; touching the deployment now would race that callback for no reason. Only a deployment
+//     with NO confirmed githubRunId — meaning the dispatch itself never got to that point — has
+//     nothing to wait for and is treated the same as local: marked interrupted.
 //
 // Deliberately conservative for anything that can't be resumed: marks it failed and says so clearly,
 // but never attempts an automatic destroy here. Reconciliation can't reliably tell an interrupted
@@ -26,17 +31,15 @@ const ACTIVE_STATUSES = ['deploying', 'destroying'];
 // should look at these using "Verify resources in AWS" before deciding what to do next.
 export async function reconcileInterruptedDeployments() {
   const stuck = await Deployment.find({ status: { $in: ACTIVE_STATUSES } });
-  if (!stuck.length) return { reconciled: 0, resumed: 0, markedInterrupted: 0 };
+  if (!stuck.length) return { reconciled: 0, skipped: 0, markedInterrupted: 0 };
 
-  let resumed = 0;
+  let skipped = 0;
   let markedInterrupted = 0;
 
   for (const deployment of stuck) {
     try {
-      const wasResumed = deployment.executor === 'github-actions' ? await resumeInterruptedRun(deployment) : false;
-
-      if (wasResumed) {
-        resumed += 1;
+      if (deployment.executor === 'github-actions' && deployment.activeRun?.githubRunId) {
+        skipped += 1;
         continue;
       }
 
@@ -50,7 +53,7 @@ export async function reconcileInterruptedDeployments() {
     }
   }
 
-  return { reconciled: stuck.length, resumed, markedInterrupted };
+  return { reconciled: stuck.length, skipped, markedInterrupted };
 }
 
 async function markInterrupted(deployment) {

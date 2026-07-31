@@ -72,7 +72,12 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
     }
     const nextContent = Buffer.from(file.content, 'utf8').toString('base64');
     if (existing?.content && String(existing.content).replace(/\s/g, '') === nextContent) {
-      synced.push({ path, commitSha: existing.sha ?? '', skipped: true });
+      // No commitSha here — existing.sha is this file's *blob* sha (its content identity), not a
+      // commit sha, and callers that need "the commit with everything just pushed" (checking out by
+      // SHA) must not mistake one for the other. Nothing was actually committed by this no-op, so
+      // there is no fresh commit sha to report; the branch's already-current HEAD already has this
+      // file from whatever earlier push put it there.
+      synced.push({ path, commitSha: '', skipped: true });
       continue;
     }
 
@@ -254,6 +259,28 @@ export async function dispatchGithubWorkflow({ token, owner, repo, workflowId, b
   throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Workflow dispatch failed.'));
 }
 
+// Fallback only — prefer syncFilesToGithub's own returned commitSha (the commit response from the
+// exact PUT that created it, race-free) wherever the pushed path is guaranteed not to be skipped as
+// unchanged. This does a *separate* read of the branch's ref after the fact, which was tried as the
+// primary approach here and confirmed, in production, to occasionally race GitHub's own read-after-
+// write consistency and return a commit that predates the push it was meant to reflect — worse than
+// the problem it was meant to solve. Only reach for this when syncFilesToGithub's own commitSha is
+// unavailable (e.g. every pushed file happened to be an unchanged skip, which reports a blob sha
+// there instead of a commit sha).
+export async function getBranchHeadSha({ token, owner, repo, branch }) {
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/ref/${encodeURIComponentPath(`heads/${branch}`)}`,
+    { headers: githubApiHeaders(token) },
+  );
+  const result = await response.json().catch(async () => ({ message: await response.text() }));
+  if (!response.ok) {
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? `Unable to read ${branch}'s current commit.`));
+  }
+  const sha = result?.object?.sha;
+  if (!sha) throw new ApiError(409, `GitHub branch ${branch} did not return a commit SHA.`);
+  return sha;
+}
+
 export async function getGithubRepositoryDefaultBranch({ token, owner, repo }) {
   const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
     headers: githubApiHeaders(token),
@@ -354,6 +381,21 @@ export async function githubWorkflowRunJobs({ token, owner, repo, runId }) {
       completedAt: step.completed_at,
     })),
   }));
+}
+
+// Raw text logs for a single job — GitHub responds 302 to a short-lived signed URL serving plain
+// text (works while the job is still running, not just after it finishes); fetch follows redirects
+// by default, so this returns the actual log content, not the redirect itself.
+export async function getWorkflowJobLogsText({ token, owner, repo, jobId }) {
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${encodeURIComponent(jobId)}/logs`,
+    { headers: githubApiHeaders(token) },
+  );
+  if (!response.ok) {
+    const result = await response.json().catch(async () => ({ message: await response.text() }));
+    throw new ApiError(response.status, githubDeploymentErrorMessage(result?.message ?? 'Unable to read job logs.'));
+  }
+  return response.text();
 }
 
 export function normalizeGithubWorkflowRun(run) {

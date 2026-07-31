@@ -299,10 +299,11 @@ function HeroSection() {
           <Sparkles size={16} />
           Visual AWS infrastructure automation
         </div>
-        <h1>Design, generate, and deploy AWS infrastructure from one visual workspace.</h1>
+        <h1>Design AWS infrastructure visually, deploy it for real, and ship your own app alongside it.</h1>
         <p>
-          Infraflow helps teams model AWS architecture on a React Flow canvas, generate Terraform for supported
-          services, connect AWS through IAM roles, and monitor cost, inventory, security, logs, deployments, and drift.
+          Infraflow helps teams model AWS architecture on a React Flow canvas, generate Terraform for 44 supported
+          resource types, connect AWS through IAM roles, and monitor cost, inventory, security, logs, deployments, and
+          drift — then generate a working CI/CD pipeline so your own application deploys itself too.
         </p>
         <div className="lp-hero-actions">
           <a className="lp-primary-button" href={REGISTER_ROUTE}>
@@ -687,8 +688,8 @@ function AgentSection() {
         <div className="lp-section-eyebrow">AWS Insights</div>
         <h2>Connect AWS once, then work from normalized cloud context.</h2>
         <p>
-          The dashboard syncs account identity, billing, inventory, CloudWatch, CloudTrail, IAM, and service metadata
-          so teams can reason about infrastructure without jumping between AWS console screens.
+          The dashboard syncs account identity, billing, inventory, CloudWatch, CloudTrail, IAM, and metadata across
+          18+ AWS services, isolating any single missing permission so the rest of the sync still comes back clean.
         </p>
         <div className="lp-bullet-grid">
           {aiBullets.map((item) => (
@@ -716,7 +717,11 @@ function TerraformSection() {
       <div className="lp-mini-diagram-card">
         <div className="lp-section-eyebrow">Terraform</div>
         <h2>From architecture diagram to reviewable Terraform.</h2>
-        <p>Generate Terraform for supported AWS nodes, inspect the plan, export assets, push to GitHub, or deploy through the app.</p>
+        <p>
+          Generate Terraform for supported AWS nodes, inspect the plan, export assets, push to GitHub, or deploy
+          through an isolated execution pipeline with remote state locking — so a deploy in progress is never tied
+          to a single machine.
+        </p>
         <DiagramMockup variant="mini" />
       </div>
       <div className="lp-code-card">
@@ -802,7 +807,8 @@ function SecuritySection({ onOpenDetail }: { onOpenDetail: (detail: LearningDeta
         <h2>Secure by design.</h2>
         <p>
           Built around role-based access, least-privilege guidance, encrypted secrets, review gates, and auditability
-          before infrastructure changes reach AWS.
+          before infrastructure changes reach AWS — and short-lived GitHub OIDC credentials, not stored keys, when
+          deploying your own application.
         </p>
       </div>
       <div className="lp-security-grid">
@@ -875,8 +881,8 @@ function FinalCTA() {
       <div className="lp-final-glow" />
       <h2>Start with a visual AWS diagram. Keep Terraform, deployment, and operations connected.</h2>
       <p>
-        Create a workspace, design supported AWS services, generate Terraform, connect an IAM role, and operate from
-        one workspace-scoped dashboard.
+        Create a workspace, design supported AWS services, generate Terraform, connect an IAM role, generate a CI/CD
+        pipeline for your own app, and operate everything from one workspace-scoped dashboard.
       </p>
       <div className="lp-hero-actions">
         <a className="lp-secondary-button" href={DASHBOARD_ROUTE}>
@@ -895,7 +901,7 @@ function Footer() {
         <a className="lp-logo" href="/">
           <AppLogo className="app-logo--footer" />
         </a>
-        <p>Visual AWS infrastructure design, Terraform generation, deployment tracking, and live account insights.</p>
+        <p>Visual AWS infrastructure design, Terraform generation, deployment tracking, live account insights, and CI/CD pipelines for your own app.</p>
       </div>
       {Object.entries(footerColumns).map(([title, links]) => (
         <div className="lp-footer-column" key={title}>

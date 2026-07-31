@@ -30,6 +30,10 @@ on:
         description: Path within this repo holding the generated main.tf for this deployment
         required: true
         type: string
+      commit_sha:
+        description: Exact commit that pushed working_directory's files — checked out by SHA (not branch HEAD) so this workflow can never race the push that creates them.
+        required: true
+        type: string
       aws_region:
         description: Target AWS region for the customer account being deployed to
         required: true
@@ -62,8 +66,14 @@ jobs:
       run:
         working-directory: ${{ inputs.working_directory }}
     steps:
-      # Must run before anything else logs or echoes these values.
+      # Must run before anything else logs or echoes these values. Explicit working-directory: . to
+      # override the job's default (inputs.working_directory) — that path doesn't exist until
+      # Checkout repository (the next step) actually creates it, so inheriting the default here made
+      # every single run fail immediately with "No such file or directory" before checkout ever ran.
+      # This is the real, unconditional cause of every apply/destroy failure so far — unrelated to the
+      # commit-SHA checkout fix below, which is still correct and worth keeping.
       - name: Mask sensitive inputs
+        working-directory: .
         run: |
           echo "::add-mask::${{ inputs.aws_access_key_id }}"
           echo "::add-mask::${{ inputs.aws_secret_access_key }}"
@@ -71,6 +81,26 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # By commit SHA, not the branch's moving HEAD: githubTerraformRunner.js pushes
+          # working_directory's files and dispatches this workflow back-to-back, and a checkout of
+          # branch HEAD can race that push under GitHub's own propagation delay. Pinning to the exact
+          # commit the backend just created removes that race entirely — this SHA is guaranteed to
+          # contain the files, or the dispatch itself would have already failed upstream.
+          ref: ${{ inputs.commit_sha }}
+
+      # Previously each step below set AWS_ACCESS_KEY_ID/SECRET/SESSION_TOKEN directly via its own
+      # `env:` block. That's what leaked them: GitHub Actions' auto-generated per-step "env:" debug
+      # listing in the log is NOT reliably covered by `::add-mask::`, even though the values are
+      # masked everywhere else. Configuring credentials once, here, through the dedicated action
+      # avoids that debug dump entirely — nothing downstream needs its own env: block for these.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ inputs.aws_access_key_id }}
+          aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
+          aws-session-token: ${{ inputs.aws_session_token }}
+          aws-region: ${{ inputs.aws_region }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -95,12 +125,6 @@ jobs:
           echo "plugin_cache_dir = \"$HOME/.terraform.d/plugin-cache\"" > ~/.terraformrc
 
       - name: Terraform init
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: terraform init -input=false
 
       # Redundant with Layer 2 of Infraflow's own validation pipeline (which already ran `terraform
@@ -113,22 +137,10 @@ jobs:
 
       - name: Terraform plan
         if: inputs.action == 'apply'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform apply
         if: inputs.action == 'apply'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: terraform apply -input=false -auto-approve tfplan
 
       # Mirrors emptyS3BucketsFromTerraformState in the local executor — Terraform can't destroy a
@@ -137,12 +149,6 @@ jobs:
       # a known gap versus local, not silently different.
       - name: Empty S3 buckets before destroy
         if: inputs.action == 'destroy'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: |
           BUCKETS=$(terraform show -json 2>/dev/null | jq -r '((.values.root_module.resources // []) | map(select(.type == "aws_s3_bucket")) | .[].values.bucket)' 2>/dev/null || true)
           for BUCKET in $BUCKETS; do
@@ -152,12 +158,6 @@ jobs:
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: terraform destroy -input=false -auto-approve
 
       # Always runs, success or failure — this is how the backend's poll loop (pollWorkflowStatus in
@@ -166,12 +166,6 @@ jobs:
       # knows whether to trigger a cleanup destroy run).
       - name: Report result to Infraflow
         if: always()
-        env:
-          AWS_ACCESS_KEY_ID: ${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ inputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ inputs.aws_session_token }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: |
           OUTCOME="failure"
           if [ "${{ job.status }}" = "success" ]; then OUTCOME="success"; fi

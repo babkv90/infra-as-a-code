@@ -80,7 +80,24 @@ const deploymentSchema = new mongoose.Schema(
     activeRun: {
       action: { type: String, enum: ['apply', 'destroy'] },
       isUpdate: Boolean,
+      // Whether this destroy is the automatic cleanup-on-failure kind (see deploymentGuards.js's
+      // handleDeployFailureCleanup), not a user-initiated one. Read back by
+      // terraformDeployCallbackController.js when the workflow's callback lands — a separate, later
+      // request that can't rely on the `auto` argument the original dispatch call closed over, since
+      // finalization no longer happens inside that same call.
+      auto: Boolean,
       githubRunId: String,
+      startedAt: Date,
+    },
+    // Set while status is 'validating' — a terraform-validate.yml run is in flight on GitHub Actions
+    // (see githubTerraformValidator.js) because the Lambda executor has nowhere reliable to run
+    // `terraform init`/`validate` itself. autoApply is remembered here (not just held in a request
+    // closure) so terraformValidateCallbackController.js — invoked fresh by GitHub's own callback POST,
+    // not a continuation of the original request — knows whether to kick off a real apply once
+    // validation comes back clean. Cleared the moment the callback lands.
+    pendingValidation: {
+      runId: String,
+      autoApply: Boolean,
       startedAt: Date,
     },
     logs: {

@@ -31,6 +31,26 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     });
     if (!canProceed) return;
 
+    // deployment.executor is pinned for life at creation time (see comment in
+    // deploymentController.js's updateDeploymentFromCanvas), so any deployment created before
+    // DEPLOYMENT_EXECUTOR=github-actions became the default is still routed here — this local
+    // executor spawns a real `terraform init/plan/apply` child process and awaits it synchronously
+    // within the request. On a normal server that's fine; on Lambda it isn't: no persistent process
+    // budget, and a real apply/destroy routinely exceeds the request timeout entirely, well past the
+    // 512MB/15s limits that already motivated moving new deployments onto the github-actions executor
+    // (see terraformCliValidator.js). Left unguarded, a click here just times out with no visible
+    // error and no GitHub Actions run to point to — confirmed as the actual cause behind exactly that
+    // report ("redeploy button triggered but no workflow triggered") on an old local-executor
+    // deployment. Fail fast with an actionable message instead of a silent timeout.
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      await failDeployment(
+        deployment,
+        "This deployment is pinned to the 'local' Terraform executor (set when it was created, before the github-actions executor became the default) — it can't run reliably on this Lambda-hosted backend, which has no budget for a real, synchronous terraform apply. Destroy and recreate this deployment (or contact support to migrate its state to the github-actions executor) before retrying.",
+        isUpdate ? 'update' : 'deploy',
+      );
+      return;
+    }
+
     const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
     if (!account) {
       await failDeployment(deployment, 'AWS account not found for deployment.', isUpdate ? 'update' : 'deploy');
@@ -145,6 +165,18 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
       return;
     }
 
+    // See the identical guard in runTerraformDeployment above for the full reasoning — same failure
+    // mode applies to destroy: a real, synchronous `terraform destroy` on this local executor has no
+    // realistic chance of finishing inside a Lambda request's timeout budget.
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      await failDeployment(
+        deployment,
+        "This deployment is pinned to the 'local' Terraform executor (set when it was created, before the github-actions executor became the default) — it can't run reliably on this Lambda-hosted backend, which has no budget for a real, synchronous terraform destroy. Contact support to migrate its state to the github-actions executor before retrying.",
+        'destroy',
+      );
+      return;
+    }
+
     const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
     if (!account) {
       await failDeployment(deployment, 'AWS account not found for deployment destroy.', 'destroy');
@@ -207,7 +239,15 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     await runTerraformCommand(deployment, workDir, ['init', '-input=false'], terraformEnv);
     await runTerraformCommand(deployment, workDir, ['destroy', '-input=false', '-auto-approve'], terraformEnv);
 
-    deployment.status = auto ? 'failed' : 'destroyed';
+    // Always 'destroyed' when the destroy Terraform run itself succeeds — auto or not, this is an
+    // objective fact about AWS state: nothing this deployment created still exists. Previously this
+    // was `auto ? 'failed' : 'destroyed'`, on the reasoning that the original *deploy* attempt never
+    // succeeded — true, but that fact is already preserved by the earlier 'failed' notification/log
+    // entry from the deploy attempt itself (still in deployment.logs below), and conflating "did the
+    // deploy succeed" with "what's the current state" is exactly what produced a confirmed real bug:
+    // a deployment whose destroy genuinely succeeded in AWS kept reading 'failed' on the Deployments
+    // page and in its own notification, with no state anywhere actually saying "destroyed".
+    deployment.status = 'destroyed';
     deployment.finishedAt = new Date();
     deployment.activeRun = undefined;
     deployment.logs.push({
@@ -233,6 +273,9 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     await createNotification({
       workspace: deployment.workspace,
       type: 'destroy',
+      // Matches deployment.status above — both now say "this succeeded", because it did. The
+      // deploy-attempt-failed fact is preserved separately, in the earlier 'failed' notification
+      // failDeployment already created when the apply itself failed, not by keeping this one negative.
       status: 'success',
       title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
       message: auto

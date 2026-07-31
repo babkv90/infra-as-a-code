@@ -230,3 +230,54 @@ export type DeploymentDriftResult = {
 export async function syncDeploymentDrift(id: string) {
   return apiRequest<DeploymentDriftResult>(`/deployments/${id}/sync-drift`, { method: 'POST' });
 }
+
+export type GithubRunStep = {
+  name: string;
+  status: 'queued' | 'in_progress' | 'completed' | string;
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | null;
+  number: number;
+  startedAt?: string;
+  completedAt?: string;
+};
+
+export type GithubRunJob = {
+  id: number;
+  name: string;
+  status: 'queued' | 'in_progress' | 'completed' | string;
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | null;
+  startedAt?: string;
+  completedAt?: string;
+  htmlUrl?: string;
+  steps: GithubRunStep[];
+};
+
+export type GithubRun = {
+  id: number;
+  name: string;
+  runNumber: number;
+  event: string;
+  status: 'queued' | 'in_progress' | 'completed' | string;
+  conclusion: 'success' | 'failure' | 'cancelled' | null;
+  branch: string;
+  commitSha: string;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  runStartedAt?: string;
+};
+
+export type GithubRunStatus = {
+  supported: boolean;
+  run: GithubRun | null;
+  jobs: GithubRunJob[];
+};
+
+// Polled by the live-logs popup while a github-actions-executor deployment is validating/deploying/
+// destroying — cheap enough (one GitHub API round trip server-side) to call every few seconds.
+export async function getDeploymentGithubRun(id: string) {
+  return apiRequest<GithubRunStatus>(`/deployments/${id}/github-run`);
+}
+
+export async function getDeploymentGithubRunJobLogs(id: string, jobId: number) {
+  return apiRequest<{ text: string }>(`/deployments/${id}/github-run/jobs/${jobId}/logs`);
+}

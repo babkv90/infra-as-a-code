@@ -1,14 +1,37 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, Minus, Rocket, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Circle, ExternalLink, Loader2, Minus, Rocket, ScrollText, Trash2, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDeploymentMonitorStore } from '../../store/deploymentMonitorStore';
-import { getDeployment, type DeploymentRecord } from '../../utils/deploymentApi';
+import {
+  getDeployment,
+  getDeploymentGithubRun,
+  getDeploymentGithubRunJobLogs,
+  type DeploymentRecord,
+  type GithubRunStatus,
+} from '../../utils/deploymentApi';
 import { buildResourceTimeline, type ResourceProgress } from '../../utils/deploymentResourceTimeline';
 
-// Scoped to the Visual Builder's deploy/update flow only — not destroys. 'deployed' and 'failed' are
-// the two terminal outcomes that end a deploy; reaching either one auto-closes this popup after a
-// short pause (see the effect below), rather than requiring a manual close.
-const ACTIVE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying'];
-const TERMINAL_STATUSES: DeploymentRecord['status'][] = ['deployed', 'failed'];
+const GITHUB_ACTIVE_RUN_STATUSES = ['queued', 'in_progress', 'waiting', 'requested', 'pending'];
+// 8s: this polls two endpoints (run status + job logs) on top of everything else already polling
+// (deployment status, notifications, live-updates, and several other loops elsewhere in the
+// dashboard) — all sharing the same Lambda invocation slots. Confirmed via the AWS console that the
+// account-wide "Concurrent executions" quota is just 10 total (not a per-function setting — the
+// whole account shares it), so this is deliberately conservative rather than tuned for "a bit tight."
+// Raising that account quota (Service Quotas -> Lambda -> Concurrent executions) is the real fix;
+// this only reduces how much this one feature adds on top of a ceiling no amount of client-side
+// throttling can comfortably clear.
+const GITHUB_POLL_MS = 8000;
+
+// A failed first-time apply can trigger an automatic cleanup destroy behind the scenes (see
+// deploymentGuards.js) — deployment.status moves deploying -> failed -> destroying -> destroyed, all
+// without any user action. 'destroying' and 'failed' both have to stay in ACTIVE_STATUSES (not just
+// 'deploying'/'queued') so polling keeps following that whole chain instead of freezing on the first
+// 'failed' reading — the poll loop below stops fetching entirely the moment it sees a status outside
+// this list, which previously meant it never learned the auto-cleanup destroy that followed even
+// started, let alone that it finished. 'destroyed' has to be in TERMINAL_STATUSES for the same reason
+// in reverse: without it, a deployment that settles there just sits open forever instead of
+// auto-closing like every other finished outcome does.
+const ACTIVE_STATUSES: DeploymentRecord['status'][] = ['queued', 'deploying', 'destroying', 'failed'];
+const TERMINAL_STATUSES: DeploymentRecord['status'][] = ['deployed', 'destroyed', 'failed'];
 const POLL_MS = 2500;
 const AUTO_CLOSE_DELAY_MS = 3000;
 const DEFAULT_POSITION = { x: 20, y: 76 };
@@ -18,6 +41,15 @@ export function DeploymentLiveMonitor() {
   const [deployment, setDeployment] = useState<DeploymentRecord>();
   const [loadError, setLoadError] = useState('');
   const [showRawLog, setShowRawLog] = useState(false);
+  const [showGithubLog, setShowGithubLog] = useState(false);
+  const [githubStatus, setGithubStatus] = useState<GithubRunStatus>();
+  const [githubStatusError, setGithubStatusError] = useState('');
+  const [selectedJobId, setSelectedJobId] = useState<number>();
+  const [jobLogText, setJobLogText] = useState('');
+  const [jobLogError, setJobLogError] = useState('');
+  const [isLoadingJobLog, setIsLoadingJobLog] = useState(false);
+  const [followJobLog, setFollowJobLog] = useState(true);
+  const jobLogRef = useRef<HTMLPreElement | null>(null);
   // Mirrors `deployment.status` outside React state so the interval below can check "are we still
   // active" against the latest value without putting `deployment` in its own dependency array (which
   // would tear down and recreate the interval — and reset its timing — on every single poll tick).
@@ -56,7 +88,96 @@ export function DeploymentLiveMonitor() {
     setDeployment(undefined);
     setLoadError('');
     setShowRawLog(false);
+    setShowGithubLog(false);
+    setGithubStatus(undefined);
+    setGithubStatusError('');
+    setSelectedJobId(undefined);
+    setJobLogText('');
+    setJobLogError('');
+    setFollowJobLog(true);
   }, [activeDeploymentId]);
+
+  const isGithubExecutor = deployment?.executor === 'github-actions';
+
+  // Only polls while the panel is actually open — a live view of the run GitHub is executing for
+  // this deployment right now, not the backend's own summarized log lines (that's "Show raw log"
+  // above). Stops once the run reaches a terminal status; a closed panel never polls at all.
+  useEffect(() => {
+    if (!showGithubLog || !isGithubExecutor || !activeDeploymentId) return;
+    let isMounted = true;
+
+    async function poll() {
+      try {
+        const status = await getDeploymentGithubRun(activeDeploymentId as string);
+        if (!isMounted) return;
+        setGithubStatus(status);
+        setGithubStatusError('');
+        setSelectedJobId((current) => {
+          if (current && status.jobs.some((job) => job.id === current)) return current;
+          const active = status.jobs.find((job) => GITHUB_ACTIVE_RUN_STATUSES.includes(job.status));
+          return active?.id ?? status.jobs[status.jobs.length - 1]?.id;
+        });
+      } catch (error) {
+        if (!isMounted) return;
+        setGithubStatusError(error instanceof Error ? error.message : 'Could not load GitHub Actions status.');
+      }
+    }
+
+    void poll();
+    const isRunTerminal = githubStatus?.run && !GITHUB_ACTIVE_RUN_STATUSES.includes(githubStatus.run.status);
+    if (isRunTerminal) return () => { isMounted = false; };
+
+    const timer = window.setInterval(() => void poll(), GITHUB_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGithubLog, isGithubExecutor, activeDeploymentId, githubStatus?.run?.status]);
+
+  // Live-tails the selected job's raw text — re-fetches on an interval while that job is still
+  // running, and once more right after it completes to pick up the final lines, then stops.
+  useEffect(() => {
+    if (!showGithubLog || !activeDeploymentId || !selectedJobId) return;
+    let isMounted = true;
+
+    async function fetchLogs() {
+      setIsLoadingJobLog(true);
+      try {
+        const result = await getDeploymentGithubRunJobLogs(activeDeploymentId as string, selectedJobId as number);
+        if (!isMounted) return;
+        setJobLogText(result.text);
+        setJobLogError('');
+      } catch (error) {
+        if (!isMounted) return;
+        setJobLogError(error instanceof Error ? error.message : 'Logs for this job are not available yet.');
+      } finally {
+        if (isMounted) setIsLoadingJobLog(false);
+      }
+    }
+
+    void fetchLogs();
+    const job = githubStatus?.jobs.find((candidate) => candidate.id === selectedJobId);
+    const isJobActive = !job || GITHUB_ACTIVE_RUN_STATUSES.includes(job.status);
+    if (!isJobActive) return () => { isMounted = false; };
+
+    const timer = window.setInterval(() => void fetchLogs(), GITHUB_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+  }, [showGithubLog, activeDeploymentId, selectedJobId, githubStatus?.jobs]);
+
+  useEffect(() => {
+    if (!followJobLog || !jobLogRef.current) return;
+    jobLogRef.current.scrollTop = jobLogRef.current.scrollHeight;
+  }, [jobLogText, followJobLog]);
+
+  function handleJobLogScroll() {
+    const el = jobLogRef.current;
+    if (!el) return;
+    setFollowJobLog(el.scrollHeight - el.scrollTop - el.clientHeight < 20);
+  }
 
   // Auto-dismiss once the deploy reaches a final outcome — a brief pause so "Deployed successfully"
   // or "Failed" is actually readable before it vanishes, rather than disappearing the instant the
@@ -144,12 +265,84 @@ export function DeploymentLiveMonitor() {
           {showRawLog ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
           {showRawLog ? 'Hide raw log' : 'Show raw log'}
         </button>
+        {isGithubExecutor && (
+          <button onClick={() => setShowGithubLog((value) => !value)} type="button">
+            <ScrollText size={12} />
+            {showGithubLog ? 'Hide GitHub Actions log' : 'Show GitHub Actions log'}
+          </button>
+        )}
       </footer>
 
       {showRawLog && (
         <pre className="deploy-monitor__raw-log">
           {(deployment?.logs ?? []).slice(-40).map((log) => `${log.level === 'error' ? '✕ ' : ''}${log.message}`).join('\n')}
         </pre>
+      )}
+
+      {showGithubLog && (
+        <div className="deploy-monitor__github">
+          {githubStatusError && <div className="deploy-monitor__banner deploy-monitor__banner--error">{githubStatusError}</div>}
+
+          {!githubStatus?.run && !githubStatusError && (
+            <div className="deploy-monitor__github-waiting">
+              <Loader2 className="deploy-monitor__spin" size={13} />
+              Waiting for GitHub to report this run…
+            </div>
+          )}
+
+          {githubStatus?.run && (
+            <>
+              <div className="deploy-monitor__github-run">
+                <RunStateGlyph status={githubStatus.run.status} conclusion={githubStatus.run.conclusion} />
+                <span>Run #{githubStatus.run.runNumber} · {runStateLabel(githubStatus.run.status, githubStatus.run.conclusion)}</span>
+                <a href={githubStatus.run.htmlUrl} target="_blank" rel="noreferrer" title="Open this run on GitHub">
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+
+              {githubStatus.jobs.length > 1 && (
+                <div className="deploy-monitor__github-jobs">
+                  {githubStatus.jobs.map((job) => (
+                    <button
+                      className={`deploy-monitor__github-job${job.id === selectedJobId ? ' deploy-monitor__github-job--active' : ''}`}
+                      key={job.id}
+                      onClick={() => setSelectedJobId(job.id)}
+                      type="button"
+                    >
+                      <RunStateGlyph status={job.status} conclusion={job.conclusion} small />
+                      {job.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {githubStatus.jobs.find((job) => job.id === selectedJobId)?.steps.map((step) => (
+                <div className="deploy-monitor__github-step" key={step.number}>
+                  <RunStateGlyph status={step.status} conclusion={step.conclusion} small />
+                  <span>{step.name}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {jobLogError && <div className="deploy-monitor__banner deploy-monitor__banner--error">{jobLogError}</div>}
+
+          <pre className="deploy-monitor__github-log" onScroll={handleJobLogScroll} ref={jobLogRef}>
+            {jobLogText || (isLoadingJobLog ? 'Loading logs…' : 'No log output yet.')}
+          </pre>
+          {!followJobLog && (
+            <button
+              className="deploy-monitor__github-jump"
+              onClick={() => {
+                setFollowJobLog(true);
+                if (jobLogRef.current) jobLogRef.current.scrollTop = jobLogRef.current.scrollHeight;
+              }}
+              type="button"
+            >
+              Jump to latest
+            </button>
+          )}
+        </div>
       )}
     </section>
   );
@@ -173,6 +366,29 @@ function ResourcePhaseIcon({ phase }: { phase: ResourceProgress['phase'] }) {
     return <Loader2 className="deploy-monitor__glyph deploy-monitor__glyph--active deploy-monitor__spin" size={15} />;
   }
   return <Circle className="deploy-monitor__glyph deploy-monitor__glyph--pending" size={15} />;
+}
+
+function RunStateGlyph({ status, conclusion, small }: { status: string; conclusion: string | null; small?: boolean }) {
+  const size = small ? 12 : 14;
+  if (status === 'completed') {
+    if (conclusion === 'success') return <CheckCircle2 className="deploy-monitor__glyph deploy-monitor__glyph--success" size={size} />;
+    if (conclusion === 'skipped') return <Circle className="deploy-monitor__glyph deploy-monitor__glyph--pending" size={size} />;
+    return <XCircle className="deploy-monitor__glyph deploy-monitor__glyph--error" size={size} />;
+  }
+  if (status === 'in_progress') return <Loader2 className="deploy-monitor__glyph deploy-monitor__glyph--active deploy-monitor__spin" size={size} />;
+  return <Circle className="deploy-monitor__glyph deploy-monitor__glyph--pending" size={size} />;
+}
+
+function runStateLabel(status: string, conclusion: string | null) {
+  if (status === 'completed') {
+    if (conclusion === 'success') return 'Succeeded';
+    if (conclusion === 'cancelled') return 'Cancelled';
+    if (conclusion === 'skipped') return 'Skipped';
+    return 'Failed';
+  }
+  if (status === 'in_progress') return 'Running…';
+  if (status === 'queued' || status === 'waiting' || status === 'requested' || status === 'pending') return 'Queued…';
+  return status;
 }
 
 function statusLabel(status?: DeploymentRecord['status']) {

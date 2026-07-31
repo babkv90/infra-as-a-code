@@ -15,7 +15,6 @@ import {
   ExternalLink,
   Eye,
   FilePlus2,
-  FolderOpen,
   GitBranch,
   GitMerge,
   Github,
@@ -47,6 +46,7 @@ import { useReactFlow } from 'reactflow';
 import Canvas from '../components/Canvas';
 import AppLogo from '../components/AppLogo';
 import DeploymentModal from '../components/DeploymentModal';
+import GithubConsentInfo from '../components/GithubConsentInfo';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { PageAlert } from '../components/PageAlert';
 import ResourceInfoViewer from '../components/ResourceInfoViewer';
@@ -58,14 +58,12 @@ import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDem
 import { useDiagramStore } from '../store/diagramStore';
 import { normalizeTerraformFiles } from '../utils/importDiagram';
 import { DeploymentLiveMonitor } from './components/DeploymentLiveMonitor';
-import { EmptyState, Panel } from './components/DashPrimitives';
+import { EmptyState, Panel, TableSkeleton } from './components/DashPrimitives';
 import {
   createSavedDiagram,
   deleteSavedDiagram,
-  getSavedDiagram,
   listSavedDiagrams,
   updateSavedDiagram,
-  updateSavedDiagramMeta,
   type SavedDiagram,
 } from './diagramApi';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -167,6 +165,7 @@ const dashboardPageIds = new Set<DashboardPage>(dashboardNavItems.map((item) => 
 const hiddenDashboardPages = new Set<DashboardPage>(['terraform', 'security']);
 const githubConnectionCacheKey = 'infraflow.github.connection';
 const githubRepositoriesCacheKey = 'infraflow.github.repositories';
+const githubRepositoriesCacheEvent = 'infraflow:github-repositories-cache';
 
 function readCachedGithubConnection(): GithubConnection {
   try {
@@ -205,6 +204,32 @@ function cacheGithubRepositories(repositories: GithubRepository[]) {
   } else {
     window.localStorage.removeItem(githubRepositoriesCacheKey);
   }
+  window.dispatchEvent(new CustomEvent(githubRepositoriesCacheEvent, { detail: repositories }));
+}
+
+type GithubOAuthMessage = {
+  type: 'infraflow:github-connected';
+  success?: boolean;
+  message?: string;
+  details?: {
+    connection?: GithubConnection;
+    reconnectRequired?: boolean;
+    missingScopes?: string[];
+  };
+};
+
+function parseGithubOAuthMessage(data: unknown): GithubOAuthMessage | null {
+  const message = typeof data === 'string' ? safeJsonParse<GithubOAuthMessage>(data) : data;
+  if (!message || typeof message !== 'object') return null;
+  return (message as GithubOAuthMessage).type === 'infraflow:github-connected' ? (message as GithubOAuthMessage) : null;
+}
+
+function safeJsonParse<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
 }
 
 function getInitialDashboardPage(): DashboardPage {
@@ -227,6 +252,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const { showScrollHint } = useScrollHint([activePage]);
   const [awsAccounts, setAwsAccounts] = useState<AwsAccountRecord[]>([]);
   const [awsInsights, setAwsInsights] = useState<AwsInsights | undefined>();
+  const [overviewDeployments, setOverviewDeployments] = useState<DeploymentRecord[]>([]);
   const [awsRegions, setAwsRegions] = useState<string[]>(['ap-south-1']);
   const [awsDataError, setAwsDataError] = useState('');
   const [awsDataMessage, setAwsDataMessage] = useState('');
@@ -281,9 +307,10 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
 
   async function refreshAwsData() {
     try {
-      const [accounts, insights, regions] = await Promise.all([listAwsAccounts(), getAwsInsights(), listAwsRegions()]);
+      const [accounts, insights, regions, deployments] = await Promise.all([listAwsAccounts(), getAwsInsights(), listAwsRegions(), listDeployments()]);
       setAwsAccounts(accounts);
       setAwsInsights(insights);
+      setOverviewDeployments(deployments);
       setAwsRegions(regions);
       setAwsDataError('');
     } catch (error) {
@@ -380,10 +407,10 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
 
   return (
     <div className="dash-shell">
+      <a className="dash-brand" href="/">
+        <AppLogo className="app-logo--dash-gap" />
+      </a>
       <aside className="dash-sidebar">
-        <a className="dash-brand" href="/">
-          <AppLogo className="app-logo--dashboard" />
-        </a>
         <div className="dash-sidebar-actions">
           <button aria-label="New Diagram" className="dash-new-button" onClick={() => goToDashboardPage('builder')} title="New Diagram">
             <Plus size={15} />
@@ -480,6 +507,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             awsAccounts,
             awsInsights,
             awsRegions,
+            deployments: overviewDeployments,
             onAwsChanged: refreshAwsData,
             onSyncAws: syncActiveAwsAccount,
             isSyncingAws,
@@ -496,6 +524,7 @@ type DashboardAwsContext = {
   awsAccounts: AwsAccountRecord[];
   awsInsights?: AwsInsights;
   awsRegions: string[];
+  deployments: DeploymentRecord[];
   onAwsChanged: () => Promise<void>;
   onSyncAws: () => Promise<void>;
   isSyncingAws: boolean;
@@ -541,6 +570,15 @@ function clearAppPipelineDeploymentRunning(id?: string) {
   writeRunningAppPipelineIds(readRunningAppPipelineIds().filter((runningId) => runningId !== id));
 }
 
+function syncAppPipelineDeploymentRunning(id: string, status: ApplicationDeploymentStatus) {
+  const runStatus = status.run?.status;
+  if (runStatus && LIVE_APP_RUN_STATUSES.has(runStatus)) {
+    markAppPipelineDeploymentRunning(id);
+  } else {
+    clearAppPipelineDeploymentRunning(id);
+  }
+}
+
 type LiveAppStatusRecord = {
   status?: ApplicationDeploymentStatus;
   error?: string;
@@ -557,9 +595,15 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
   const liveRefreshRef = useRef<{ inFlight: boolean; lastStartedAt: number; backoffUntil: number }>({ inFlight: false, lastStartedAt: 0, backoffUntil: 0 });
   const currentUser = getStoredUser();
 
-  async function refreshLiveUpdates() {
+  async function refreshLiveUpdates(options: { force?: boolean } = {}) {
     const now = Date.now();
-    if (liveRefreshRef.current.inFlight || now < liveRefreshRef.current.backoffUntil || now - liveRefreshRef.current.lastStartedAt < 3000) return;
+    if (
+      liveRefreshRef.current.inFlight ||
+      now < liveRefreshRef.current.backoffUntil ||
+      (!options.force && now - liveRefreshRef.current.lastStartedAt < 3000)
+    ) {
+      return;
+    }
     liveRefreshRef.current.inFlight = true;
     liveRefreshRef.current.lastStartedAt = now;
     setIsLoading(true);
@@ -583,11 +627,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
                 repo: repository.repo,
                 branch: pipeline.repository.branch || 'main',
               });
-              if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) {
-                markAppPipelineDeploymentRunning(pipeline._id);
-              } else if (status.run?.status === 'completed') {
-                clearAppPipelineDeploymentRunning(pipeline._id);
-              }
+              syncAppPipelineDeploymentRunning(pipeline._id, status);
               return [pipeline._id, { status, checkedAt: Date.now() }] as const;
             } catch (statusError) {
               return [
@@ -596,7 +636,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
                   error: statusError instanceof Error ? statusError.message : 'Unable to read app pipeline status.',
                   checkedAt: Date.now(),
                 },
-              ] as const;``
+              ] as const;
             }
           }),
       );
@@ -618,17 +658,16 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
   }, [activePage]);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
-    void refreshLiveUpdates();
+    void refreshLiveUpdates({ force: true });
     const interval = window.setInterval(() => void refreshLiveUpdates(), 15000);
     return () => window.clearInterval(interval);
-  }, [isOpen]);
+  }, []);
 
   useEffect(() => {
     function handleDeploymentStarted() {
       liveRefreshRef.current.backoffUntil = 0;
       liveRefreshRef.current.lastStartedAt = 0;
-      void refreshLiveUpdates();
+      void refreshLiveUpdates({ force: true });
     }
 
     window.addEventListener(liveDeploymentStartedEvent, handleDeploymentStarted);
@@ -669,7 +708,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
           <header>
             <div>
               <span className="dash-eyebrow">Live deployments</span>
-              <strong>{activeCount ? `${activeCount} running` : 'No running deployments'}</strong>
+              {activeCount > 0 && <strong>{activeCount} running</strong>}
             </div>
             <div className="live-updates-panel__actions">
               <button aria-label="Refresh live updates" disabled={isLoading} onClick={() => void refreshLiveUpdates()} type="button">
@@ -698,6 +737,7 @@ function LiveUpdatesLauncher({ activePage }: { activePage: DashboardPage }) {
       <button
         className={`live-updates-launcher ${activeCount ? 'live-updates-launcher--active' : ''}`}
         onClick={() => {
+          void refreshLiveUpdates({ force: true });
           setIsOpen((value) => !value);
         }}
         type="button"
@@ -773,8 +813,6 @@ function renderPage(
   switch (activePage) {
     case 'builder':
       return <VisualBuilderPage theme={theme} onToggleTheme={onToggleTheme} />;
-    case 'diagrams':
-      return <DiagramsPage />;
     case 'terraform':
       return <TerraformPage />;
     case 'ai-agent':
@@ -803,7 +841,15 @@ function renderPage(
     case 'super-admin':
       return <SuperAdminPage />;
     default:
-      return <OverviewPage setActivePage={setActivePage} insights={awsContext.awsInsights} isSyncingAws={awsContext.isSyncingAws} onSyncAws={awsContext.onSyncAws} />;
+      return (
+        <OverviewPage
+          setActivePage={setActivePage}
+          deployments={awsContext.deployments}
+          insights={awsContext.awsInsights}
+          isSyncingAws={awsContext.isSyncingAws}
+          onSyncAws={awsContext.onSyncAws}
+        />
+      );
   }
 }
 
@@ -821,11 +867,13 @@ function readStoredOverviewStyle(): OverviewStyle {
 
 function OverviewPage({
   setActivePage,
+  deployments,
   insights,
   isSyncingAws,
   onSyncAws,
 }: {
   setActivePage: (page: DashboardPage) => void;
+  deployments: DeploymentRecord[];
   insights?: AwsInsights;
   isSyncingAws: boolean;
   onSyncAws: () => Promise<void>;
@@ -948,7 +996,7 @@ function OverviewPage({
         {insights && (
           <div className="dash-two-col dash-two-col--wide">
             <Panel title="Resource inventory" action={insights.syncedAt ? `Synced ${new Date(insights.syncedAt).toLocaleString()}` : 'No live sync'}>
-              <ResourceTable insights={insights} />
+              <ResourceTable deployments={deployments} insights={insights} />
             </Panel>
             <Panel title="Recent AWS events" action="CloudTrail">
               <RecentAwsEvents insights={insights} />
@@ -1413,10 +1461,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const canDeleteDiagrams = canRoleDeleteDiagrams(user?.role);
   const accessTier = serviceAccessTierForUser(user);
   const directoryDiagrams = useMemo(() => [...demoDiagrams, ...savedDiagrams], [demoDiagrams, savedDiagrams]);
-  // Only templates + demo diagrams are offered from this dropdown — user-saved diagrams live on
-  // their own management page (DiagramsPage) instead, so "hasOpenableDiagrams" (and the select's
-  // disabled/placeholder state) only needs to reflect what's actually rendered in it below.
-  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || demoDiagrams.length > 0;
+  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || demoDiagrams.length > 0 || savedDiagrams.length > 0;
   const isCurrentTemplateDiagram = currentDiagramId?.startsWith(templateDiagramPrefix) ?? false;
 
   function fitFullDiagram() {
@@ -1520,28 +1565,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       })
       .catch((error) => {
         setDirectoryMessage(error instanceof Error ? error.message : 'Unable to prepare that merge.');
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Opened from the "Saved Diagrams" management page (DiagramsPage below), which lists every saved
-  // diagram on its own page instead of cramming them into the "Open" dropdown here. Fetches the
-  // diagram directly by id rather than depending on directoryDiagrams having finished loading yet.
-  useEffect(() => {
-    const diagramId = new URLSearchParams(window.location.search).get('openDiagram');
-    if (!diagramId) return;
-
-    window.history.replaceState(null, '', '/dashboard?view=builder');
-
-    getSavedDiagram(diagramId)
-      .then((diagram) => {
-        importDiagram({ nodes: diagram.nodes ?? [], edges: diagram.edges ?? [] });
-        setCurrentDiagramId(diagram._id);
-        setCurrentDiagramName(diagram.name);
-        fitFullDiagram();
-      })
-      .catch((error) => {
-        setDirectoryMessage(error instanceof Error ? error.message : 'Unable to open that diagram.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1727,6 +1750,11 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           defaultName={currentDiagramId && currentDiagramName !== 'Untitled diagram' ? currentDiagramName : undefined}
           onClose={() => {
             setIsDeploymentPageOpen(false);
+            // Without this, closing an update/merge-mode session (entered via a deployment's "Edit
+            // diagram" link) leaves updateDeploymentId set — the next click on the toolbar's plain
+            // "Deploy" button then silently reopens in update mode instead of a fresh deploy, with no
+            // visible reason why the button said "Deploy" but showed "Update Infrastructure".
+            clearDeploymentEditContext();
           }}
         />
       </div>
@@ -1764,22 +1792,20 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                     ))}
                   </optgroup>
                 )}
+                {savedDiagrams.length > 0 && (
+                  <optgroup label="Your saved diagrams">
+                    {savedDiagrams.map((diagram) => (
+                      <option value={diagram._id} key={diagram._id}>
+                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
             <button className="dash-secondary-action" onClick={startBlankDiagram} type="button">
               <FilePlus2 size={15} />
               New blank
-            </button>
-            <button
-              className="dash-secondary-action"
-              onClick={() => {
-                window.location.href = '/dashboard?view=diagrams';
-              }}
-              title="Browse, rename, and edit every saved diagram on its own page."
-              type="button"
-            >
-              <FolderOpen size={15} />
-              Manage saved diagrams
             </button>
             <button className="dash-secondary-action" disabled={isLoadingDirectory} onClick={() => void refreshDiagramDirectory()} type="button">
               <RefreshCw size={15} />
@@ -1912,260 +1938,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                 </button>
               </div>
             </form>
-          </section>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Lists every saved diagram (excluding read-only demo diagrams and application templates, which
-// stay in the builder's "Open" dropdown) with inline editing for name/description/region/tags —
-// replaces cramming the full list into that dropdown.
-function DiagramsPage() {
-  const [diagrams, setDiagrams] = useState<SavedDiagram[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [editingDiagramId, setEditingDiagramId] = useState<string>();
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editRegion, setEditRegion] = useState('');
-  const [editTags, setEditTags] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [pendingDeleteDiagram, setPendingDeleteDiagram] = useState<SavedDiagram | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  async function refresh() {
-    setIsLoading(true);
-    setError('');
-    try {
-      setDiagrams(await listSavedDiagrams());
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load saved diagrams.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function startEditing(diagram: SavedDiagram) {
-    setEditingDiagramId(diagram._id);
-    setEditName(diagram.name);
-    setEditDescription(diagram.description ?? '');
-    setEditRegion(diagram.activeRegion ?? '');
-    setEditTags((diagram.tags ?? []).join(', '));
-    setMessage('');
-    setError('');
-  }
-
-  function cancelEditing() {
-    setEditingDiagramId(undefined);
-  }
-
-  async function saveEditing(diagram: SavedDiagram) {
-    const trimmedName = editName.trim();
-    if (trimmedName.length < 2) {
-      setError('Name must be at least 2 characters.');
-      return;
-    }
-
-    setIsSaving(true);
-    setError('');
-    try {
-      const updated = await updateSavedDiagramMeta(diagram._id, {
-        name: trimmedName,
-        description: editDescription.trim(),
-        activeRegion: editRegion.trim() || undefined,
-        tags: editTags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-      });
-      setDiagrams((items) => items.map((item) => (item._id === updated._id ? updated : item)));
-      setMessage(`Saved "${updated.name}".`);
-      setEditingDiagramId(undefined);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save changes.');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDelete(diagram: SavedDiagram) {
-    setIsDeleting(true);
-    setError('');
-    try {
-      await deleteSavedDiagram(diagram._id);
-      setDiagrams((items) => items.filter((item) => item._id !== diagram._id));
-      setPendingDeleteDiagram(null);
-      setMessage(`Deleted "${diagram.name}".`);
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete this diagram.');
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  function openInBuilder(diagram: SavedDiagram) {
-    window.location.href = `/dashboard?view=builder&openDiagram=${encodeURIComponent(diagram._id)}`;
-  }
-
-  return (
-    <div className="dash-page dash-page--diagrams">
-      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
-      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
-      <header className="pipeline-console-header">
-        <div>
-          <span className="dash-eyebrow">Diagram directory</span>
-          <h2>Saved diagrams</h2>
-        </div>
-        <div className="pipeline-header-badges">
-          <button className="dash-secondary-action" disabled={isLoading} onClick={() => void refresh()} type="button">
-            <RefreshCw size={15} />
-            Refresh
-          </button>
-          <button
-            className="pipeline-primary-compact"
-            onClick={() => {
-              window.location.href = '/dashboard?view=builder';
-            }}
-            type="button"
-          >
-            <FilePlus2 size={14} />
-            New diagram
-          </button>
-        </div>
-      </header>
-      <section className="deploy-table-panel">
-        <header>
-          <strong>Saved diagrams</strong>
-          <span>{diagrams.length} shown</span>
-        </header>
-        <div className="dash-deploy-table-wrap">
-          {diagrams.length ? (
-            <table className="dash-deploy-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Region</th>
-                  <th>Tags</th>
-                  <th>Resources</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diagrams.map((diagram) => {
-                  const isEditing = editingDiagramId === diagram._id;
-                  return (
-                    <Fragment key={diagram._id}>
-                      <tr className="dash-deploy-table-row">
-                        <td>
-                          <button className="dash-deploy-name-button" onClick={() => openInBuilder(diagram)} type="button">
-                            <strong>{diagram.name}</strong>
-                            <span>{diagram.description || 'No description'}</span>
-                          </button>
-                        </td>
-                        <td>{diagram.activeRegion ?? 'region unknown'}</td>
-                        <td>{(diagram.tags ?? []).join(', ') || '—'}</td>
-                        <td>{diagram.nodes?.length ?? 0}</td>
-                        <td>{diagram.updatedAt ? new Date(diagram.updatedAt).toLocaleString() : '—'}</td>
-                        <td>
-                          <div className="dash-deploy-table-actions">
-                            <button className="dash-secondary-action" onClick={() => openInBuilder(diagram)} type="button">
-                              <Workflow size={15} />
-                              Open
-                            </button>
-                            <button className="dash-secondary-action" onClick={() => (isEditing ? cancelEditing() : startEditing(diagram))} type="button">
-                              <Edit3 size={15} />
-                              {isEditing ? 'Cancel' : 'Edit'}
-                            </button>
-                            <button className="dash-secondary-action dash-danger-action" onClick={() => setPendingDeleteDiagram(diagram)} type="button">
-                              <Trash2 size={15} />
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isEditing && (
-                        <tr className="dash-deploy-table-detail-row">
-                          <td colSpan={6}>
-                            <div className="dash-diagram-edit-form">
-                              <label>
-                                <span>Name</span>
-                                <input value={editName} onChange={(event) => setEditName(event.target.value)} />
-                              </label>
-                              <label>
-                                <span>Description</span>
-                                <input value={editDescription} onChange={(event) => setEditDescription(event.target.value)} />
-                              </label>
-                              <label>
-                                <span>Region</span>
-                                <input value={editRegion} onChange={(event) => setEditRegion(event.target.value)} placeholder="e.g. ap-south-1" />
-                              </label>
-                              <label>
-                                <span>Tags (comma separated)</span>
-                                <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="prod, backend" />
-                              </label>
-                              <div className="dash-diagram-edit-form__actions">
-                                <button className="dash-secondary-action" disabled={isSaving} onClick={cancelEditing} type="button">
-                                  Cancel
-                                </button>
-                                <button className="deployment-primary" disabled={isSaving} onClick={() => void saveEditing(diagram)} type="button">
-                                  {isSaving ? 'Saving...' : 'Save changes'}
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : (
-            <EmptyState>No saved diagrams yet. Save one from the visual builder to see it here.</EmptyState>
-          )}
-        </div>
-      </section>
-      {pendingDeleteDiagram && (
-        <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !isDeleting && setPendingDeleteDiagram(null)}>
-          <section
-            aria-labelledby="dash-diagram-delete-title"
-            aria-modal="true"
-            className="dash-destroy-dialog"
-            role="dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header>
-              <span>
-                <Trash2 size={22} />
-              </span>
-              <button aria-label="Close delete confirmation" className="dash-icon-button" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
-                <X size={16} />
-              </button>
-            </header>
-            <div className="dash-destroy-dialog__body">
-              <h2 id="dash-diagram-delete-title">Delete this diagram?</h2>
-              <p>
-                This permanently deletes <strong>{pendingDeleteDiagram.name}</strong>. This cannot be undone. If a deployment was created from this
-                diagram, it will lose the ability to be Updated or Merged into afterward — its existing AWS resources are not affected.
-              </p>
-            </div>
-            <footer>
-              <button className="dash-secondary-action" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
-                Cancel
-              </button>
-              <button className="dash-secondary-action dash-danger-action" disabled={isDeleting} onClick={() => void handleDelete(pendingDeleteDiagram)} type="button">
-                <Trash2 size={15} />
-                {isDeleting ? 'Deleting...' : 'Delete diagram'}
-              </button>
-            </footer>
           </section>
         </div>
       )}
@@ -2376,7 +2148,9 @@ function DeploymentsPage({
             <span>{visibleDeployments.length} shown</span>
           </header>
           <div className="dash-deploy-table-wrap">
-            {visibleDeployments.length ? (
+            {isLoadingDeployments && !deploymentRecords.length ? (
+              <TableSkeleton columnWidths={[3, 1, 1, 1, 1, 1, 1]} />
+            ) : visibleDeployments.length ? (
               <table className="dash-deploy-table">
                 <thead>
                   <tr>
@@ -2421,18 +2195,25 @@ function DeploymentsPage({
                         <td>{formatDeploymentDate(deployment)}</td>
                         <td>
                           <div className="dash-deploy-table-actions">
-                            {deployment.status === 'draft' && (
-                              <button
-                                className="dash-secondary-action"
-                                disabled={applyingDeploymentId === deployment._id}
-                                onClick={() => void handleApply(deployment)}
-                                title="Run Terraform apply for this saved draft against its selected AWS account."
-                                type="button"
-                              >
-                                <Rocket size={15} />
-                                {applyingDeploymentId === deployment._id ? 'Applying...' : 'Apply'}
-                              </button>
-                            )}
+                            {deployment.status === 'draft' && (() => {
+                              const hasBlockers = deployment.validationIssues.some((issue) => issue.severity === 'error');
+                              return (
+                                <button
+                                  className="dash-secondary-action"
+                                  disabled={hasBlockers || applyingDeploymentId === deployment._id}
+                                  onClick={() => void handleApply(deployment)}
+                                  title={
+                                    hasBlockers
+                                      ? 'This deployment has blocking validation errors — fix them and regenerate before applying.'
+                                      : 'Run Terraform apply for this saved draft against its selected AWS account.'
+                                  }
+                                  type="button"
+                                >
+                                  <Rocket size={15} />
+                                  {applyingDeploymentId === deployment._id ? 'Applying...' : 'Apply'}
+                                </button>
+                              );
+                            })()}
                             <button
                               className="dash-secondary-action"
                               disabled={renamingDeploymentId === deployment._id}
@@ -2446,15 +2227,19 @@ function DeploymentsPage({
                             {deployment.status !== 'draft' && (
                               <button
                                 className="dash-secondary-action"
-                                disabled={!['deployed', 'failed'].includes(deployment.status)}
+                                disabled={!['deployed', 'failed', 'destroyed'].includes(deployment.status)}
                                 onClick={() => {
                                   window.location.href = `/dashboard?view=builder&updateDeployment=${encodeURIComponent(deployment._id)}`;
                                 }}
-                                title="Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                                title={
+                                  deployment.status === 'destroyed'
+                                    ? "Edit this deployment's diagram and redeploy it — Terraform recreates everything fresh, since nothing from it is currently running."
+                                    : "Edit this deployment's diagram and apply just the changes to the already-running infrastructure."
+                                }
                                 type="button"
                               >
                                 <PencilLine size={15} />
-                                Update
+                                {deployment.status === 'destroyed' ? 'Redeploy' : 'Update'}
                               </button>
                             )}
                             {MERGE_SOURCE_ELIGIBLE_STATUSES.includes(deployment.status) && (
@@ -3000,15 +2785,37 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const githubStatus = params.get('github');
+    if (!githubStatus) return;
+
+    if (githubStatus === 'connected') {
+      setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+      void refreshGithubConnection();
+    } else {
+      setError(params.get('github_message') || 'GitHub connection failed.');
+    }
+    params.delete('github');
+    params.delete('github_message');
+    params.delete('github_reconnect_required');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`);
+  }, []);
+
+  useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
-      if (event.data?.type !== 'infraflow:github-connected') return;
-      if (event.data.success) {
+      const githubMessage = parseGithubOAuthMessage(event.data);
+      if (!githubMessage) return;
+      if (githubMessage.success) {
         stopGithubPopupPolling();
+        if (githubMessage.details?.connection?.connected) {
+          setGithubConnection(githubMessage.details.connection);
+          cacheGithubConnection(githubMessage.details.connection);
+        }
         setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
         setError('');
         void refreshGithubConnection();
       } else {
-        setError(event.data.message ?? 'GitHub connection failed.');
+        setError(githubMessage.message ?? 'GitHub connection failed.');
       }
     }
 
@@ -3024,6 +2831,16 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
 
     window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
     return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+
+  useEffect(() => {
+    function handleGithubRepositoriesCache(event: Event) {
+      const nextRepositories = (event as CustomEvent<GithubRepository[]>).detail;
+      if (Array.isArray(nextRepositories)) setGithubRepos(nextRepositories);
+    }
+
+    window.addEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
+    return () => window.removeEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
   }, []);
 
   useEffect(() => {
@@ -3057,11 +2874,11 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       .then((status) => {
         if (!isCurrent) return;
         setDeploymentStatus(status);
-        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
         setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .catch(() => {
+        clearAppPipelineDeploymentRunning(selectedPipeline._id);
         if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .finally(() => {
@@ -3187,6 +3004,29 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     }
   }
 
+  function startNewPipeline() {
+    setSelectedPipelineId('');
+    setName('Production application pipeline');
+    setAppType('react-app');
+    setEnvironment('development');
+    setSelectedDeploymentId('');
+    setBranch('main');
+    setGithubOwner('');
+    setGithubRepo('');
+    setSelectedGithubRepo('');
+    setGithubBranches([]);
+    setInstallCommand('npm ci');
+    setTestCommand('npm test -- --watch=false');
+    setBuildCommand('npm run build');
+    setStartCommand('npm start');
+    setTargetRegion('ap-south-1');
+    setLambdaFunctionName('');
+    setSelectedFilePath('');
+    setActivePreviewTab('overview');
+    setMessage('');
+    setError('');
+  }
+
   function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
     void navigator.clipboard?.writeText(file.content);
     setMessage(`${file.path} copied.`);
@@ -3225,7 +3065,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }
 
   async function refreshGithubConnection(options: { silent?: boolean } = {}) {
-    if (!options.silent) setIsGithubLoading(true);
+    if (!options.silent || !githubRepos.length) setIsGithubLoading(true);
     try {
       const connection = await getGithubStatus();
       setGithubConnection(connection);
@@ -3250,14 +3090,22 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
           setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
         }
       } catch (repoError) {
-        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
+        setGithubRepos(readCachedGithubRepositories());
+        const message = repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.';
+        if (!options.silent) setError(message);
+        else setMessage(message);
       }
       return true;
     } catch (githubError) {
-      if (options.silent && readCachedGithubConnection().connected) return false;
+      const cachedConnection = readCachedGithubConnection();
+      if (options.silent && cachedConnection.connected) {
+        setGithubConnection(cachedConnection);
+        setGithubRepos(readCachedGithubRepositories());
+        return true;
+      }
       setGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
-        cacheGithubRepositories([]);
+      cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -3265,7 +3113,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       if (!options.silent) setError(githubError instanceof Error ? githubError.message : 'Unable to load GitHub connection.');
       return false;
     } finally {
-      if (!options.silent) setIsGithubLoading(false);
+      setIsGithubLoading(false);
     }
   }
 
@@ -3387,6 +3235,8 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     try {
       const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
       if (status.run?.status !== 'completed') {
@@ -3415,8 +3265,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     try {
       const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
       setDeploymentStatus(status);
-      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
       setRunningPipelineIds(readRunningAppPipelineIds());
       if (!options.silent) setMessage('Deployment status refreshed.');
     } catch (statusError) {
@@ -3536,6 +3385,8 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
         branch: pipeline.repository.branch || 'main',
       });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(pipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       setIsDeploymentResultOpen(true);
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: pipeline._id } }));
@@ -3641,6 +3492,12 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
           <h2>Infra Pipeline</h2>
         </div>
         <div className="pipeline-header-badges">
+          {selectedPipeline && (
+            <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
+              <Plus size={14} />
+              New pipeline
+            </button>
+          )}
           <span className={`pipeline-badge ${githubConnection.connected ? 'pipeline-badge--success' : 'pipeline-badge--warning'}`}>
             <Github size={13} />
             {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
@@ -3652,13 +3509,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
             </button>
           ) : (
             <div className="legal-connect-group legal-connect-group--compact">
-              <p className="legal-inline-notice">
-                By connecting GitHub, you authorize infraflow to sync files per our{' '}
-                <a href="/legal/terms" rel="noreferrer" target="_blank">
-                  Terms of Service
-                </a>
-                .
-              </p>
+              <GithubConsentInfo />
               <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
                 <Github size={14} />
                 {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
@@ -4087,7 +3938,7 @@ function ApplicationPipelinePage() {
   const [isDeploymentResultOpen, setIsDeploymentResultOpen] = useState(false);
   const githubPopupRef = useRef<Window | null>(null);
   const githubPollRef = useRef<number | undefined>(undefined);
-  const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId) ?? pipelines[0];
+  const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId);
   const isSelectedPipelineDeploymentRunning = selectedPipeline ? runningPipelineIds.includes(selectedPipeline._id) : false;
   const selectedGithubRepository = githubRepos.find((repo) => repo.fullName === selectedGithubRepo);
   const selectedFile =
@@ -4122,7 +3973,10 @@ function ApplicationPipelinePage() {
     try {
       const pipelineData = await listApplicationPipelines();
       setPipelines(pipelineData);
-      setSelectedPipelineId((current) => current || pipelineData[0]?._id || '');
+      // Unlike the infra-pipeline console, this page has no pipeline picker of its own — it always
+      // opens in "create" mode so filling the form makes a NEW pipeline instead of silently
+      // overwriting whichever one happened to be most recently updated.
+      setSelectedPipelineId((current) => (pipelineData.some((item) => item._id === current) ? current : ''));
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load pipeline data.');
@@ -4152,15 +4006,37 @@ function ApplicationPipelinePage() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const githubStatus = params.get('github');
+    if (!githubStatus) return;
+
+    if (githubStatus === 'connected') {
+      setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
+      void refreshGithubConnection();
+    } else {
+      setError(params.get('github_message') || 'GitHub connection failed.');
+    }
+    params.delete('github');
+    params.delete('github_message');
+    params.delete('github_reconnect_required');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`);
+  }, []);
+
+  useEffect(() => {
     function handleGithubMessage(event: MessageEvent) {
-      if (event.data?.type !== 'infraflow:github-connected') return;
-      if (event.data.success) {
+      const githubMessage = parseGithubOAuthMessage(event.data);
+      if (!githubMessage) return;
+      if (githubMessage.success) {
         stopGithubPopupPolling();
+        if (githubMessage.details?.connection?.connected) {
+          setGithubConnection(githubMessage.details.connection);
+          cacheGithubConnection(githubMessage.details.connection);
+        }
         setMessage('GitHub connected. Choose a repository and generate or sync the pipeline.');
         setError('');
         void refreshGithubConnection();
       } else {
-        setError(event.data.message ?? 'GitHub connection failed.');
+        setError(githubMessage.message ?? 'GitHub connection failed.');
       }
     }
 
@@ -4176,6 +4052,16 @@ function ApplicationPipelinePage() {
 
     window.addEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
     return () => window.removeEventListener('infraflow:github-connection-cache', handleGithubConnectionCache);
+  }, []);
+
+  useEffect(() => {
+    function handleGithubRepositoriesCache(event: Event) {
+      const nextRepositories = (event as CustomEvent<GithubRepository[]>).detail;
+      if (Array.isArray(nextRepositories)) setGithubRepos(nextRepositories);
+    }
+
+    window.addEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
+    return () => window.removeEventListener(githubRepositoriesCacheEvent, handleGithubRepositoriesCache);
   }, []);
   useEffect(() => {
     function handleRunningPipelinesChanged() {
@@ -4208,11 +4094,11 @@ function ApplicationPipelinePage() {
       .then((status) => {
         if (!isCurrent) return;
         setDeploymentStatus(status);
-        if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-        else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+        syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
         setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .catch(() => {
+        clearAppPipelineDeploymentRunning(selectedPipeline._id);
         if (isCurrent) setRunningPipelineIds(readRunningAppPipelineIds());
       })
       .finally(() => {
@@ -4352,6 +4238,29 @@ function ApplicationPipelinePage() {
     }
   }
 
+  function startNewPipeline() {
+    setSelectedPipelineId('');
+    setName('Production application pipeline');
+    setAppType('react-app');
+    setEnvironment('development');
+    setSelectedDeploymentId('');
+    setBranch('main');
+    setGithubOwner('');
+    setGithubRepo('');
+    setSelectedGithubRepo('');
+    setGithubBranches([]);
+    setInstallCommand('npm ci');
+    setTestCommand('npm test -- --watch=false');
+    setBuildCommand('npm run build');
+    setStartCommand('npm start');
+    setTargetRegion('ap-south-1');
+    setLambdaFunctionName('');
+    setSelectedFilePath('');
+    setActivePreviewTab('overview');
+    setMessage('');
+    setError('');
+  }
+
   function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
     void navigator.clipboard?.writeText(file.content);
     setMessage(`${file.path} copied.`);
@@ -4412,7 +4321,7 @@ function ApplicationPipelinePage() {
   }
 
   async function refreshGithubConnection(options: { silent?: boolean } = {}) {
-    if (!options.silent) setIsGithubLoading(true);
+    if (!options.silent || !githubRepos.length) setIsGithubLoading(true);
     try {
       const connection = await getGithubStatus();
       setGithubConnection(connection);
@@ -4437,14 +4346,22 @@ function ApplicationPipelinePage() {
           setMessage('GitHub connected, but no repositories were returned for this account or app permission.');
         }
       } catch (repoError) {
-        if (!options.silent) setError(repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.');
+        setGithubRepos(readCachedGithubRepositories());
+        const message = repoError instanceof Error ? repoError.message : 'GitHub is connected, but repositories could not be loaded.';
+        if (!options.silent) setError(message);
+        else setMessage(message);
       }
       return true;
     } catch (githubError) {
-      if (options.silent && readCachedGithubConnection().connected) return false;
+      const cachedConnection = readCachedGithubConnection();
+      if (options.silent && cachedConnection.connected) {
+        setGithubConnection(cachedConnection);
+        setGithubRepos(readCachedGithubRepositories());
+        return true;
+      }
       setGithubConnection({ connected: false, login: '', scopes: [] });
       setGithubRepos([]);
-        cacheGithubRepositories([]);
+      cacheGithubRepositories([]);
       setGithubBranches([]);
       setSelectedGithubRepo('');
       setGithubOwner('');
@@ -4452,7 +4369,7 @@ function ApplicationPipelinePage() {
       if (!options.silent) setError(githubError instanceof Error ? githubError.message : 'Unable to load GitHub connection.');
       return false;
     } finally {
-      if (!options.silent) setIsGithubLoading(false);
+      setIsGithubLoading(false);
     }
   }
 
@@ -4578,6 +4495,8 @@ function ApplicationPipelinePage() {
     try {
       const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
       setDeploymentStatus(status);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
+      setRunningPipelineIds(readRunningAppPipelineIds());
       setMessage(status.message ?? 'Deployment workflow started.');
       window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
       if (status.run?.status !== 'completed') {
@@ -4606,8 +4525,7 @@ function ApplicationPipelinePage() {
     try {
       const status = await getApplicationDeploymentStatus(selectedPipeline._id, { owner, repo, branch: selectedBranch });
       setDeploymentStatus(status);
-      if (status.run?.status === 'completed') clearAppPipelineDeploymentRunning(selectedPipeline._id);
-      else if (status.run?.status && LIVE_APP_RUN_STATUSES.has(status.run.status)) markAppPipelineDeploymentRunning(selectedPipeline._id);
+      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
       setRunningPipelineIds(readRunningAppPipelineIds());
       if (!options.silent) setMessage('Deployment status refreshed.');
     } catch (statusError) {
@@ -4675,7 +4593,7 @@ function ApplicationPipelinePage() {
       <header className="pipeline-console-header">
         <div>
           <span className="dash-eyebrow">CI/CD pipeline builder</span>
-          <h2>Create deployment pipeline</h2>
+          <h2>{selectedPipeline ? `Editing "${selectedPipeline.name}"` : 'Create deployment pipeline'}</h2>
         </div>
         <div className="pipeline-header-badges">
           <span className={`pipeline-badge pipeline-badge--${environment}`}>{environment}</span>
@@ -4684,6 +4602,12 @@ function ApplicationPipelinePage() {
             <Github size={13} />
             {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
           </span>
+          {selectedPipeline && (
+            <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
+              <Plus size={14} />
+              New pipeline
+            </button>
+          )}
           <button className="pipeline-icon-action" disabled={isLoading} onClick={() => void refreshPipelineData()} title="Refresh pipelines" type="button">
             <RefreshCw size={15} />
           </button>
@@ -4769,13 +4693,7 @@ function ApplicationPipelinePage() {
                 </button>
               ) : (
                 <div className="legal-connect-group legal-connect-group--compact">
-                  <p className="legal-inline-notice">
-                    By connecting GitHub, you authorize infraflow to sync files per our{' '}
-                    <a href="/legal/terms" rel="noreferrer" target="_blank">
-                      Terms of Service
-                    </a>
-                    .
-                  </p>
+                  <GithubConsentInfo />
                   <button className="pipeline-primary-compact" onClick={connectGithub} type="button">
                     <Github size={14} />
                     Connect GitHub
@@ -4802,9 +4720,11 @@ function ApplicationPipelinePage() {
               <label className="pipeline-field">
                 <span>Repository</span>
                 <select
-                  disabled={!githubConnection.connected || isGithubLoading || (!githubRepos.length && !selectedGithubRepo)}
+                  disabled={!githubConnection.connected || isGithubLoading}
                   value={selectedGithubRepo}
                   onChange={(event) => chooseGithubRepository(event.target.value)}
+                  onFocus={() => void refreshGithubConnection({ silent: true })}
+                  onPointerDown={() => void refreshGithubConnection({ silent: true })}
                 >
                   <option value="">{isGithubLoading ? 'Loading repositories...' : 'Choose repository'}</option>
                   {selectedGithubRepo && !githubRepos.some((repo) => repo.fullName === selectedGithubRepo) && (
@@ -6277,22 +6197,16 @@ function KpiGrid({ insights }: { insights?: AwsInsights }) {
   );
 }
 
-function ResourceTable({ insights }: { insights?: AwsInsights }) {
+function ResourceTable({ deployments = [], insights }: { deployments?: DeploymentRecord[]; insights?: AwsInsights }) {
   const [detail, setDetail] = useState<RuntimeLabDetail | null>(null);
   const inventory = insights
-    ? insights.inventory.map((resource) => ({
-        service: resource.service,
-        count: resource.count,
-        health: resource.health,
-        spend: `$${resource.spend.toFixed(2)}`,
-        icon: resourceInventory.find((item) => item.service === resource.service)?.icon ?? CloudCog,
-      }))
+    ? buildInfraflowCreatedInventory(deployments, insights)
     : resourceInventory;
 
   return (
     <>
       <div className="dash-resource-table">
-        {inventory.map((resource) => {
+        {inventory.length ? inventory.map((resource) => {
           const Icon = resource.icon;
           return (
             <button key={resource.service} onClick={() => setDetail(getResourceCardDetail(resource))} type="button">
@@ -6303,11 +6217,43 @@ function ResourceTable({ insights }: { insights?: AwsInsights }) {
               <em>{resource.spend}</em>
             </button>
           );
-        })}
+        }) : <p className="pipeline-muted">No Infraflow-created AWS resources found. Deploy from the dashboard, then sync AWS data.</p>}
       </div>
       {detail && <RuntimeLabDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </>
   );
+}
+
+function buildInfraflowCreatedInventory(deployments: DeploymentRecord[], insights: AwsInsights) {
+  const createdResources = deployments
+    .filter((deployment) => deployment.status === 'deployed')
+    .flatMap((deployment) =>
+      Object.entries(deployment.outputs ?? {})
+        .map(([key, output]) => normalizeDeploymentOutputResource(key, output))
+        .filter((resource): resource is { key: string; label: string; service: string; resourceId: string } => Boolean(resource)),
+    );
+
+  const resourcesByService = new Map<string, { service: string; count: number; spend: number; health: string; icon: React.ComponentType<{ size?: number }> }>();
+  for (const resource of dedupeDeploymentResources(createdResources)) {
+    const service = canonicalAwsService(resource.service);
+    const current = resourcesByService.get(service);
+    const insightInventory = findInsightInventory(service, insights);
+    const spend = insightInventory?.spend ?? findServiceSpend(service, insights);
+    resourcesByService.set(service, {
+      service,
+      count: (current?.count ?? 0) + 1,
+      health: insightInventory?.health ?? current?.health ?? 'No live data',
+      spend: current?.spend ?? spend,
+      icon: resourceInventory.find((item) => canonicalAwsService(item.service) === service)?.icon ?? CloudCog,
+    });
+  }
+
+  return Array.from(resourcesByService.values())
+    .sort((left, right) => left.service.localeCompare(right.service))
+    .map((resource) => ({
+      ...resource,
+      spend: `$${resource.spend.toFixed(2)}`,
+    }));
 }
 
 function getDashboardKpiDetail(kpi: { label: string; value: string; change: string }): RuntimeLabDetail {
@@ -6497,11 +6443,3 @@ function readFileAsText(file: File): Promise<{ name: string; content: string }> 
 }
 
 export default DashboardShell;
-
-
-
-
-
-
-
-

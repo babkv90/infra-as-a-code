@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Github, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
 import AppLogo from '../components/AppLogo';
+import GithubConsentInfo from '../components/GithubConsentInfo';
 import { PageAlert } from '../components/PageAlert';
 import { clearAuthSession, getStoredUser } from '../auth/authClient';
 import { getNextTheme, type ThemeMode } from '../theme';
@@ -151,13 +152,7 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
               </button>
             ) : (
               <div className="legal-connect-group">
-                <p className="legal-inline-notice">
-                  By connecting GitHub, you authorize infraflow to access selected repositories and sync files per our{' '}
-                  <a href="/legal/terms" rel="noreferrer" target="_blank">
-                    Terms of Service
-                  </a>
-                  .
-                </p>
+                <GithubConsentInfo />
                 <button className="dash-primary-action" onClick={connectGithub} type="button">
                   <Github size={16} />
                   Connect GitHub

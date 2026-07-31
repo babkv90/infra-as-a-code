@@ -5,26 +5,28 @@ import { assumeAwsRole } from './awsRoleCredentials.js';
 import { assertDeployable, failDeployment, handleDeployFailureCleanup } from './deploymentGuards.js';
 import {
   dispatchGithubWorkflow,
-  getWorkflowRun,
+  getBranchHeadSha,
   syncFilesToGithub,
   waitForLatestWorkflowRun,
 } from './githubActionsClient.js';
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
-import { githubTokenForUser } from '../controllers/githubController.js';
 
 const WORKFLOW_ID = 'terraform-deploy.yml';
-const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 30 * 60 * 1000; // 30 min — generous vs. the ~2-3 min/run budget; a run stuck
-// this long is almost certainly hung, not slow, so give up and surface that rather than poll forever.
 const ACTIVE_STATUSES = ['deploying', 'destroying'];
 
+// Dispatches terraform-deploy.yml and returns as soon as the run is confirmed started — deliberately
+// does NOT poll it to completion. This function runs inside a Lambda-hosted request (called via
+// `void` from deploymentController.js, same as before), and a background poll loop has no guarantee
+// of surviving past that request's response: Lambda can freeze/recycle the execution environment once
+// the handler returns. That's what caused a real, confirmed bug — a destroy that flipped status to
+// "destroying" but never actually reached GitHub Actions, because the poll loop (and everything after
+// it, including the dispatch itself on an unlucky freeze) never got to run.
+// finishRun below is now driven entirely by terraformDeployCallbackController.js — the workflow's own
+// "Report result to Infraflow" step, a fresh independent request GitHub makes regardless of whether
+// this backend process is still alive. That's what actually finalizes the deployment.
 export async function runTerraformDeployment(deploymentId, { isUpdate = false } = {}) {
   const id = String(deploymentId);
-  // Captured as soon as runWorkflow discovers the dispatched run's id — kept as a plain local
-  // variable, not read back off deployment.activeRun, because finishRun clears that field the moment
-  // this run reaches a terminal outcome, before hasRealState below would get a chance to read it.
-  let currentRunId = null;
 
   try {
     const deployment = await Deployment.findById(id).populate('awsAccount');
@@ -48,31 +50,18 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
 
     deployment.status = 'deploying';
     deployment.startedAt = new Date();
-    // See deploymentReconciliation.js — if this backend process dies mid-run, whatever's here is
-    // what a fresh boot uses to try to resume watching the GitHub Actions run instead of just giving
-    // up on it. isUpdate specifically matters: an interrupted update must never be auto-destroyed.
     deployment.activeRun = { action: 'apply', isUpdate, startedAt: new Date() };
     deployment.logs.push({ message: isUpdate ? 'Starting GitHub Actions Terraform update runner.' : 'Starting GitHub Actions Terraform deployment runner.', level: 'info' });
     await deployment.save();
 
-    const result = await runWorkflow({
-      deployment,
-      account,
-      action: 'apply',
-      isUpdate,
-      onRunStarted: (runId) => {
-        currentRunId = runId;
-      },
-    });
-
-    await finishRun(deployment, { action: 'apply', isUpdate, runId: currentRunId, result });
+    await dispatchWorkflow({ deployment, account, action: 'apply', isUpdate });
   } catch (error) {
     const deployment = await Deployment.findById(id);
     if (deployment) {
       await finishRun(deployment, {
         action: 'apply',
         isUpdate,
-        runId: currentRunId,
+        runId: null,
         result: { outcome: 'failure', failureMessage: error.message ?? 'Terraform deployment failed.' },
       });
     }
@@ -81,7 +70,6 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
 
 export async function runTerraformDestroy(deploymentId, { force = false, auto = false } = {}) {
   const id = String(deploymentId);
-  let currentRunId = null;
 
   try {
     const deployment = await Deployment.findById(id).populate('awsAccount');
@@ -104,7 +92,7 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     deployment.status = 'destroying';
     deployment.startedAt = deployment.startedAt ?? new Date();
     deployment.finishedAt = undefined;
-    deployment.activeRun = { action: 'destroy', isUpdate: false, startedAt: new Date() };
+    deployment.activeRun = { action: 'destroy', isUpdate: false, auto, startedAt: new Date() };
     deployment.logs.push({
       message: auto
         ? 'Automatically destroying AWS resources created before this deployment failed.'
@@ -115,74 +103,23 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
     });
     await deployment.save();
 
-    const result = await runWorkflow({
-      deployment,
-      account,
-      action: 'destroy',
-      isUpdate: false,
-      onRunStarted: (runId) => {
-        currentRunId = runId;
-      },
-    });
-
-    await finishRun(deployment, { action: 'destroy', auto, runId: currentRunId, result });
+    await dispatchWorkflow({ deployment, account, action: 'destroy', isUpdate: false });
   } catch (error) {
     const deployment = await Deployment.findById(id);
     if (deployment) {
       await finishRun(deployment, {
         action: 'destroy',
         auto,
-        runId: currentRunId,
+        runId: null,
         result: { outcome: 'failure', failureMessage: error.message ?? 'Terraform destroy failed.' },
       });
     }
   }
 }
 
-// Called by deploymentReconciliation.js at server startup for any deployment found still in
-// deploying/destroying — by definition orphaned, since no async work survives a process restart, but
-// unlike the local executor, the actual Terraform run may still be alive on GitHub's infrastructure
-// independent of this backend. Re-attaches to it via the same pollWorkflowStatus + finishRun path a
-// normal (uninterrupted) run uses, so a completed-while-we-were-down run and a still-in-progress one
-// are both handled correctly, and there is no second implementation of the finalize logic to drift
-// out of sync with the first. Returns false if there's nothing to resume from (no runId recorded, or
-// no GitHub token available) — the caller falls back to marking the deployment interrupted instead.
-export async function resumeInterruptedRun(deployment) {
-  const runId = deployment.activeRun?.githubRunId;
-  if (!runId) return false;
-
-  const action = deployment.activeRun?.action ?? (deployment.status === 'destroying' ? 'destroy' : 'apply');
-  const isUpdate = Boolean(deployment.activeRun?.isUpdate);
-
-  const token = await githubTokenForUser(deployment.requestedBy).catch(() => '');
-  if (!token) return false;
-
-  const owner = env.DEPLOYMENT_GITHUB_OWNER;
-  const repo = env.DEPLOYMENT_GITHUB_REPO;
-  const htmlUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
-
-  deployment.logs.push({ message: `Backend restarted while watching GitHub Actions run ${runId} — resuming.`, level: 'warning' });
-  await deployment.save();
-
-  try {
-    const result = await pollWorkflowStatus({ deployment, token, owner, repo, runId, htmlUrl });
-    await finishRun(deployment, { action, isUpdate, runId, result });
-  } catch (error) {
-    await finishRun(deployment, {
-      action,
-      isUpdate,
-      runId,
-      result: { outcome: 'failure', failureMessage: `Could not resume watching GitHub Actions run ${runId} after a backend restart: ${error.message ?? String(error)}` },
-    });
-  }
-  return true;
-}
-
-// The one place a run's outcome (whether from a normal poll or a resumed one) turns into the
-// deployment's final status, output capture, cleanup decision, and notification — shared so there is
-// exactly one implementation of "what does success/failure actually mean for this deployment" rather
-// than one for the normal path and a second, easy-to-drift copy for resuming after a restart.
-async function finishRun(deployment, { action, isUpdate = false, auto = false, runId, result }) {
+// Called by terraformDeployCallbackController.js — the one place a run's outcome turns into the
+// deployment's final status, output capture, cleanup decision, and notification.
+export async function finishRun(deployment, { action, isUpdate = false, auto = false, runId, result }) {
   const id = String(deployment._id);
 
   if (result.outcome !== 'success') {
@@ -231,7 +168,14 @@ async function finishRun(deployment, { action, isUpdate = false, auto = false, r
     return;
   }
 
-  deployment.status = auto ? 'failed' : 'destroyed';
+  // Always 'destroyed' when the destroy Terraform run itself succeeds — see
+  // terraformDeploymentRunner.js's identical fix for the full reasoning. Confirmed via a real
+  // production run (deployment 6a6c805bbf0191d676d6e59b): the GitHub Actions destroy job completed
+  // successfully end-to-end, yet this line's previous `auto ? 'failed' : 'destroyed'` left the
+  // deployment reading 'failed' — status and reality had diverged. "Did the original deploy attempt
+  // succeed" is preserved separately, in the earlier 'failed' notification/log entry failDeployment
+  // already wrote when the apply failed; it doesn't need this field to also say so.
+  deployment.status = 'destroyed';
   deployment.finishedAt = new Date();
   deployment.activeRun = undefined;
   deployment.logs.push({
@@ -245,6 +189,7 @@ async function finishRun(deployment, { action, isUpdate = false, auto = false, r
   await createNotification({
     workspace: deployment.workspace,
     type: 'destroy',
+    // Matches deployment.status above — both say "this succeeded", because it did.
     status: 'success',
     title: auto ? `Cleaned up "${deployment.name}" after failed deployment` : `Infrastructure "${deployment.name}" destroyed`,
     message: auto
@@ -267,13 +212,18 @@ async function hasStateFromCallback(deploymentId, runId) {
   return Boolean(run.hasState);
 }
 
-// Pushes this deployment's generated Terraform (and any S3-mode Lambda hash tfvars) to our own repo,
-// dispatches the terraform-deploy.yml workflow, and polls it to completion — mirroring, run for run,
-// what the local executor does with a single blocking `terraform apply`/`destroy` invocation, just
-// over the GitHub Actions API instead of a local child process.
-async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted }) {
-  const token = await githubTokenForUser(deployment.requestedBy);
-  if (!token) throw new Error('Connect GitHub (as the deployment requester) before running Terraform via GitHub Actions.');
+// Pushes this deployment's generated Terraform (and any S3-mode Lambda hash tfvars) to our own repo
+// and dispatches the terraform-deploy.yml workflow — the local executor's counterpart is a single
+// blocking `terraform apply`/`destroy` child process; this is the same idea over the GitHub Actions
+// API, except it returns once the run is confirmed started rather than waiting for it to finish (see
+// runTerraformDeployment's comment for why: this whole call must stay fast enough to safely await
+// inside a Lambda-hosted request).
+async function dispatchWorkflow({ deployment, account, action, isUpdate }) {
+  // Platform-owned token, not the requesting customer's — see DEPLOYMENT_GITHUB_TOKEN in env.js for
+  // why. This is the only thing that changed to make this executor multi-tenant-safe: the AWS side
+  // below (assumeAwsRole(account)) was already correctly scoped to the customer.
+  const token = env.DEPLOYMENT_GITHUB_TOKEN;
+  if (!token) throw new Error('DEPLOYMENT_GITHUB_TOKEN is not configured on the backend — cannot dispatch Terraform via GitHub Actions.');
 
   const owner = env.DEPLOYMENT_GITHUB_OWNER;
   const repo = env.DEPLOYMENT_GITHUB_REPO;
@@ -286,7 +236,13 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
 
   deployment.logs.push({ message: `Pushing generated Terraform to ${owner}/${repo}@${branch}:${deploymentPath}/`, level: 'info' });
   await deployment.save();
-  await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow ${action} — deployment ${deployment._id}`, files });
+  const sync = await syncFilesToGithub({ token, owner, repo, branch, message: `Infraflow ${action} — deployment ${deployment._id}`, files });
+  // The commit SHA from the push's own response, not a separate follow-up read — confirmed by a real
+  // failure that a getBranchHeadSha() call immediately after syncFilesToGithub can race GitHub's own
+  // read-after-write consistency and return a commit that predates the push. deploymentPath is always
+  // a fresh, never-before-seen path (one per deployment), so this file is never "skipped" as
+  // unchanged — the branch-head fallback below only covers the theoretical case where it somehow was.
+  const commitSha = sync.commitSha || (await getBranchHeadSha({ token, owner, repo, branch }));
 
   // Same short-lived STS credentials the local executor would assume, just handed to the runner as
   // dispatch inputs instead of a local child-process env. The workflow masks these immediately (see
@@ -308,6 +264,7 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
       action,
       is_update: String(isUpdate),
       working_directory: deploymentPath,
+      commit_sha: commitSha,
       aws_region: account.defaultRegion,
       aws_access_key_id: credentials.accessKeyId,
       aws_secret_access_key: credentials.secretAccessKey,
@@ -320,66 +277,13 @@ async function runWorkflow({ deployment, account, action, isUpdate, onRunStarted
 
   const run = await waitForLatestWorkflowRun({ token, owner, repo, workflowId: WORKFLOW_ID, branch, createdAfter: dispatchedAt });
   if (!run) throw new Error('GitHub Actions did not report a run after dispatch — check the repository\'s Actions tab directly.');
-  onRunStarted?.(run.id);
 
-  // Recorded on the deployment itself (not just the in-memory closure above) so a restart from this
-  // point onward can be resumed by deploymentReconciliation.js instead of just abandoned.
+  // Recorded on the deployment itself so terraformDeployCallbackController.js can confirm an
+  // incoming callback matches the run actually dispatched for it, not a stale one from an earlier
+  // attempt on the same deployment.
   if (deployment.activeRun) deployment.activeRun.githubRunId = String(run.id);
   deployment.logs.push({ message: `GitHub Actions run #${run.runNumber} (${run.htmlUrl}) started.`, level: 'info' });
   await deployment.save();
-
-  return pollWorkflowStatus({ deployment, token, owner, repo, runId: run.id, htmlUrl: run.htmlUrl });
-}
-
-// Reuses the exact 5s-interval polling cadence ApplicationPipelinePage already uses client-side for
-// GitHub Actions run status (see DashboardShell.tsx) — same interval, applied server-side here since
-// this function itself is what a fire-and-forget deploy/destroy call awaits to completion.
-async function pollWorkflowStatus({ deployment, token, owner, repo, runId, htmlUrl }) {
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  let lastStatus = '';
-
-  while (Date.now() < deadline) {
-    const run = await getWorkflowRun({ token, owner, repo, runId });
-
-    if (run.status !== lastStatus) {
-      lastStatus = run.status;
-      deployment.logs.push({ message: `GitHub Actions run #${run.runNumber}: ${mapGithubStatusToDeploymentStatus(run.status, run.conclusion)}`, level: 'info' });
-      await deployment.save();
-    }
-
-    if (run.status === 'completed') {
-      const callback = await waitForCallback(String(deployment._id), runId, 15000);
-
-      if (run.conclusion === 'success' && callback?.outcome === 'success') {
-        return { outcome: 'success', outputs: callback.outputs ?? {} };
-      }
-
-      const failureMessage =
-        callback?.logExcerpt ||
-        `GitHub Actions run #${run.runNumber} concluded as "${run.conclusion}". See ${htmlUrl} for full logs.`;
-      return { outcome: 'failure', failureMessage };
-    }
-
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  return { outcome: 'failure', failureMessage: `Timed out waiting for GitHub Actions run ${htmlUrl} to complete after ${Math.round(POLL_TIMEOUT_MS / 60000)} minutes.` };
-}
-
-// Reads terraform-deploy.yml's callback result back from Deployment.githubRun (see
-// terraformDeployCallbackController.js) instead of an in-memory queue — durable across a backend
-// restart, and correct if this poll loop and the callback delivery ever land on different backend
-// instances. Only accepts the callback if its runId matches the run actually being polled, so a
-// leftover value from a previous attempt on this same deployment is never mistaken for this one.
-async function waitForCallback(deploymentId, runId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const deployment = await Deployment.findById(deploymentId).select('githubRun');
-    const run = deployment?.githubRun;
-    if (run && String(run.runId) === String(runId)) return run;
-    await sleep(500);
-  }
-  return null;
 }
 
 // GitHub's status/conclusion model translated to this app's existing DeploymentRecord.status enum —
@@ -396,7 +300,11 @@ export function mapGithubStatusToDeploymentStatus(status, conclusion, { action =
   return 'failed';
 }
 
-async function lambdaSourceHashesTfvarsContent(deployment) {
+// Exported for githubTerraformValidator.js — the async validation workflow needs the exact same
+// tfvars content as a real apply/destroy run, since terraformGenerator.js emits the same
+// `lookup(var.lambda_source_code_hashes, ...)` reference either way (see stageLambdaZipUploads'
+// comment in terraformDeploymentRunner.js for why this only matters in s3 storage mode).
+export async function lambdaSourceHashesTfvarsContent(deployment) {
   if (!(deployment.lambdaZipUploadIds ?? []).length) return null;
 
   const hashes = {};
@@ -406,10 +314,4 @@ async function lambdaSourceHashesTfvarsContent(deployment) {
   }
 
   return JSON.stringify({ lambda_source_code_hashes: hashes });
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

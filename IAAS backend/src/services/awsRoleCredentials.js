@@ -48,7 +48,12 @@ export function makeEnvCredentials() {
 
 export async function assumeAwsRole(account = {}) {
   if (!account.roleArn) {
-    return makeEnvCredentials();
+    // Deliberately not a fallback to the platform's own AWS keys: every real caller passes a
+    // customer AwsAccount doc, whose roleArn is `required: true` on the schema and validated
+    // before it's ever saved. A missing roleArn here means a caller passed a malformed/empty
+    // account — surfacing that loudly beats silently running the caller's action against the
+    // platform's own AWS account under a customer's deployment.
+    throw new Error('AWS account has no roleArn — cannot assume a role without one.');
   }
 
   if (account.roleArn.includes(':user/')) {

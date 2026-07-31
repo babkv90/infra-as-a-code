@@ -1,12 +1,13 @@
 import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PageAlert } from '../components/PageAlert';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
 import { forgotPassword, login, register, resetPassword } from './authClient';
 
 type AuthMode = 'login' | 'register';
+type AuthFieldErrors = Partial<Record<'name' | 'email' | 'password' | 'legal', string>>;
 
 function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: ThemeMode; onToggleTheme: () => void }) {
   const isRegister = mode === 'register';
@@ -24,18 +25,13 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   const [isRequestingReset, setIsRequestingReset] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const title = isRegister ? 'Create your infraflow account' : 'Login to infraflow';
   const description = isRegister
     ? 'Register your workspace and start designing AWS infrastructure visually.'
     : 'Access your diagrams, Terraform exports, AWS insights, and AI cloud agent.';
-
-  const canSubmit = useMemo(() => {
-    if (!email.trim() || password.length < 8) return false;
-    if (isRegister && (name.trim().length < 2 || !hasAcceptedLegal)) return false;
-    return true;
-  }, [email, hasAcceptedLegal, isRegister, name, password]);
 
   const canRequestPasswordReset = !isRegister && email.trim().length > 0 && !isRequestingReset;
   const canResetPassword = !isRegister && resetToken.trim().length >= 32 && resetNewPassword.length >= 8 && !isResettingPassword;
@@ -50,7 +46,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSubmit || isSubmitting) return;
+    if (isSubmitting) return;
+
+    const validationErrors = validateAuthForm({ email, hasAcceptedLegal, isRegister, name, password });
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
 
     setError('');
     setIsSubmitting(true);
@@ -161,15 +161,30 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           </button>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" noValidate onSubmit={handleSubmit}>
           {isRegister && (
             <>
               <label className="auth-field">
                 <span>Full name</span>
                 <div>
                   <UserRound size={17} />
-                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" autoComplete="name" />
+                  <input
+                    aria-describedby={fieldErrors.name ? 'auth-name-error' : undefined}
+                    aria-invalid={Boolean(fieldErrors.name)}
+                    value={name}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      clearFieldError('name');
+                    }}
+                    placeholder="Your name"
+                    autoComplete="name"
+                  />
                 </div>
+                {fieldErrors.name && (
+                  <span className="auth-field-error" id="auth-name-error">
+                    {fieldErrors.name}
+                  </span>
+                )}
               </label>
               <label className="auth-field">
                 <span>Workspace name</span>
@@ -190,8 +205,24 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
             <span>Email address</span>
             <div>
               <Mail size={17} />
-              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" autoComplete="email" type="email" />
+              <input
+                aria-describedby={fieldErrors.email ? 'auth-email-error' : undefined}
+                aria-invalid={Boolean(fieldErrors.email)}
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  clearFieldError('email');
+                }}
+                placeholder="you@company.com"
+                autoComplete="email"
+                type="email"
+              />
             </div>
+            {fieldErrors.email && (
+              <span className="auth-field-error" id="auth-email-error">
+                {fieldErrors.email}
+              </span>
+            )}
           </label>
 
           <label className="auth-field">
@@ -199,8 +230,13 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
             <div>
               <LockKeyhole size={17} />
               <input
+                aria-describedby={fieldErrors.password ? 'auth-password-error' : undefined}
+                aria-invalid={Boolean(fieldErrors.password)}
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  clearFieldError('password');
+                }}
                 placeholder="Minimum 8 characters"
                 autoComplete={isRegister ? 'new-password' : 'current-password'}
                 type={showPassword ? 'text' : 'password'}
@@ -209,6 +245,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+            {fieldErrors.password && (
+              <span className="auth-field-error" id="auth-password-error">
+                {fieldErrors.password}
+              </span>
+            )}
           </label>
 
           {!isRegister && (
@@ -278,7 +319,16 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
           {isRegister && (
             <label className="auth-consent">
-              <input checked={hasAcceptedLegal} onChange={(event) => setHasAcceptedLegal(event.target.checked)} type="checkbox" />
+              <input
+                aria-describedby={fieldErrors.legal ? 'auth-legal-error' : undefined}
+                aria-invalid={Boolean(fieldErrors.legal)}
+                checked={hasAcceptedLegal}
+                onChange={(event) => {
+                  setHasAcceptedLegal(event.target.checked);
+                  clearFieldError('legal');
+                }}
+                type="checkbox"
+              />
               <span>
                 I agree to the{' '}
                 <a href="/legal/terms" rel="noreferrer" target="_blank">
@@ -290,10 +340,15 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 </a>
                 .
               </span>
+              {fieldErrors.legal && (
+                <span className="auth-field-error auth-field-error--consent" id="auth-legal-error">
+                  {fieldErrors.legal}
+                </span>
+              )}
             </label>
           )}
 
-          <button className="auth-submit" disabled={!canSubmit || isSubmitting} type="submit">
+          <button className="auth-submit" disabled={isSubmitting} type="submit">
             {isSubmitting ? 'Please wait...' : isRegister ? 'Create account' : 'Login'}
             <ArrowRight size={17} />
           </button>
@@ -306,11 +361,59 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
       </section>
     </main>
   );
+
+  function clearFieldError(field: keyof AuthFieldErrors) {
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
 }
 
 function getAuthRedirectTarget() {
   const next = new URLSearchParams(window.location.search).get('next');
   return next?.startsWith('/') && !next.startsWith('//') ? next : DASHBOARD_ROUTE;
+}
+
+function validateAuthForm({
+  email,
+  hasAcceptedLegal,
+  isRegister,
+  name,
+  password,
+}: {
+  email: string;
+  hasAcceptedLegal: boolean;
+  isRegister: boolean;
+  name: string;
+  password: string;
+}) {
+  const validationErrors: AuthFieldErrors = {};
+  const trimmedEmail = email.trim();
+
+  if (isRegister && name.trim().length < 2) {
+    validationErrors.name = 'Enter your full name.';
+  }
+
+  if (!trimmedEmail) {
+    validationErrors.email = 'Enter your email address.';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    validationErrors.email = 'Enter a valid email address.';
+  }
+
+  if (!password) {
+    validationErrors.password = 'Enter your password.';
+  } else if (password.length < 8) {
+    validationErrors.password = 'Password must be at least 8 characters.';
+  }
+
+  if (isRegister && !hasAcceptedLegal) {
+    validationErrors.legal = 'Accept the terms and privacy policy to continue.';
+  }
+
+  return validationErrors;
 }
 
 export default AuthPage;

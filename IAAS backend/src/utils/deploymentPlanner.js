@@ -4,7 +4,12 @@ import { validateDiagram } from './diagramValidator.js';
 import { validateGeneratedTerraform } from './terraformValidator.js';
 import { validateTerraformWithCli } from '../services/terraformCliValidator.js';
 
-export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend = false } = {}) {
+// deferCliValidation skips the real `terraform validate` CLI call (Layer 2) and reports it as
+// 'pending' in plan.steps instead of 'ready'/'blocked'. Used by the Lambda executor, which has no
+// reliable way to run that CLI inline (see terraformCliValidator.js and githubTerraformValidator.js) —
+// the caller is expected to dispatch async validation via GitHub Actions afterward and let
+// terraformValidateCallbackController.js fill in the real result once it comes back.
+export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend = false, deferCliValidation = false } = {}) {
   const snapshot = normalizeDiagramSnapshot(diagram);
   const nodes = snapshot.nodes;
   const edges = snapshot.edges;
@@ -22,7 +27,9 @@ export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBa
   // shelling out to Terraform for a config we already know is going to be rejected, and it keeps
   // "obviously broken diagram" feedback instant instead of waiting on a CLI round trip.
   const alreadyBlocked = structuralIssues.some((issue) => issue.severity === 'error');
-  const cliIssues = !alreadyBlocked && resourceCount > 0 ? await validateTerraformWithCli(terraform, lambdaZipUploadIdsFromNodes(nodes)) : [];
+  const runsCliLayer = !alreadyBlocked && resourceCount > 0 && !deferCliValidation;
+  const cliIssues = runsCliLayer ? await validateTerraformWithCli(terraform, lambdaZipUploadIdsFromNodes(nodes)) : [];
+  const cliPending = !alreadyBlocked && resourceCount > 0 && deferCliValidation;
   const issues = [...structuralIssues, ...cliIssues];
 
   const blockers = issues.filter((issue) => issue.severity === 'error').length;
@@ -33,6 +40,7 @@ export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBa
     connectionCount: edges.length,
     terraform,
     validationIssues: issues,
+    cliValidationPending: cliPending,
     plan: {
       blockers,
       warnings,
@@ -40,7 +48,7 @@ export async function buildDeploymentPlan(diagram, { deploymentId, remoteStateBa
         { label: 'Validate required resource fields', status: alreadyBlocked ? 'blocked' : 'ready' },
         { label: 'Validate diagram rules and security', status: alreadyBlocked ? 'blocked' : warnings ? 'warning' : 'ready' },
         { label: 'Generate Terraform', status: resourceCount ? 'ready' : 'blocked' },
-        { label: 'Run terraform validate', status: alreadyBlocked ? 'blocked' : cliIssues.length ? 'blocked' : 'ready' },
+        { label: 'Run terraform validate', status: alreadyBlocked ? 'blocked' : cliPending ? 'pending' : cliIssues.length ? 'blocked' : 'ready' },
         { label: 'Create plan and resource info artifacts', status: resourceCount ? 'ready' : 'blocked' },
         { label: 'Wait for approval', status: blockers ? 'blocked' : 'ready' },
         { label: 'Deploy to AWS', status: blockers ? 'blocked' : 'ready' },

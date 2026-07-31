@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import {
   githubOAuthScope,
@@ -114,7 +115,7 @@ export const githubOAuthCallback = asyncHandler(async (req, res) => {
       });
     }
 
-    await GitHubConnection.findOneAndUpdate(
+    const connection = await GitHubConnection.findOneAndUpdate(
       { userId: user._id },
       {
         userId: user._id,
@@ -147,6 +148,7 @@ export const githubOAuthCallback = asyncHandler(async (req, res) => {
       message: 'GitHub connected.',
       mode: statePayload.mode,
       returnTo: statePayload.returnTo,
+      details: { connection: serializeConnection(connection, user.githubConnection) },
     });
   } catch (callbackError) {
     return finishGithubOAuth(req, res, {
@@ -196,7 +198,7 @@ export const listGithubRepositories = asyncHandler(async (req, res) => {
   const token = await githubTokenForUser(req.user._id);
   if (!token) throw new ApiError(409, 'Connect GitHub before selecting a repository.');
 
-  const repos = await githubJson('/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member', token);
+  const repos = await listAllGithubRepositories(token);
   res.json({
     success: true,
     data: repos.map((repo) => ({
@@ -218,6 +220,20 @@ export const listGithubRepositories = asyncHandler(async (req, res) => {
     })),
   });
 });
+
+async function listAllGithubRepositories(token) {
+  const repositories = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const pageRepos = await githubJson(
+      `/user/repos?per_page=100&page=${page}&sort=updated&visibility=all&affiliation=owner,collaborator,organization_member`,
+      token,
+    );
+    if (!Array.isArray(pageRepos) || !pageRepos.length) break;
+    repositories.push(...pageRepos);
+    if (pageRepos.length < 100) break;
+  }
+  return repositories;
+}
 
 export const listGithubBranches = asyncHandler(async (req, res) => {
   const owner = String(req.query.owner ?? '').trim();
@@ -355,7 +371,22 @@ function verifyRefreshTokenFromCookie(req) {
 }
 
 function githubCallbackUrl(req) {
-  return env.GITHUB_OAUTH_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/v1/github/oauth/callback`;
+  return normalizeGithubCallbackUrl(env.GITHUB_OAUTH_CALLBACK_URL) || `${req.protocol}://${req.get('host')}/api/v1/github/oauth/callback`;
+}
+
+function normalizeGithubCallbackUrl(value) {
+  const callbackUrl = String(value ?? '').trim();
+  if (!callbackUrl) return '';
+
+  try {
+    const url = new URL(callbackUrl);
+    if (url.pathname === '/' || url.pathname === '') {
+      url.pathname = '/api/v1/github/oauth/callback';
+    }
+    return url.toString();
+  } catch {
+    return callbackUrl;
+  }
 }
 
 function safeReturnTo(value) {
@@ -392,7 +423,12 @@ function serializeConnection(connection, userGithubConnection) {
 
 function finishGithubOAuth(req, res, { success, message, mode = 'redirect', returnTo = '/settings', details }) {
   if (mode === 'popup') {
-    return res.type('html').send(popupHtml(success, message, returnTo, details));
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.set(
+      'Content-Security-Policy',
+      `default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+    );
+    return res.type('html').send(popupHtml(success, message, returnTo, details, nonce));
   }
 
   const redirectUrl = frontendRedirectUrl(returnTo, success, message, details);
@@ -408,10 +444,9 @@ function frontendRedirectUrl(returnTo, success, message, details) {
   return url.toString();
 }
 
-function popupHtml(success, message, returnTo = '/settings', details) {
-  const payload = JSON.stringify({ type: 'infraflow:github-connected', success, message, details });
-  const origins = JSON.stringify(env.CLIENT_ORIGINS.length ? env.CLIENT_ORIGINS : ['*']);
-  const fallbackUrl = JSON.stringify(frontendRedirectUrl(returnTo, success, message, details));
+function popupHtml(success, message, returnTo = '/settings', details, nonce) {
+  const payload = serializeInlineScriptJson({ type: 'infraflow:github-connected', success, message, details });
+  const origins = serializeInlineScriptJson(env.CLIENT_ORIGINS.length ? env.CLIENT_ORIGINS : ['*']);
   return `<!doctype html>
 <html>
   <head>
@@ -419,7 +454,7 @@ function popupHtml(success, message, returnTo = '/settings', details) {
     <meta charset="utf-8" />
   </head>
   <body>
-    <script>
+    <script nonce="${escapeHtml(nonce)}">
       const payload = ${payload};
       const origins = ${origins};
       if (window.opener) {
@@ -427,14 +462,16 @@ function popupHtml(success, message, returnTo = '/settings', details) {
           window.opener.postMessage(payload, origin);
         }
         window.opener.postMessage(payload, '*');
-        setTimeout(() => window.close(), 200);
-      } else {
-        window.location.replace(${fallbackUrl});
       }
+      setTimeout(() => window.close(), 700);
     </script>
     <p>${success ? 'GitHub connected. You can close this window.' : `GitHub connection failed: ${escapeHtml(message)}`}</p>
   </body>
 </html>`;
+}
+
+function serializeInlineScriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
 function escapeHtml(value) {

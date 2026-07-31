@@ -60,6 +60,7 @@ export function githubOAuthUrl({ mode = 'redirect', returnTo = '/settings' }: { 
   const params = new URLSearchParams({ mode, returnTo });
   const token = getStoredToken();
   if (token) params.set('token', token);
+  console.log( `${API_BASE_URL}/github/oauth/connect?${params.toString()}`)
   return `${API_BASE_URL}/github/oauth/connect?${params.toString()}`;
 }
 
@@ -97,10 +98,6 @@ async function githubRequest<T>(path: string, init: RequestInit = {}) {
     {
       ...init,
       cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache',
-        ...init.headers,
-      },
     },
     'GitHub request failed',
   );
