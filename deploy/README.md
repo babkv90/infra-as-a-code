@@ -1,4 +1,4 @@
-# lambdaPipeline deployment pipeline
+# ReactPipeline deployment pipeline
 
 This pipeline deploys from a selected GitHub Environment. It authenticates to AWS using
 GitHub's OIDC provider — no long-lived AWS deploy keys are stored in GitHub.
@@ -39,13 +39,13 @@ aws iam create-open-id-connect-provider \
 
 # 2. Create the deploy role, trusted only for this repo + selected environments (see deploy/oidc-trust-policy.json)
 aws iam create-role \
-  --role-name lambdapipeline-deploy-role \
+  --role-name reactpipeline-deploy-role \
   --assume-role-policy-document file://deploy/oidc-trust-policy.json
 
 # 3. Attach the least-privilege permissions this pipeline needs (see deploy/oidc-permissions-policy.json)
 aws iam put-role-policy \
-  --role-name lambdapipeline-deploy-role \
-  --policy-name lambdapipeline-deploy-role-permissions \
+  --role-name reactpipeline-deploy-role \
+  --policy-name reactpipeline-deploy-role-permissions \
   --policy-document file://deploy/oidc-permissions-policy.json
 ```
 
@@ -56,7 +56,7 @@ AWS account ID. Before running step 3, replace `<ACCOUNT_ID>` in
 ## Required GitHub secret
 
 - `AWS_DEPLOY_ROLE_ARN`: set this as a repository secret or per-environment secret. Use the ARN printed by step 2 above, e.g.
-  `arn:aws:iam::<ACCOUNT_ID>:role/lambdapipeline-deploy-role`.
+  `arn:aws:iam::<ACCOUNT_ID>:role/reactpipeline-deploy-role`.
 
 Recommended secrets by target:
 - Environment variable `VITE_API_BASE_URL` for S3 and CloudFront apps. `INFRAFLOW_API_BASE_URL` is accepted as a fallback alias.
@@ -68,7 +68,7 @@ Recommended secrets by target:
 
 ## Target
 
-- Type: lambda
+- Type: s3-cloudfront
 - Region: ap-south-1
-- ECR repository: api-gateway-lambda-iam-role-app
-- Service: serverless-api-service
+- ECR repository: react-vue-angular-static-frontend-app
+- Service: react-app-service
