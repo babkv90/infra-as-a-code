@@ -15,7 +15,6 @@ import {
   ExternalLink,
   Eye,
   FilePlus2,
-  FolderOpen,
   GitBranch,
   GitMerge,
   Github,
@@ -63,10 +62,8 @@ import { EmptyState, Panel, TableSkeleton } from './components/DashPrimitives';
 import {
   createSavedDiagram,
   deleteSavedDiagram,
-  getSavedDiagram,
   listSavedDiagrams,
   updateSavedDiagram,
-  updateSavedDiagramMeta,
   type SavedDiagram,
 } from './diagramApi';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -807,8 +804,6 @@ function renderPage(
   switch (activePage) {
     case 'builder':
       return <VisualBuilderPage theme={theme} onToggleTheme={onToggleTheme} />;
-    case 'diagrams':
-      return <DiagramsPage />;
     case 'terraform':
       return <TerraformPage />;
     case 'ai-agent':
@@ -1447,10 +1442,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const canDeleteDiagrams = canRoleDeleteDiagrams(user?.role);
   const accessTier = serviceAccessTierForUser(user);
   const directoryDiagrams = useMemo(() => [...demoDiagrams, ...savedDiagrams], [demoDiagrams, savedDiagrams]);
-  // Only templates + demo diagrams are offered from this dropdown — user-saved diagrams live on
-  // their own management page (DiagramsPage) instead, so "hasOpenableDiagrams" (and the select's
-  // disabled/placeholder state) only needs to reflect what's actually rendered in it below.
-  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || demoDiagrams.length > 0;
+  const hasOpenableDiagrams = commonInfraTemplates.length > 0 || demoDiagrams.length > 0 || savedDiagrams.length > 0;
   const isCurrentTemplateDiagram = currentDiagramId?.startsWith(templateDiagramPrefix) ?? false;
 
   function fitFullDiagram() {
@@ -1554,28 +1546,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
       })
       .catch((error) => {
         setDirectoryMessage(error instanceof Error ? error.message : 'Unable to prepare that merge.');
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Opened from the "Saved Diagrams" management page (DiagramsPage below), which lists every saved
-  // diagram on its own page instead of cramming them into the "Open" dropdown here. Fetches the
-  // diagram directly by id rather than depending on directoryDiagrams having finished loading yet.
-  useEffect(() => {
-    const diagramId = new URLSearchParams(window.location.search).get('openDiagram');
-    if (!diagramId) return;
-
-    window.history.replaceState(null, '', '/dashboard?view=builder');
-
-    getSavedDiagram(diagramId)
-      .then((diagram) => {
-        importDiagram({ nodes: diagram.nodes ?? [], edges: diagram.edges ?? [] });
-        setCurrentDiagramId(diagram._id);
-        setCurrentDiagramName(diagram.name);
-        fitFullDiagram();
-      })
-      .catch((error) => {
-        setDirectoryMessage(error instanceof Error ? error.message : 'Unable to open that diagram.');
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1803,22 +1773,20 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                     ))}
                   </optgroup>
                 )}
+                {savedDiagrams.length > 0 && (
+                  <optgroup label="Your saved diagrams">
+                    {savedDiagrams.map((diagram) => (
+                      <option value={diagram._id} key={diagram._id}>
+                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
             <button className="dash-secondary-action" onClick={startBlankDiagram} type="button">
               <FilePlus2 size={15} />
               New blank
-            </button>
-            <button
-              className="dash-secondary-action"
-              onClick={() => {
-                window.location.href = '/dashboard?view=diagrams';
-              }}
-              title="Browse, rename, and edit every saved diagram on its own page."
-              type="button"
-            >
-              <FolderOpen size={15} />
-              Manage saved diagrams
             </button>
             <button className="dash-secondary-action" disabled={isLoadingDirectory} onClick={() => void refreshDiagramDirectory()} type="button">
               <RefreshCw size={15} />
@@ -1951,262 +1919,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
                 </button>
               </div>
             </form>
-          </section>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Lists every saved diagram (excluding read-only demo diagrams and application templates, which
-// stay in the builder's "Open" dropdown) with inline editing for name/description/region/tags —
-// replaces cramming the full list into that dropdown.
-function DiagramsPage() {
-  const [diagrams, setDiagrams] = useState<SavedDiagram[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [editingDiagramId, setEditingDiagramId] = useState<string>();
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editRegion, setEditRegion] = useState('');
-  const [editTags, setEditTags] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [pendingDeleteDiagram, setPendingDeleteDiagram] = useState<SavedDiagram | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  async function refresh() {
-    setIsLoading(true);
-    setError('');
-    try {
-      setDiagrams(await listSavedDiagrams());
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load saved diagrams.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function startEditing(diagram: SavedDiagram) {
-    setEditingDiagramId(diagram._id);
-    setEditName(diagram.name);
-    setEditDescription(diagram.description ?? '');
-    setEditRegion(diagram.activeRegion ?? '');
-    setEditTags((diagram.tags ?? []).join(', '));
-    setMessage('');
-    setError('');
-  }
-
-  function cancelEditing() {
-    setEditingDiagramId(undefined);
-  }
-
-  async function saveEditing(diagram: SavedDiagram) {
-    const trimmedName = editName.trim();
-    if (trimmedName.length < 2) {
-      setError('Name must be at least 2 characters.');
-      return;
-    }
-
-    setIsSaving(true);
-    setError('');
-    try {
-      const updated = await updateSavedDiagramMeta(diagram._id, {
-        name: trimmedName,
-        description: editDescription.trim(),
-        activeRegion: editRegion.trim() || undefined,
-        tags: editTags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-      });
-      setDiagrams((items) => items.map((item) => (item._id === updated._id ? updated : item)));
-      setMessage(`Saved "${updated.name}".`);
-      setEditingDiagramId(undefined);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save changes.');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDelete(diagram: SavedDiagram) {
-    setIsDeleting(true);
-    setError('');
-    try {
-      await deleteSavedDiagram(diagram._id);
-      setDiagrams((items) => items.filter((item) => item._id !== diagram._id));
-      setPendingDeleteDiagram(null);
-      setMessage(`Deleted "${diagram.name}".`);
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete this diagram.');
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  function openInBuilder(diagram: SavedDiagram) {
-    window.location.href = `/dashboard?view=builder&openDiagram=${encodeURIComponent(diagram._id)}`;
-  }
-
-  return (
-    <div className="dash-page dash-page--diagrams">
-      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
-      {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
-      <header className="pipeline-console-header">
-        <div>
-          <span className="dash-eyebrow">Diagram directory</span>
-          <h2>Saved diagrams</h2>
-        </div>
-        <div className="pipeline-header-badges">
-          <button className="dash-secondary-action" disabled={isLoading} onClick={() => void refresh()} type="button">
-            <RefreshCw size={15} />
-            Refresh
-          </button>
-          <button
-            className="pipeline-primary-compact"
-            onClick={() => {
-              window.location.href = '/dashboard?view=builder';
-            }}
-            type="button"
-          >
-            <FilePlus2 size={14} />
-            New diagram
-          </button>
-        </div>
-      </header>
-      <section className="deploy-table-panel">
-        <header>
-          <strong>Saved diagrams</strong>
-          <span>{diagrams.length} shown</span>
-        </header>
-        <div className="dash-deploy-table-wrap">
-          {isLoading && !diagrams.length ? (
-            <TableSkeleton columnWidths={[3, 1, 2, 1, 1, 1]} />
-          ) : diagrams.length ? (
-            <table className="dash-deploy-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Region</th>
-                  <th>Tags</th>
-                  <th>Resources</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diagrams.map((diagram) => {
-                  const isEditing = editingDiagramId === diagram._id;
-                  return (
-                    <Fragment key={diagram._id}>
-                      <tr className="dash-deploy-table-row">
-                        <td>
-                          <button className="dash-deploy-name-button" onClick={() => openInBuilder(diagram)} type="button">
-                            <strong>{diagram.name}</strong>
-                            <span>{diagram.description || 'No description'}</span>
-                          </button>
-                        </td>
-                        <td>{diagram.activeRegion ?? 'region unknown'}</td>
-                        <td>{(diagram.tags ?? []).join(', ') || '—'}</td>
-                        <td>{diagram.nodes?.length ?? 0}</td>
-                        <td>{diagram.updatedAt ? new Date(diagram.updatedAt).toLocaleString() : '—'}</td>
-                        <td>
-                          <div className="dash-deploy-table-actions">
-                            <button className="dash-secondary-action" onClick={() => openInBuilder(diagram)} type="button">
-                              <Workflow size={15} />
-                              Open
-                            </button>
-                            <button className="dash-secondary-action" onClick={() => (isEditing ? cancelEditing() : startEditing(diagram))} type="button">
-                              <Edit3 size={15} />
-                              {isEditing ? 'Cancel' : 'Edit'}
-                            </button>
-                            <button className="dash-secondary-action dash-danger-action" onClick={() => setPendingDeleteDiagram(diagram)} type="button">
-                              <Trash2 size={15} />
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isEditing && (
-                        <tr className="dash-deploy-table-detail-row">
-                          <td colSpan={6}>
-                            <div className="dash-diagram-edit-form">
-                              <label>
-                                <span>Name</span>
-                                <input value={editName} onChange={(event) => setEditName(event.target.value)} />
-                              </label>
-                              <label>
-                                <span>Description</span>
-                                <input value={editDescription} onChange={(event) => setEditDescription(event.target.value)} />
-                              </label>
-                              <label>
-                                <span>Region</span>
-                                <input value={editRegion} onChange={(event) => setEditRegion(event.target.value)} placeholder="e.g. ap-south-1" />
-                              </label>
-                              <label>
-                                <span>Tags (comma separated)</span>
-                                <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="prod, backend" />
-                              </label>
-                              <div className="dash-diagram-edit-form__actions">
-                                <button className="dash-secondary-action" disabled={isSaving} onClick={cancelEditing} type="button">
-                                  Cancel
-                                </button>
-                                <button className="deployment-primary" disabled={isSaving} onClick={() => void saveEditing(diagram)} type="button">
-                                  {isSaving ? 'Saving...' : 'Save changes'}
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : (
-            <EmptyState>No saved diagrams yet. Save one from the visual builder to see it here.</EmptyState>
-          )}
-        </div>
-      </section>
-      {pendingDeleteDiagram && (
-        <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !isDeleting && setPendingDeleteDiagram(null)}>
-          <section
-            aria-labelledby="dash-diagram-delete-title"
-            aria-modal="true"
-            className="dash-destroy-dialog"
-            role="dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header>
-              <span>
-                <Trash2 size={22} />
-              </span>
-              <button aria-label="Close delete confirmation" className="dash-icon-button" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
-                <X size={16} />
-              </button>
-            </header>
-            <div className="dash-destroy-dialog__body">
-              <h2 id="dash-diagram-delete-title">Delete this diagram?</h2>
-              <p>
-                This permanently deletes <strong>{pendingDeleteDiagram.name}</strong>. This cannot be undone. If a deployment was created from this
-                diagram, it will lose the ability to be Updated or Merged into afterward — its existing AWS resources are not affected.
-              </p>
-            </div>
-            <footer>
-              <button className="dash-secondary-action" disabled={isDeleting} onClick={() => setPendingDeleteDiagram(null)} type="button">
-                Cancel
-              </button>
-              <button className="dash-secondary-action dash-danger-action" disabled={isDeleting} onClick={() => void handleDelete(pendingDeleteDiagram)} type="button">
-                <Trash2 size={15} />
-                {isDeleting ? 'Deleting...' : 'Delete diagram'}
-              </button>
-            </footer>
           </section>
         </div>
       )}
