@@ -34,6 +34,14 @@ const deploymentSchema = new mongoose.Schema(
     terraformWorkDir: { type: String, default: '' },
     lambdaZipUploadIds: { type: [String], default: [] },
     outputs: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Maps sensitive fields inside `outputs` to where their real value actually lives —
+    // { [outputResourceKey]: { [attrKey]: { arn } } }. Populated by secretRedaction.js right after a
+    // successful apply (or by the opt-in migrateSecretsToSecretsManager.js script for older
+    // deployments): the matching attribute in `outputs` is replaced with a `{ __secretRef: true }`
+    // marker at the same time, so the raw value is never persisted here — only the Secrets Manager
+    // reference the broker endpoint (deploymentSecretController.js) resolves on an authenticated,
+    // audited, rate-limited request.
+    secretRefs: { type: mongoose.Schema.Types.Mixed, default: {} },
     drift: {
       checkedAt: Date,
       status: { type: String, enum: ['unknown', 'in_sync', 'drifted', 'error'], default: 'unknown' },

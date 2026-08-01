@@ -11,6 +11,7 @@ import {
 } from './githubActionsClient.js';
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
+import { migrateSensitiveOutputsToSecretsManager } from '../utils/secretRedaction.js';
 
 const WORKFLOW_ID = 'terraform-deploy.yml';
 const ACTIVE_STATUSES = ['deploying', 'destroying'];
@@ -141,7 +142,9 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
   }
 
   if (action === 'apply') {
-    deployment.outputs = result.outputs ?? {};
+    const migrated = await migrateSensitiveOutputsToSecretsManager(deployment, result.outputs ?? {});
+    deployment.outputs = migrated.outputs;
+    deployment.secretRefs = { ...deployment.secretRefs, ...migrated.secretRefs };
     deployment.status = 'deployed';
     deployment.finishedAt = new Date();
     deployment.activeRun = undefined;
@@ -151,6 +154,9 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
         : 'Terraform apply completed. AWS resources should now be visible in the target account console.',
       level: 'info',
     });
+    for (const warning of migrated.warnings) {
+      deployment.logs.push({ message: warning, level: 'warning' });
+    }
     await deployment.save();
 
     await createNotification({

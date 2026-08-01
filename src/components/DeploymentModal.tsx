@@ -16,11 +16,44 @@ import {
   type DeploymentRecord,
   type GithubRunStatus,
 } from '../utils/deploymentApi';
+import { apiRequest } from '../utils/apiClient';
 import { exportTerraform } from '../utils/exportTerraform';
 import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resourceRequirements';
+import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import type { ValidationIssue } from '../utils/validate';
 import { validateServiceAccess } from '../utils/accessControl';
+
+// The one legitimate place a sensitive deployment-output value (SSH private key, DB endpoint) is
+// shown/downloaded in full without an explicit per-field reveal click — task item 4's "one-time
+// display right after creation". Everywhere else (including a later visit to this exact deployment
+// via resource-info) only ever sees the { revealPath } marker and goes through the broker endpoint
+// one field at a time. Resolves every sensitive field once, in parallel, through that same broker
+// endpoint — there's no separate "bulk reveal" API, this is just the per-field one called several
+// times right after a fresh deploy while the values are still worth surfacing proactively.
+async function revealAllSensitiveOutputsOnce(outputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const revealed: Record<string, unknown> = {};
+  for (const [resourceKey, group] of Object.entries(outputs)) {
+    if (!group || typeof group !== 'object') {
+      revealed[resourceKey] = group;
+      continue;
+    }
+    const nextGroup: Record<string, unknown> = { ...(group as Record<string, unknown>) };
+    for (const [fieldKey, cell] of Object.entries(nextGroup)) {
+      if (!isSecretPlaceholder(cell) || !cell.revealPath) continue;
+      try {
+        const { value } = await apiRequest<{ value: string }>(cell.revealPath);
+        nextGroup[fieldKey] = value;
+      } catch {
+        // Leave the placeholder in place for this one field — the popup still shows/downloads
+        // everything else it could resolve, and this field falls back to the normal masked +
+        // per-field reveal flow on the resource-info page.
+      }
+    }
+    revealed[resourceKey] = nextGroup;
+  }
+  return revealed;
+}
 
 type DeploymentStatus = 'idle' | 'running' | 'success' | 'error' | 'destroyed';
 type RunnerLog = DeploymentRecord['logs'][number];
@@ -69,6 +102,9 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const [requestError, setRequestError] = useState('');
   const [queuedDeployment, setQueuedDeployment] = useState<DeploymentRecord | null>(null);
   const [showDeploymentSuccess, setShowDeploymentSuccess] = useState(false);
+  const [revealedOutputsOnce, setRevealedOutputsOnce] = useState<Record<string, unknown> | null>(null);
+  const [isRevealingOnce, setIsRevealingOnce] = useState(false);
+  const [revealOnceError, setRevealOnceError] = useState('');
   const [isConfirmingForceDestroy, setIsConfirmingForceDestroy] = useState(false);
   const [isForceDestroying, setIsForceDestroying] = useState(false);
   const [forceDestroyError, setForceDestroyError] = useState('');
@@ -100,6 +136,40 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const resourceBundle = useMemo(
     () => buildDeploymentResourceBundle(nodes, edges, effectiveIssues, queuedDeployment?.outputs),
     [effectiveIssues, edges, nodes, queuedDeployment?.outputs],
+  );
+  // Only used for the one-time success popup's download button — everywhere else (including
+  // navigating from that same popup to the persistent resource-info page) stays on the masked
+  // `resourceBundle` above.
+  const oneTimeResourceBundle = useMemo(
+    () => (revealedOutputsOnce ? buildDeploymentResourceBundle(nodes, edges, effectiveIssues, revealedOutputsOnce) : resourceBundle),
+    [effectiveIssues, edges, nodes, resourceBundle, revealedOutputsOnce],
+  );
+
+  useEffect(() => {
+    if (deploymentStatus !== 'success' || !queuedDeployment?.outputs) return;
+    let cancelled = false;
+    setIsRevealingOnce(true);
+    setRevealOnceError('');
+    revealAllSensitiveOutputsOnce(queuedDeployment.outputs)
+      .then((result) => {
+        if (!cancelled) setRevealedOutputsOnce(result);
+      })
+      .catch((error) => {
+        if (!cancelled) setRevealOnceError(error instanceof Error ? error.message : 'Could not load full sensitive values right now.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsRevealingOnce(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deploymentStatus, queuedDeployment?.outputs]);
+  const hasSensitiveOutputs = useMemo(
+    () =>
+      Object.values(queuedDeployment?.outputs ?? {}).some(
+        (group) => group && typeof group === 'object' && Object.values(group).some((cell) => isSecretPlaceholder(cell)),
+      ),
+    [queuedDeployment?.outputs],
   );
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
@@ -351,7 +421,7 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   }
 
   function downloadResourceInfo() {
-    downloadJsonFile('deployment-resource-info.json', resourceBundle);
+    downloadJsonFile('deployment-resource-info.json', oneTimeResourceBundle);
   }
 
   function goToResourceInfoPage() {
@@ -836,11 +906,21 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
           </span>
           <h2 id="deployment-success-title">Your resource has been deployed</h2>
           <p>AWS deployment completed successfully. The created resource should now be visible in the target AWS account.</p>
+          {hasSensitiveOutputs && (
+            <p className="deployment-success-secret-warning">
+              <ShieldAlert size={14} />
+              {isRevealingOnce
+                ? 'Loading sensitive values (SSH key, DB endpoint, etc.) for this one-time view...'
+                : revealOnceError
+                  ? `Some sensitive values could not be loaded: ${revealOnceError} They'll still be available later via Resource Info's reveal button.`
+                  : "This download/view can contain full sensitive values (SSH key, DB endpoint, etc.) — copy or download them now. Any later visit to Resource Info only shows masked values behind a reveal button."}
+            </p>
+          )}
           <button className="text-button" type="button" onClick={goToResourceInfoPage}>
             <Eye size={16} />
             View resource info
           </button>
-          <button className="text-button" type="button" onClick={downloadResourceInfo}>
+          <button className="text-button" disabled={isRevealingOnce} type="button" onClick={downloadResourceInfo}>
             <Download size={16} />
             Download one-time resource info
           </button>

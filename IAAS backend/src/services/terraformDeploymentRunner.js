@@ -12,6 +12,7 @@ import { assertDeployable, failDeployment, handleDeployFailureCleanup, stripAnsi
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
 import { storage } from '../storage/index.js';
+import { migrateSensitiveOutputsToSecretsManager } from '../utils/secretRedaction.js';
 
 const runningDeployments = new Set();
 
@@ -103,7 +104,10 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     }
 
     await runTerraformCommand(deployment, workDir, ['apply', '-input=false', '-auto-approve', 'tfplan'], terraformEnv);
-    deployment.outputs = await readTerraformOutputs(deployment, workDir, terraformEnv);
+    const rawOutputs = await readTerraformOutputs(deployment, workDir, terraformEnv);
+    const migrated = await migrateSensitiveOutputsToSecretsManager(deployment, rawOutputs);
+    deployment.outputs = migrated.outputs;
+    deployment.secretRefs = { ...deployment.secretRefs, ...migrated.secretRefs };
 
     deployment.status = 'deployed';
     deployment.finishedAt = new Date();
@@ -114,6 +118,9 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
         : 'Terraform apply completed. AWS resources should now be visible in the target account console.',
       level: 'info',
     });
+    for (const warning of migrated.warnings) {
+      deployment.logs.push({ message: warning, level: 'warning' });
+    }
     await deployment.save();
 
     // A sitting-deployed deployment doesn't need the downloaded provider binaries (600MB+) on disk
