@@ -5771,6 +5771,7 @@ button.lp-security-item {
 }
 
 .dash-nav button {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr;
   align-items: center;
@@ -6232,8 +6233,12 @@ button.lp-security-item {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
+  padding-right: 0;
+  scrollbar-width: none;
+}
+
+.dash-page--overview::-webkit-scrollbar {
+  display: none;
 }
 
 .dash-content:has(.dash-page--overview) {
@@ -6705,6 +6710,7 @@ button.lp-security-item {
 
 .dash-aws-insights-metrics {
   grid-template-columns: repeat(8, minmax(92px, 1fr));
+  background: transparent;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: thin;
@@ -6729,8 +6735,7 @@ button.lp-security-item {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 18px;
   background: rgba(15, 23, 42, 0.74);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(18px);
+  box-shadow: none;
 }
 
 .dash-aws-insight-card {
@@ -6981,15 +6986,15 @@ button.lp-security-item {
 .app-theme-light .dash-aws-insight-card,
 .app-theme-light .dash-aws-mini-chart {
   border-color: var(--border-subtle);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.1);
+  background: #fff;
+  box-shadow: none;
 }
 
 .app-theme-pearl .dash-aws-insight-card,
 .app-theme-pearl .dash-aws-mini-chart {
   border-color: var(--pearl-border);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 20px 48px rgba(20, 33, 61, 0.1);
+  background: #fff;
+  box-shadow: none;
 }
 
 .dash-two-col {
@@ -14114,6 +14119,7 @@ button.dash-kpi-card {
 
 .dash-role-policy-card {
   min-width: 0;
+  min-height: 0;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 14px;
   background: rgba(2, 6, 23, 0.34);
@@ -14136,7 +14142,7 @@ button.dash-kpi-card {
 
 .dash-role-policy-card pre {
   margin: 0;
-  max-height: 260px;
+  max-height: min(42vh, 360px);
   overflow: auto;
   padding: 12px;
   color: #bae6fd;
@@ -14212,7 +14218,7 @@ button.dash-kpi-card {
 
 .dash-role-setup-field > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -14224,6 +14230,34 @@ button.dash-kpi-card {
   background: rgba(2, 6, 23, 0.46);
   color: #e2e8f0;
   font-size: 12px;
+}
+
+.dash-role-policy-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: min(420px, 100%);
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.dash-role-policy-tabs button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dash-role-policy-tabs button.active,
+.dash-role-policy-tabs button[aria-selected='true'] {
+  background: rgba(34, 211, 238, 0.16);
+  color: #e0f2fe;
 }
 
 .dash-role-setup-intro {
@@ -18059,6 +18093,25 @@ button.dash-kpi-card {
 .app-theme-light .dash-role-policy-card pre,
 .app-theme-pearl .dash-role-policy-card pre {
   color: var(--text-secondary);
+}
+
+.app-theme-light .dash-role-policy-tabs,
+.app-theme-pearl .dash-role-policy-tabs {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+}
+
+.app-theme-light .dash-role-policy-tabs button,
+.app-theme-pearl .dash-role-policy-tabs button {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .dash-role-policy-tabs button.active,
+.app-theme-light .dash-role-policy-tabs button[aria-selected='true'],
+.app-theme-pearl .dash-role-policy-tabs button.active,
+.app-theme-pearl .dash-role-policy-tabs button[aria-selected='true'] {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-primary);
 }
 
 .app-theme-light .deployment-update-banner {

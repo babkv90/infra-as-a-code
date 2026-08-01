@@ -17,13 +17,18 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
   const [deployerIdentity, setDeployerIdentity] = useState<{ arn: string; accountId: string }>();
   const [isLoadingIdentity, setIsLoadingIdentity] = useState(false);
   const [isRoleSetupOpen, setIsRoleSetupOpen] = useState(false);
+  const [activePolicyTab, setActivePolicyTab] = useState<'trust' | 'permissions'>('trust');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const trustPolicy = useMemo(
     () => (deployerIdentity ? JSON.stringify(buildDeployRoleTrustPolicy(deployerIdentity.arn, externalId || undefined), null, 2) : ''),
     [deployerIdentity, externalId],
   );
+  const maskedDeployerArn = useMemo(() => (deployerIdentity ? maskSensitiveArn(deployerIdentity.arn) : ''), [deployerIdentity]);
   const permissionsPolicy = useMemo(() => JSON.stringify(deployRolePermissionsPolicy, null, 2), []);
+  const activePolicy = activePolicyTab === 'trust'
+    ? { title: 'Trust policy', value: trustPolicy, copiedMessage: 'Trust policy copied.' }
+    : { title: 'Permissions policy', value: permissionsPolicy, copiedMessage: 'Permissions policy copied.' };
 
   useEffect(() => {
     if (!regions.includes(defaultRegion) && regions[0]) setDefaultRegion(regions[0]);
@@ -212,14 +217,34 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
               <label className="dash-role-setup-field">
                 <span>Infraflow deployer ARN</span>
                 <div>
-                  <input readOnly value={deployerIdentity.arn} />
-                  <button className="dash-secondary-action" onClick={() => copyText(deployerIdentity.arn, 'Infraflow deployer ARN copied.')} type="button">
-                    Copy
-                  </button>
+                  <input aria-label="Masked Infraflow deployer ARN" readOnly value={maskedDeployerArn} />
                 </div>
               </label>
-              <RolePolicyCard title="Trust policy" value={trustPolicy} onCopy={() => copyText(trustPolicy, 'Trust policy copied.')} />
-              <RolePolicyCard title="Permissions policy" value={permissionsPolicy} onCopy={() => copyText(permissionsPolicy, 'Permissions policy copied.')} />
+              <div className="dash-role-policy-tabs" role="tablist" aria-label="AWS role setup policies">
+                <button
+                  aria-selected={activePolicyTab === 'trust'}
+                  className={activePolicyTab === 'trust' ? 'active' : ''}
+                  onClick={() => setActivePolicyTab('trust')}
+                  role="tab"
+                  type="button"
+                >
+                  Trust policy
+                </button>
+                <button
+                  aria-selected={activePolicyTab === 'permissions'}
+                  className={activePolicyTab === 'permissions' ? 'active' : ''}
+                  onClick={() => setActivePolicyTab('permissions')}
+                  role="tab"
+                  type="button"
+                >
+                  Permissions policy
+                </button>
+              </div>
+              <RolePolicyCard
+                title={activePolicy.title}
+                value={activePolicy.value}
+                onCopy={() => copyText(activePolicy.value, activePolicy.copiedMessage)}
+              />
             </div>
           </section>
         </div>
@@ -254,6 +279,10 @@ export function ConnectAwsPage({ accounts, regions, onAwsChanged }: { accounts: 
       </Panel>
     </div>
   );
+}
+
+function maskSensitiveArn(arn: string) {
+  return arn.replace(/\d{12}/g, '************').replace(/role\/[^:/\s]+/g, 'role/***');
 }
 
 function RolePolicyCard({ title, value, onCopy }: { title: string; value: string; onCopy: () => void }) {

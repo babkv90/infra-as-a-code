@@ -118,13 +118,12 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.validated.body;
   const user = await User.findOne({ email }).select('+passwordResetToken +passwordResetExpires');
 
-  const responseBody = {
-    success: true,
-    message: 'If an account exists for this email, a password reset token has been generated.',
-  };
+  if (!user) {
+    throw new ApiError(404, 'User not found for this email address.');
+  }
 
-  if (!user || user.status !== 'active') {
-    return res.json(responseBody);
+  if (user.status !== 'active') {
+    throw new ApiError(403, 'User account is not active.');
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
@@ -134,15 +133,28 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
   await auditLog({ user, ip: req.ip }, 'auth.password_reset.requested', 'User', user._id);
 
-  if (env.NODE_ENV === 'production') {
+  // if (env.NODE_ENV === 'production') {
     try {
       const emailResult = await sendPasswordResetEmail({ to: user.email, resetToken, expiresAt: user.passwordResetExpires });
+      const acceptedRecipients = emailResult.accepted?.map(String) ?? [];
+
+      if (!acceptedRecipients.length) {
+        console.error('Password reset email was not accepted by SMTP server', {
+          email: user.email,
+          messageId: emailResult.messageId,
+          accepted: emailResult.accepted,
+          rejected: emailResult.rejected,
+        });
+        throw new ApiError(502, 'Password reset email was not accepted by the mail server. Please try again later.');
+      }
+
       console.info('Password reset email sent', {
         email: user.email,
         messageId: emailResult.messageId,
         accepted: emailResult.accepted,
         rejected: emailResult.rejected,
       });
+      console.log('Password reset email sent to:', user.email, 'Message ID:', emailResult.messageId);
     } catch (error) {
       console.error('Password reset email failed', {
         email: user.email,
@@ -155,19 +167,24 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       if (error instanceof EmailConfigurationError) {
         throw new ApiError(500, error.message);
       }
-
+      if (error instanceof ApiError) {
+        throw error;
+      }
       throw new ApiError(500, 'Password reset SMTP delivery failed. Check SMTP host, port, secure mode, username, password, and sender address.');
     }
-  }
+  // }
 
-  if (env.NODE_ENV !== 'production') {
-    responseBody.data = {
-      resetToken,
-      expiresAt: user.passwordResetExpires,
-    };
-  }
-
-  res.json(responseBody);
+  // if (env.NODE_ENV !== 'production') {
+  //   responseBody.data = {
+  //     resetToken,
+  //     expiresAt: user.passwordResetExpires,
+  //   };
+  // }
+  
+  res.json({
+    success: true,
+    message: `Password reset email sent to ${user.email}. Please check your inbox.`,
+  });
 });
 
 export const resetPassword = asyncHandler(async (req, res) => {

@@ -87,8 +87,8 @@ export async function forgotPassword(payload: Pick<LoginPayload, 'email'>) {
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-
   const result = (await response.json().catch(() => null)) as ForgotPasswordResponse | null;
+  
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message ?? 'Could not request password reset. Please try again.');

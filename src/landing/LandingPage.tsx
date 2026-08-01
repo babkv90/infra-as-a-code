@@ -12,7 +12,6 @@ import {
   KeyRound,
   LockKeyhole,
   Menu,
-  MousePointerClick,
   Moon,
   Network,
   Play,
@@ -26,7 +25,6 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type React from 'react';
 import AppLogo from '../components/AppLogo';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -93,25 +91,6 @@ type HeroNetworkNode = {
   y: number;
 };
 
-type PopupOrigin = {
-  x: number;
-  direction: 'down' | 'up';
-  anchor: number;
-  maxHeight: number;
-};
-
-type HeroResourceField = {
-  label: string;
-  value: string;
-  helper: string;
-};
-
-type HeroResourceConfig = {
-  summary: string;
-  fields: HeroResourceField[];
-  capabilities: string[];
-};
-
 const heroNetworkNodes: HeroNetworkNode[] = [
   { id: 'apigw', label: 'API Gateway', meta: 'HTTP API ingress', icon: Network, x: 18, y: 34 },
   { id: 'eventbridge', label: 'EventBridge', meta: 'Scheduled event', icon: GitBranch, x: 18, y: 56 },
@@ -123,90 +102,6 @@ const heroNetworkNodes: HeroNetworkNode[] = [
   { id: 's3', label: 'S3', meta: 'Object storage', icon: Boxes, x: 82, y: 56 },
   { id: 'cloudwatch', label: 'CloudWatch', meta: 'Logs + alarms', icon: Activity, x: 82, y: 78 },
 ];
-
-const heroResourceConfigs: Record<string, HeroResourceConfig> = {
-  apigw: {
-    summary: 'Create an HTTP API front door and route requests to a Lambda integration.',
-    fields: [
-      { label: 'API name', value: 'orders-http-api', helper: 'Terraform aws_apigatewayv2_api name.' },
-      { label: 'Route key', value: 'POST /orders', helper: 'HTTP method and path exposed to clients.' },
-      { label: 'Integration target', value: 'Lambda function', helper: 'Connects API Gateway to the compute handler.' },
-    ],
-    capabilities: ['HTTP API resource', 'Lambda integration', 'Route and stage wiring', 'Invoke permission generation'],
-  },
-  eventbridge: {
-    summary: 'Trigger infrastructure workflows or Lambda jobs from a scheduled EventBridge rule.',
-    fields: [
-      { label: 'Rule name', value: 'nightly-order-sync', helper: 'Terraform aws_cloudwatch_event_rule name.' },
-      { label: 'Schedule expression', value: 'rate(1 day)', helper: 'EventBridge schedule expression.' },
-      { label: 'Target', value: 'Lambda function', helper: 'Supported target for this visual flow.' },
-    ],
-    capabilities: ['Scheduled rule', 'Lambda target', 'Execution permission', 'Event-driven topology'],
-  },
-  sqs: {
-    summary: 'Buffer asynchronous work with SQS before Lambda processes messages.',
-    fields: [
-      { label: 'Queue name', value: 'orders-processing-queue', helper: 'Terraform aws_sqs_queue name.' },
-      { label: 'Visibility timeout', value: '30 seconds', helper: 'Time a message stays hidden while processing.' },
-      { label: 'Retention period', value: '4 days', helper: 'How long unprocessed messages remain available.' },
-    ],
-    capabilities: ['Queue resource', 'Async decoupling', 'Lambda event source candidate', 'Retry-friendly architecture'],
-  },
-  iam: {
-    summary: 'Define the execution role Lambda needs to access connected AWS resources.',
-    fields: [
-      { label: 'Role name', value: 'orders-lambda-execution-role', helper: 'Terraform aws_iam_role name.' },
-      { label: 'Trusted service', value: 'lambda.amazonaws.com', helper: 'Service principal allowed to assume this role.' },
-      { label: 'Policy scope', value: 'DynamoDB, S3, CloudWatch logs', helper: 'Least-privilege permissions for this diagram.' },
-    ],
-    capabilities: ['Execution role', 'Trust policy', 'Least-privilege policy guidance', 'PassRole-aware deployment'],
-  },
-  lambda: {
-    summary: 'Run application logic behind API Gateway, EventBridge, or SQS workflows.',
-    fields: [
-      { label: 'Function name', value: 'process-user-order', helper: 'Terraform aws_lambda_function function_name.' },
-      { label: 'Runtime', value: 'nodejs20.x', helper: 'Runtime supported by AWS Lambda.' },
-      { label: 'Memory / timeout', value: '512 MB / 30 seconds', helper: 'Compute sizing surfaced in generated Terraform.' },
-    ],
-    capabilities: ['Lambda function', 'Generated stub package', 'Execution role connection', 'CloudWatch log output'],
-  },
-  secrets: {
-    summary: 'Store runtime configuration values without hardcoding secrets into source or Terraform UI copy.',
-    fields: [
-      { label: 'Secret name', value: 'orders/database-url', helper: 'Terraform aws_secretsmanager_secret name.' },
-      { label: 'Encryption', value: 'AWS managed KMS key', helper: 'Default secure storage behavior.' },
-      { label: 'Consumer', value: 'Lambda environment reference', helper: 'How the runtime consumes the value.' },
-    ],
-    capabilities: ['Secrets Manager resource', 'Runtime configuration', 'Secrets-aware workflow', 'IAM access planning'],
-  },
-  dynamodb: {
-    summary: 'Persist application records in a managed NoSQL table connected to Lambda.',
-    fields: [
-      { label: 'Table name', value: 'orders', helper: 'Terraform aws_dynamodb_table name.' },
-      { label: 'Partition key', value: 'orderId', helper: 'Primary hash key for item access.' },
-      { label: 'Billing mode', value: 'PAY_PER_REQUEST', helper: 'Serverless billing mode for variable workloads.' },
-    ],
-    capabilities: ['DynamoDB table', 'Primary key modeling', 'Lambda access path', 'Terraform table definition'],
-  },
-  s3: {
-    summary: 'Create object storage for uploads, artifacts, static assets, or generated outputs.',
-    fields: [
-      { label: 'Bucket name', value: 'orders-artifacts-bucket', helper: 'Globally unique S3 bucket name.' },
-      { label: 'Versioning', value: 'Enabled', helper: 'Preserve object history where required.' },
-      { label: 'Encryption', value: 'SSE-S3', helper: 'Default server-side encryption posture.' },
-    ],
-    capabilities: ['S3 bucket', 'Versioning option', 'Encryption posture', 'Lambda read/write integration'],
-  },
-  cloudwatch: {
-    summary: 'Collect runtime logs and alarms for deployed infrastructure.',
-    fields: [
-      { label: 'Log group', value: '/aws/lambda/process-user-order', helper: 'Terraform aws_cloudwatch_log_group name.' },
-      { label: 'Retention', value: '14 days', helper: 'Controls log storage lifecycle.' },
-      { label: 'Alarm signal', value: 'Lambda errors', helper: 'Metric context for operational visibility.' },
-    ],
-    capabilities: ['Log group', 'Retention policy', 'Alarm-ready signal', 'Dashboard insight source'],
-  },
-};
 
 const heroNetworkEdges = [
   { from: 'apigw', to: 'lambda', className: 'lp-hero-network__line--api' },
@@ -362,10 +257,7 @@ function HeroSection() {
 function HeroNetworkBackground() {
   const networkRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; offsetX: number; offsetY: number; startClientX: number; startClientY: number; moved: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<HeroNetworkNode | null>(null);
-  const [popupOrigin, setPopupOrigin] = useState<PopupOrigin | null>(null);
   const [nodes, setNodes] = useState(heroNetworkNodes);
 
   function pointerToNetworkPosition(event: React.PointerEvent) {
@@ -421,42 +313,11 @@ function HeroNetworkBackground() {
   }
 
   function stopNetworkDragging() {
-    if (dragRef.current?.moved) {
-      suppressClickRef.current = true;
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
-    }
     dragRef.current = null;
     setActiveNodeId(null);
   }
 
-  function computePopupOrigin(el: HTMLElement): PopupOrigin {
-    const rect = el.getBoundingClientRect();
-    const halfWidth = 180;
-    const margin = 16;
-    const x = clamp(rect.left + rect.width / 2, halfWidth + 12, window.innerWidth - halfWidth - 12);
-    const direction: 'down' | 'up' = rect.bottom + 380 > window.innerHeight ? 'up' : 'down';
-    const anchor = direction === 'down' ? rect.bottom - 6 : rect.top + 6;
-    const available = direction === 'down' ? window.innerHeight - anchor - margin : anchor - margin;
-    const maxHeight = clamp(available, 220, 640);
-    return { x, direction, anchor, maxHeight };
-  }
-
-  function handleNetworkNodeClick(event: React.MouseEvent<HTMLSpanElement>, node: HeroNetworkNode) {
-    if (suppressClickRef.current) return;
-    setPopupOrigin(computePopupOrigin(event.currentTarget));
-    setSelectedNode(node);
-  }
-
   function handleNetworkNodeKeyDown(event: React.KeyboardEvent<HTMLSpanElement>, node: HeroNetworkNode) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      setPopupOrigin(computePopupOrigin(event.currentTarget));
-      setSelectedNode(node);
-      return;
-    }
-
     const step = event.shiftKey ? 4 : 2;
     const movement = {
       ArrowUp: [0, -step],
@@ -490,19 +351,15 @@ function HeroNetworkBackground() {
           const Icon = node.icon;
           return (
             <span
-              aria-label={`Drag ${node.label} service node. Press Enter to configure it.`}
-              className={`lp-hero-network__node ${activeNodeId === node.id ? 'lp-hero-network__node--active' : ''} ${selectedNode?.id === node.id ? 'lp-hero-network__node--source' : ''}`}
+              aria-label={`Drag ${node.label} service node.`}
+              className={`lp-hero-network__node ${activeNodeId === node.id ? 'lp-hero-network__node--active' : ''}`}
               key={node.id}
-              onClick={(event) => handleNetworkNodeClick(event, node)}
               onKeyDown={(event) => handleNetworkNodeKeyDown(event, node)}
               onPointerDown={(event) => handleNetworkNodePointerDown(event, node)}
               role="button"
               style={{ left: `${node.x}%`, top: `${node.y}%`, animationDelay: `${index * 260}ms` }}
               tabIndex={0}
             >
-              <em className="lp-hero-network__click-cue">
-                <MousePointerClick size={13} />
-              </em>
               <Icon size={16} />
               <span>
                 <strong>{node.label}</strong>
@@ -512,89 +369,7 @@ function HeroNetworkBackground() {
           );
         })}
       </div>
-      {selectedNode && popupOrigin && (
-        <HeroResourceModal
-          node={selectedNode}
-          origin={popupOrigin}
-          onClose={() => {
-            setSelectedNode(null);
-            setPopupOrigin(null);
-          }}
-        />
-      )}
     </>
-  );
-}
-
-function HeroResourceModal({ node, origin, onClose }: { node: HeroNetworkNode; origin: PopupOrigin; onClose: () => void }) {
-  const config = heroResourceConfigs[node.id];
-  const Icon = node.icon;
-  const [values, setValues] = useState(() => Object.fromEntries((config?.fields ?? []).map((field) => [field.label, field.value])));
-
-  function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    window.location.href = `${LOGIN_ROUTE}?next=${encodeURIComponent('/dashboard?view=builder')}`;
-  }
-
-  if (!config) return null;
-
-  const anchorStyle: React.CSSProperties = {
-    left: origin.x,
-    maxHeight: origin.maxHeight,
-    ...(origin.direction === 'down' ? { top: origin.anchor } : { bottom: window.innerHeight - origin.anchor }),
-  };
-
-  return createPortal(
-    <div className="lp-resource-modal-backdrop" role="presentation" onClick={onClose}>
-      <form
-        className={`lp-resource-modal lp-resource-modal--tongue lp-resource-modal--${origin.direction}`}
-        aria-labelledby="lp-resource-modal-title"
-        onClick={(event) => event.stopPropagation()}
-        onSubmit={handleSubmit}
-        style={anchorStyle}
-      >
-        <span className="lp-resource-modal__stalk" aria-hidden="true" />
-        <span className="lp-resource-modal__grip" aria-hidden="true" />
-        <header>
-          <span className="lp-resource-modal__icon">
-            <Icon size={18} />
-          </span>
-          <div>
-            <small>{node.meta}</small>
-            <h3 id="lp-resource-modal-title">{node.label} properties</h3>
-          </div>
-          <button aria-label="Close resource properties" onClick={onClose} type="button">
-            <X size={16} />
-          </button>
-        </header>
-        <p>{config.summary}</p>
-        <div className="lp-resource-modal__fields">
-          {config.fields.map((field) => (
-            <label key={field.label}>
-              <span>{field.label}</span>
-              <input value={values[field.label] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.label]: event.target.value }))} />
-              <small>{field.helper}</small>
-            </label>
-          ))}
-        </div>
-        <div className="lp-resource-modal__capabilities">
-          <strong>Generated workflow support</strong>
-          <ul>
-            {config.capabilities.map((capability) => (
-              <li key={capability}>
-                <Check size={13} />
-                {capability}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <button className="lp-primary-button" type="submit">
-          Create infra from this resource
-          <ArrowRight size={16} />
-        </button>
-      </form>
-    </div>,
-    document.body,
   );
 }
 

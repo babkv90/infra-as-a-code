@@ -52,7 +52,6 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'builder', label: 'Visual Builder', icon: Workflow },
   { id: 'terraform', label: 'Terraform Export', icon: Code2 },
-  { id: 'ai-agent', label: 'AI Cloud Agent', icon: BrainCircuit, badge: 'AI' },
   { id: 'deployments', label: 'Deployments', icon: Rocket },
   { id: 'resource-info', label: 'Resource Info', icon: Database },
   { id: 'infra-pipeline', label: 'Infra Pipeline', icon: Server },
@@ -61,6 +60,7 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'connect-aws', label: 'Connect AWS', icon: CloudCog },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'super-admin', label: 'Super Admin', icon: SlidersHorizontal },
+  { id: 'ai-agent', label: 'AI Cloud Agent', icon: BrainCircuit, badge: 'AI' },
 ];
 
 // Change dashboard KPI dummy data here.
