@@ -9,6 +9,9 @@ async function unwrap<T>(response: Response, fallbackMessage: string): Promise<T
     if (response.status === 429) {
       throw new Error(result?.message ? `429: ${result.message}` : '429: Too many requests');
     }
+    if (response.status === 402) {
+      throw new Error(result?.message ? `402: ${result.message}` : '402: Out of credits');
+    }
     throw new Error(result?.message ?? fallbackMessage);
   }
   return result.data as T;

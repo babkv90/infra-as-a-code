@@ -1,5 +1,6 @@
 import { roles } from '../constants/roles.js';
 import { ApiError } from './ApiError.js';
+import { hasCredits } from './credits.js';
 
 const allServiceIds = [
   'ec2',
@@ -96,18 +97,19 @@ export function normalizeAccessPlan(workspace) {
 
 export function canUseAiAgent(user, workspace) {
   const plan = normalizeAccessPlan(workspace);
-  return user?.role === roles.SUPER_ADMIN || plan === 'pro' || plan === 'enterprise' || Number(user?.demoCredits ?? 0) > 0;
+  return hasCredits(user) || plan === 'pro' || plan === 'enterprise';
 }
 
 export function canUseApplicationPipelines(user, workspace) {
-  return user?.role === roles.SUPER_ADMIN || normalizeAccessPlan(workspace) === 'enterprise';
+  return hasCredits(user) || normalizeAccessPlan(workspace) === 'enterprise';
 }
 
+// While a user has credits (or is superadmin), they get the full AWS service catalog regardless of
+// role or workspace plan — role/plan only decide the fallback tier once credits hit 0.
 export function allowedServiceIdsForAccess(user, workspace) {
-  if (user?.role === roles.SUPER_ADMIN) return new Set(allServiceIds);
+  if (hasCredits(user)) return new Set(allServiceIds);
 
   const plan = normalizeAccessPlan(workspace);
-  if ((plan === 'demo' || plan === 'free') && Number(user?.demoCredits ?? 0) > 0) return new Set(intermediateServiceIds);
   if (plan === 'demo' || plan === 'free') return new Set(basicServiceIds);
   if (plan === 'pro') return new Set(intermediateServiceIds);
 
@@ -119,8 +121,8 @@ export function allowedServiceIdsForAccess(user, workspace) {
 
 export function serviceAccessTier(user, workspace) {
   if (user?.role === roles.SUPER_ADMIN) return 'Super admin';
+  if (hasCredits(user)) return 'Credits';
   const plan = normalizeAccessPlan(workspace);
-  if ((plan === 'demo' || plan === 'free') && Number(user?.demoCredits ?? 0) > 0) return 'Demo credits intermediate';
   if (plan === 'demo') return 'Demo basic';
   if (plan === 'free') return 'Free basic';
   if (plan === 'pro') return 'Pro intermediate + AI';

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Circle, Code2, Copy, Download, ExternalLink, Eye, Loader2, Rocket, ScrollText, Save, ShieldAlert, X, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Circle, Code2, Coins, Copy, Download, ExternalLink, Eye, Loader2, Rocket, ScrollText, Save, ShieldAlert, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { listAwsAccounts, type AwsAccountRecord } from '../dashboard/awsApi';
 import { getStoredUser } from '../auth/authClient';
@@ -22,7 +22,8 @@ import { buildDeploymentResourceBundle, downloadJsonFile } from '../utils/resour
 import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import type { ValidationIssue } from '../utils/validate';
-import { validateServiceAccess } from '../utils/accessControl';
+import { canDeployByRole, getAccessPlan, hasCredits, validateServiceAccess } from '../utils/accessControl';
+import { requestDemoCredits } from '../dashboard/superAdminApi';
 
 // The one legitimate place a sensitive deployment-output value (SSH private key, DB endpoint) is
 // shown/downloaded in full without an explicit per-field reveal click — task item 4's "one-time
@@ -100,6 +101,11 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [requestError, setRequestError] = useState('');
+  const [deployAccessRequestMessage, setDeployAccessRequestMessage] = useState('');
+  const [isRequestingDeployAccess, setIsRequestingDeployAccess] = useState(false);
+  const [isCreditRequestOpen, setIsCreditRequestOpen] = useState(false);
+  const [isRequestingCredits, setIsRequestingCredits] = useState(false);
+  const [creditRequestMessage, setCreditRequestMessage] = useState('');
   const [queuedDeployment, setQueuedDeployment] = useState<DeploymentRecord | null>(null);
   const [showDeploymentSuccess, setShowDeploymentSuccess] = useState(false);
   const [revealedOutputsOnce, setRevealedOutputsOnce] = useState<Record<string, unknown> | null>(null);
@@ -173,7 +179,19 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   );
   const connectedAccounts = accounts.filter((account) => account.status === 'connected');
   const selectedAccount = connectedAccounts.find((account) => account._id === selectedAccountId);
-  const canDeploy = plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
+  // Everyone reaches this whole page to explore it (plan, Terraform preview, resource info, logs) —
+  // role only gates the actual Deploy action itself, replaced below with a "Request deploy access"
+  // button in its place instead of blocking the page. The backend's own authorize(roles.DEVOPS) on
+  // every deployment route remains the real enforcement regardless of what this UI does.
+  const isDeployAllowedByRole = canDeployByRole(user);
+  const isDeployAllowedByCredits = hasCredits(user);
+  const canDeploy =
+    isDeployAllowedByRole && isDeployAllowedByCredits && plan.resourceCount > 0 && plan.blockers === 0 && Boolean(selectedAccountId);
+  // accessIssues (plan-based service restrictions) already feed into effectiveIssues/plan.blockers
+  // above, so canDeploy is correctly false here too — this just decides whether to surface a
+  // "Request credit access" popup as the actionable next step for that specific reason.
+  const needsCreditsForAccess =
+    (accessIssues.length > 0 && user?.role !== 'superadmin' && ['demo', 'free'].includes(getAccessPlan(user))) || !isDeployAllowedByCredits;
   const isAlreadyDeployed = !isUpdateLikeMode && (deploymentStatus === 'success' || queuedDeployment?.status === 'deployed');
   // Only a fresh deploy actually sends this name anywhere — update/merge apply against a deployment
   // that's already named, so the field (and this check) only matters outside isUpdateLikeMode.
@@ -464,6 +482,14 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
   // through the primary button itself (its own `disabled` covers most of them), but this function is
   // also reachable from other callers/edge cases, and a clear message here costs nothing.
   async function deployToAws() {
+    if (!isDeployAllowedByRole) {
+      setRequestError('Your role doesn’t have deploy permission — use "Request deploy access" instead.');
+      return;
+    }
+    if (!isDeployAllowedByCredits) {
+      setRequestError('You are out of credits — use "Request credits" instead.');
+      return;
+    }
     if (isUpdateLikeMode) {
       if (!updateDeploymentId) {
         setRequestError('No deployment is loaded to update — reopen it from the Deployments page.');
@@ -543,6 +569,33 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
     }
   }
 
+  async function handleRequestDeployAccess() {
+    setIsRequestingDeployAccess(true);
+    setDeployAccessRequestMessage('');
+    try {
+      await requestDemoCredits(5, 'Requesting deploy access — current role does not have deploy permission.');
+      setDeployAccessRequestMessage('Request sent to a super admin for review.');
+    } catch (error) {
+      setDeployAccessRequestMessage(error instanceof Error ? error.message : 'Unable to send this request right now.');
+    } finally {
+      setIsRequestingDeployAccess(false);
+    }
+  }
+
+  async function handleRequestCredits() {
+    setIsRequestingCredits(true);
+    setCreditRequestMessage('');
+    try {
+      const blockedServices = [...new Set(accessIssues.map((issue) => issue.message))].join(' ');
+      await requestDemoCredits(5, `Requesting demo credits to unlock services used in this diagram. ${blockedServices}`.trim());
+      setCreditRequestMessage('Request sent to a super admin for review.');
+    } catch (error) {
+      setCreditRequestMessage(error instanceof Error ? error.message : 'Unable to send this request right now.');
+    } finally {
+      setIsRequestingCredits(false);
+    }
+  }
+
   return (
     <>
     <section className="deployment-page">
@@ -592,39 +645,59 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
                 {isSavingDraft ? 'Saving...' : Boolean(queuedDeployment) ? 'Saved' : 'Save as Draft'}
               </button>
             )}
-            <button
-              className="deployment-primary"
-              disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
-              onClick={deployToAws}
-              title={deployButtonDisabledReason}
-              type="button"
-            >
-              <Rocket size={16} />
-              {deploymentStatus === 'running'
-                ? isMergeMode
-                  ? 'Merging...'
-                  : isRedeployFromDestroyed
-                    ? 'Redeploying...'
-                    : isUpdateMode
-                      ? 'Updating...'
-                      : 'Deploying...'
-                : deploymentStatus === 'success'
+            {!isDeployAllowedByRole ? (
+              <button
+                className="deployment-primary"
+                disabled={isRequestingDeployAccess}
+                onClick={() => void handleRequestDeployAccess()}
+                title={`Your role (${user?.role ?? 'unknown'}) doesn't have deploy permission. Request access below, or ask an admin to grant it from Super Admin.`}
+                type="button"
+              >
+                {isRequestingDeployAccess ? 'Sending request...' : 'Request deploy access'}
+              </button>
+            ) : !isDeployAllowedByCredits ? (
+              <button className="deployment-primary" onClick={() => setIsCreditRequestOpen(true)} type="button">
+                <Coins size={16} />
+                Request credits
+              </button>
+            ) : (
+              <button
+                className="deployment-primary"
+                disabled={!canDeploy || deploymentStatus === 'running' || isAlreadyDeployed || (isMergeMode && !hasMergeConnection) || !isNameValid}
+                onClick={deployToAws}
+                title={deployButtonDisabledReason}
+                type="button"
+              >
+                <Rocket size={16} />
+                {deploymentStatus === 'running'
                   ? isMergeMode
-                    ? 'Merged'
+                    ? 'Merging...'
                     : isRedeployFromDestroyed
-                      ? 'Redeployed'
+                      ? 'Redeploying...'
                       : isUpdateMode
-                        ? 'Updated'
-                        : 'Deployed'
-                  : isMergeMode
-                    ? 'Merge Infrastructure'
-                    : isRedeployFromDestroyed
-                      ? 'Redeploy Infrastructure'
-                      : isUpdateMode
-                        ? 'Update Infrastructure'
-                        : 'Deploy to AWS'}
-            </button>
+                        ? 'Updating...'
+                        : 'Deploying...'
+                  : deploymentStatus === 'success'
+                    ? isMergeMode
+                      ? 'Merged'
+                      : isRedeployFromDestroyed
+                        ? 'Redeployed'
+                        : isUpdateMode
+                          ? 'Updated'
+                          : 'Deployed'
+                    : isMergeMode
+                      ? 'Merge Infrastructure'
+                      : isRedeployFromDestroyed
+                        ? 'Redeploy Infrastructure'
+                        : isUpdateMode
+                          ? 'Update Infrastructure'
+                          : 'Deploy to AWS'}
+              </button>
+            )}
           </div>
+          {!isDeployAllowedByRole && deployAccessRequestMessage && (
+            <p className="deployment-access-denied__message">{deployAccessRequestMessage}</p>
+          )}
           <button className="text-button" onClick={onClose} type="button">
             <ArrowLeft size={16} />
             Back to builder
@@ -866,6 +939,12 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
                 ))}
               </div>
             )}
+            {needsCreditsForAccess && (
+              <button className="text-button deployment-request-credit-button" onClick={() => setIsCreditRequestOpen(true)} type="button">
+                <Coins size={15} />
+                Request credit access
+              </button>
+            )}
           </section>
         </aside>
       </div>
@@ -895,6 +974,42 @@ function DeploymentModal({ nodes, edges, issues, onClose, onValidate, updateDepl
             </div>
           </header>
           <pre className="deployment-code">{terraform}</pre>
+        </section>
+      </div>
+    )}
+    {isCreditRequestOpen && (
+      <div className="deployment-credit-request-backdrop" role="presentation" onClick={() => setIsCreditRequestOpen(false)}>
+        <section
+          className="deployment-credit-request-popup"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="credit-request-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="deployment-credit-request-icon">
+            <Coins size={24} />
+          </span>
+          <h2 id="credit-request-title">Request credit access</h2>
+          <p>
+            This diagram uses services beyond your current plan. Sending a request notifies a super admin, who can grant demo
+            credits to unlock them.
+          </p>
+          {accessIssues.length > 0 && (
+            <ul className="deployment-credit-request-popup__issues">
+              {[...new Set(accessIssues.map((issue) => issue.message))].map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          )}
+          {creditRequestMessage && <p className="deployment-access-denied__message">{creditRequestMessage}</p>}
+          <div className="deployment-credit-request-popup__actions">
+            <button className="text-button" onClick={() => setIsCreditRequestOpen(false)} type="button">
+              Close
+            </button>
+            <button className="deployment-primary" disabled={isRequestingCredits} onClick={() => void handleRequestCredits()} type="button">
+              {isRequestingCredits ? 'Sending request...' : 'Send request'}
+            </button>
+          </div>
         </section>
       </div>
     )}

@@ -12,6 +12,7 @@ import {
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
 import { migrateSensitiveOutputsToSecretsManager } from '../utils/secretRedaction.js';
+import { chargeCredit } from '../utils/credits.js';
 
 const WORKFLOW_ID = 'terraform-deploy.yml';
 const ACTIVE_STATUSES = ['deploying', 'destroying'];
@@ -159,6 +160,13 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
     }
     await deployment.save();
 
+    await chargeCredit(deployment.requestedBy, {
+      workspace: deployment.workspace,
+      action: isUpdate ? 'deploy_update' : 'deploy',
+      resourceType: 'Deployment',
+      resourceId: deployment._id,
+    });
+
     await createNotification({
       workspace: deployment.workspace,
       type: 'deployment',
@@ -191,6 +199,17 @@ export async function finishRun(deployment, { action, isUpdate = false, auto = f
     level: 'info',
   });
   await deployment.save();
+
+  // Same auto-destroy exclusion as the local executor — system-initiated failure cleanup never
+  // costs a credit, only a user-triggered destroy (destroyDeployment/forceDestroyDeployment) does.
+  if (!auto) {
+    await chargeCredit(deployment.requestedBy, {
+      workspace: deployment.workspace,
+      action: 'destroy',
+      resourceType: 'Deployment',
+      resourceId: deployment._id,
+    });
+  }
 
   await createNotification({
     workspace: deployment.workspace,

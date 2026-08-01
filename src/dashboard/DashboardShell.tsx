@@ -20,6 +20,7 @@ import {
   Github,
   History,
   LayoutGrid,
+  ListChecks,
   LogOut,
   Maximize2,
   Minimize2,
@@ -74,9 +75,7 @@ import {
   costRecommendations,
   commonDeploymentTemplates,
   commonInfraTemplates,
-  dashboardKpis,
   dashboardNavItems,
-  deploymentPipeline,
   resourceInventory,
   securityFindings,
   type DashboardPage,
@@ -127,6 +126,7 @@ import {
   type GithubRepositoryAccess,
 } from '../github/githubApi';
 import {
+  acceptDeploymentDrift,
   applyDeployment,
   destroyDeployment,
   forceDestroyDeployment,
@@ -138,13 +138,14 @@ import {
   renameDeployment,
   syncDeploymentDrift,
   verifyDeploymentResources,
+  type AcceptDriftSelection,
   type DeploymentRecord,
   type ResourceVerificationResult,
 } from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import type { ValidationIssue } from '../utils/validate';
-import { canUseAiAgent, canUseApplicationPipelines, serviceAccessTierForUser } from '../utils/accessControl';
+import { canUseAiAgent, canUseApplicationPipelines, hasCredits, serviceAccessTierForUser } from '../utils/accessControl';
 
 // Still used by KpiGrid and ResourceTable's own detail popups even though the Runtime Lab page
 // that originally introduced this type/component was removed — see RuntimeLabDetailModal below.
@@ -246,6 +247,19 @@ const templateDiagramPrefix = 'template:';
 
 function templateDiagramId(templateId: string) {
   return `${templateDiagramPrefix}${templateId}`;
+}
+
+// Shared by every costed action's zero-credits guard (destroy, force destroy, drift sync, pipeline
+// deploy) — proactive mirror of the backend's assertHasCredits (utils/credits.js): rather than
+// attempting the action and surfacing a 402, request more credits immediately in the same click and
+// return a message explaining why, for the caller's own error/message state to display.
+async function requestCreditsInsteadOf(reason: string): Promise<string> {
+  try {
+    await requestDemoCredits(5, reason);
+    return 'You are out of credits. A request for more has been sent to a super admin for review.';
+  } catch (requestError) {
+    return requestError instanceof Error ? requestError.message : 'You are out of credits, and the request for more could not be sent.';
+  }
 }
 
 function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
@@ -431,10 +445,6 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             <h1>{activeItem?.label ?? 'Dashboard'}</h1>
           </div>
           <div className="dash-top-actions">
-            <label className="dash-search">
-              <Search size={16} />
-              <input placeholder="Search diagrams, resources, Terraform..." />
-            </label>
             <div
               className={`dash-account-status dash-account-status--${accountStatusClass}`}
               title={`${activeAwsAccount?.name ?? connectedAccount.accountName} - ${activeAwsAccount?.status ?? connectedAccount.syncStatus}`}
@@ -916,52 +926,26 @@ function OverviewPage({
 
   return (
     <div className="dash-page dash-page--overview">
-      {overviewStyle === 'modern' ? (
-        <div className="dash-page-head-group dash-page-head-group--aws-insights">
-          <OverviewInsightsTop
-            billingRealtimeMetrics={billingRealtimeMetrics}
-            insights={insights}
-            isSyncingAws={isSyncingAws}
-            lambdaRealtimeMetrics={lambdaRealtimeMetrics}
-            onConnectAws={() => setActivePage('connect-aws')}
-            onSelectOverviewStyle={selectOverviewStyle}
-            onStartBuilding={() => setActivePage('builder')}
-            onSyncAws={onSyncAws}
-            overviewStyle={overviewStyle}
-          />
-        </div>
-      ) : (
-        <div className="dash-page-head-group">
-          <header className="pipeline-console-header">
-            <div>
-              <span className="dash-eyebrow">Cloud operations</span>
-              <h2>Overview</h2>
-            </div>
-            <div className="pipeline-header-badges">
-              <OverviewStyleToggle overviewStyle={overviewStyle} onSelectOverviewStyle={selectOverviewStyle} />
-              <button className="pipeline-link-button" onClick={() => setActivePage('connect-aws')} type="button">
-                Connect AWS Account
-                <ExternalLink size={14} />
-              </button>
-              <button className="pipeline-primary-compact" disabled={isSyncingAws} onClick={() => void onSyncAws()} type="button">
-                <CloudCog size={14} />
-                {isSyncingAws ? 'Syncing AWS...' : 'Sync live AWS data'}
-              </button>
-              <button className="pipeline-primary-compact" onClick={() => setActivePage('builder')} type="button">
-                Start Building
-                <ArrowRight size={14} />
-              </button>
-            </div>
-          </header>
-        </div>
-      )}
+      <div className="dash-page-head-group dash-page-head-group--aws-insights">
+        <OverviewInsightsTop
+          billingRealtimeMetrics={billingRealtimeMetrics}
+          insights={insights}
+          isSyncingAws={isSyncingAws}
+          lambdaRealtimeMetrics={lambdaRealtimeMetrics}
+          onConnectAws={() => setActivePage('connect-aws')}
+          onSelectOverviewStyle={selectOverviewStyle}
+          onStartBuilding={() => setActivePage('builder')}
+          onSyncAws={onSyncAws}
+          overviewStyle={overviewStyle}
+          showCharts={overviewStyle === 'modern'}
+        />
+      </div>
 
       <div className="dash-overview-scroll">
         {insights && <PermissionErrorList insights={insights} />}
 
         {overviewStyle === 'classic' && (
           <>
-            <KpiGrid insights={insights} />
             <OverviewAwsGraphs insights={insights} />
           </>
         )}
@@ -1066,6 +1050,7 @@ function OverviewInsightsTop({
   onStartBuilding,
   onSyncAws,
   overviewStyle,
+  showCharts = true,
 }: {
   billingRealtimeMetrics?: BillingRealtimeMetrics;
   insights?: AwsInsights;
@@ -1076,6 +1061,7 @@ function OverviewInsightsTop({
   onStartBuilding: () => void;
   onSyncAws: () => Promise<void>;
   overviewStyle: OverviewStyle;
+  showCharts?: boolean;
 }) {
   const metrics = buildAwsInsightMetrics(insights);
   const charts = buildAwsInsightMiniCharts(insights, lambdaRealtimeMetrics, billingRealtimeMetrics);
@@ -1117,41 +1103,43 @@ function OverviewInsightsTop({
         })}
       </div>
 
-      <div className="dash-aws-insights-charts" aria-label="AWS usage chart previews">
-        {charts.map((chart) => (
-          <article className={`dash-aws-mini-chart dash-aws-mini-chart--${chart.tone}`} key={chart.title}>
-            <header className="dash-aws-mini-chart-head">
-              <h3>{chart.title}</h3>
-              {chart.summary && <strong>{chart.summary}</strong>}
-            </header>
-            {chart.bars.length ? (
-              <>
-                {chart.variant === 'curve' ? (
-                  <DailyBillingCurveChart points={chart.bars} />
-                ) : (
-                  <>
-                    <div className="dash-aws-mini-bars" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
-                      {chart.bars.map((bar) => (
-                        <i key={`${chart.title}-${bar.label}`} style={{ height: `${bar.height}%` }} title={`${bar.label}: ${bar.display}`} />
-                      ))}
-                    </div>
-                    <div className="dash-aws-mini-labels" aria-label={`${chart.title} values`} style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
-                      {chart.bars.map((bar) => (
-                        <span key={`${chart.title}-${bar.label}-label`}>
-                          <b>{bar.label}</b>
-                          <em>{bar.display}</em>
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            ) : (
-              <p className="dash-aws-mini-empty">{chart.emptyLabel}</p>
-            )}
-          </article>
-        ))}
-      </div>
+      {showCharts && (
+        <div className="dash-aws-insights-charts" aria-label="AWS usage chart previews">
+          {charts.map((chart) => (
+            <article className={`dash-aws-mini-chart dash-aws-mini-chart--${chart.tone}`} key={chart.title}>
+              <header className="dash-aws-mini-chart-head">
+                <h3>{chart.title}</h3>
+                {chart.summary && <strong>{chart.summary}</strong>}
+              </header>
+              {chart.bars.length ? (
+                <>
+                  {chart.variant === 'curve' ? (
+                    <DailyBillingCurveChart points={chart.bars} />
+                  ) : (
+                    <>
+                      <div className="dash-aws-mini-bars" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
+                        {chart.bars.map((bar) => (
+                          <i key={`${chart.title}-${bar.label}`} style={{ height: `${bar.height}%` }} title={`${bar.label}: ${bar.display}`} />
+                        ))}
+                      </div>
+                      <div className="dash-aws-mini-labels" aria-label={`${chart.title} values`} style={{ gridTemplateColumns: `repeat(${chart.bars.length}, minmax(0, 1fr))` }}>
+                        {chart.bars.map((bar) => (
+                          <span key={`${chart.title}-${bar.label}-label`}>
+                            <b>{bar.label}</b>
+                            <em>{bar.display}</em>
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <p className="dash-aws-mini-empty">{chart.emptyLabel}</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1453,9 +1441,10 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [isSavingDiagram, setIsSavingDiagram] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSaveNameDialogOpen, setIsSaveNameDialogOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const [saveDiagramName, setSaveDiagramName] = useState(currentDiagramName);
+  const [renameDiagramName, setRenameDiagramName] = useState(currentDiagramName);
   const [directoryMessage, setDirectoryMessage] = useState('');
-  const [creditMessage, setCreditMessage] = useState('');
   const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved, isDirty } = useDiagramStore();
   const user = getStoredUser();
   const canWriteDiagrams = canRoleWriteDiagrams(user?.role);
@@ -1699,6 +1688,23 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     if (saved) setIsSaveNameDialogOpen(false);
   }
 
+  async function submitRenameDialog(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = renameDiagramName.trim();
+    if (!name || isSavingDiagram) return;
+
+    setCurrentDiagramName(name);
+
+    if (!currentDiagramId || isEnterpriseDemoDiagram(currentDiagramId) || isCurrentTemplateDiagram) {
+      setDirectoryMessage(`Diagram name set to ${name}. Save it to create a saved diagram entry.`);
+      setIsRenameDialogOpen(false);
+      return;
+    }
+
+    const saved = await saveDiagramWithName(name);
+    if (saved) setIsRenameDialogOpen(false);
+  }
+
   async function deleteCurrentDiagram() {
     if (!canDeleteDiagrams || !currentDiagramId) return;
 
@@ -1721,14 +1727,12 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
     }
   }
 
-  async function requestMoreCredits() {
-    setCreditMessage('');
-    try {
-      await requestDemoCredits(5, 'Requesting demo credits to test additional Visual Builder resources and services.');
-      setCreditMessage('Demo credit request sent to super admin.');
-    } catch (error) {
-      setCreditMessage(error instanceof Error ? error.message : 'Unable to request demo credits.');
-    }
+  function openDeploymentFromBuilder() {
+    // Only the toolbar's own Validate gate is required to reach the deployment page — service-access
+    // (plan/credits) and role restrictions are no longer checked here; they're surfaced *inside* the
+    // deployment page itself (DeploymentModal), which every user can now open and explore regardless
+    // of plan or role.
+    setIsDeploymentPageOpen(true);
   }
 
   function clearDeploymentEditContext() {
@@ -1808,6 +1812,17 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
               <FilePlus2 size={15} />
               New blank
             </button>
+            <button
+              className="dash-secondary-action"
+              onClick={() => {
+                setRenameDiagramName(currentDiagramName);
+                setIsRenameDialogOpen(true);
+              }}
+              type="button"
+            >
+              <Edit3 size={15} />
+              Rename
+            </button>
             <button className="dash-secondary-action" disabled={isLoadingDirectory} onClick={() => void refreshDiagramDirectory()} type="button">
               <RefreshCw size={15} />
               Refresh
@@ -1815,10 +1830,6 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
             <button className="dash-secondary-action" onClick={() => terraformFileRef.current?.click()} type="button">
               <Upload size={15} />
               Upload Terraform
-            </button>
-            <button className="dash-secondary-action" onClick={() => void toggleBuilderFullscreen()} type="button">
-              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
             </button>
             {canDeleteDiagrams && (
               <button
@@ -1842,15 +1853,10 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           onChange={(event) => void importTerraform(event.target.files)}
         />
         {directoryMessage && <p>{directoryMessage}</p>}
-        <p>Access tier: {accessTier}. Locked services cannot be dragged or deployed for this account.</p>
-        {user?.role !== 'superadmin' && (user?.workspacePlan === 'demo' || user?.workspacePlan === 'free') && (
-          <div className="diagram-directory__credit-row">
-            <button className="dash-secondary-action" onClick={() => void requestMoreCredits()} type="button">
-              Request demo credits
-            </button>
-            {creditMessage && <span>{creditMessage}</span>}
-          </div>
-        )}
+        {/* Superadmin and anyone with credits > 0 get the full service catalog (see accessControl.ts)
+            — nothing is actually locked for them, so the notice would be misleading. Only shown when
+            it's true: some plan/role-based restriction is in effect. */}
+        {!hasCredits(user) && <p>Access tier: {accessTier}. Locked services cannot be dragged or deployed for this account.</p>}
       </section>
       <div ref={builderShellRef} className={`dashboard-builder-shell ${isFullscreen ? 'dashboard-builder-shell--fullscreen' : ''}`}>
         {isFullscreen && (
@@ -1866,7 +1872,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           theme={theme}
           isFullscreen={isFullscreen}
           onToggleFullscreen={() => void toggleBuilderFullscreen()}
-          onOpenDeployment={() => setIsDeploymentPageOpen(true)}
+          onOpenDeployment={openDeploymentFromBuilder}
           onSaveDiagram={() => void saveCurrentDiagram()}
           canSaveDiagram={canWriteDiagrams}
           isSavingDiagram={isSavingDiagram}
@@ -1942,6 +1948,43 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           </section>
         </div>
       )}
+      {isRenameDialogOpen && (
+        <div className="diagram-delete-dialog-backdrop" role="presentation" onMouseDown={() => !isSavingDiagram && setIsRenameDialogOpen(false)}>
+          <section
+            aria-modal="true"
+            className="diagram-delete-dialog diagram-save-dialog"
+            role="dialog"
+            aria-labelledby="rename-diagram-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <form onSubmit={(event) => void submitRenameDialog(event)}>
+              <div>
+                <span className="dash-eyebrow">Rename diagram</span>
+                <h3 id="rename-diagram-title">Change diagram file name</h3>
+                <p>This edits the current diagram name. The Open dropdown remains a selector, not an inline rename control.</p>
+              </div>
+              <label className="diagram-save-dialog__field">
+                <span>Diagram name</span>
+                <input
+                  autoFocus
+                  disabled={isSavingDiagram}
+                  onChange={(event) => setRenameDiagramName(event.target.value)}
+                  placeholder="Production VPC"
+                  value={renameDiagramName}
+                />
+              </label>
+              <div className="diagram-delete-dialog__actions">
+                <button className="dash-secondary-action" disabled={isSavingDiagram} onClick={() => setIsRenameDialogOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="dash-secondary-action diagram-save-dialog__save" disabled={isSavingDiagram || !renameDiagramName.trim()} type="submit">
+                  {isSavingDiagram ? 'Saving...' : 'Rename diagram'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1965,15 +2008,36 @@ function DeploymentsPage({
   const [forceDestroyingDeploymentId, setForceDestroyingDeploymentId] = useState<string>();
   const [pendingForceDestroyDeployment, setPendingForceDestroyDeployment] = useState<DeploymentRecord | null>(null);
   const [driftSyncingDeploymentId, setDriftSyncingDeploymentId] = useState<string>();
+  const [driftReviewDeployment, setDriftReviewDeployment] = useState<DeploymentRecord | null>(null);
   const [pendingMergeSourceDeployment, setPendingMergeSourceDeployment] = useState<DeploymentRecord | null>(null);
   const [renamingDeploymentId, setRenamingDeploymentId] = useState<string>();
   const [applyingDeploymentId, setApplyingDeploymentId] = useState<string>();
   const [expandedDeploymentId, setExpandedDeploymentId] = useState<string>();
   const [destroyHistoryDeployment, setDestroyHistoryDeployment] = useState<DeploymentRecord | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState(commonDeploymentTemplates[0]?.id ?? '');
+  const [isTemplateGuideOpen, setIsTemplateGuideOpen] = useState(false);
+  const [deploymentSearchTerm, setDeploymentSearchTerm] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const visibleDeployments = deploymentRecords.filter((deployment) => statusFilter === 'all' || deploymentStatusGroup(deployment.status) === statusFilter);
+  const user = getStoredUser();
+  const normalizedDeploymentSearch = deploymentSearchTerm.trim().toLowerCase();
+  const visibleDeployments = deploymentRecords.filter((deployment) => {
+    const matchesStatus = statusFilter === 'all' || deploymentStatusGroup(deployment.status) === statusFilter;
+    if (!matchesStatus) return false;
+    if (!normalizedDeploymentSearch) return true;
+    const searchableText = [
+      deployment.name,
+      deployment.diagram?.name,
+      deployment.diagram?.activeRegion,
+      deployment.status,
+      String(deployment.resourceCount),
+      String(deployment.connectionCount),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return searchableText.includes(normalizedDeploymentSearch);
+  });
   const selectedTemplate = commonDeploymentTemplates.find((template) => template.id === selectedTemplateId) ?? commonDeploymentTemplates[0];
   const counts = deploymentRecords.reduce(
     (acc, deployment) => {
@@ -2033,6 +2097,10 @@ function DeploymentsPage({
   async function handleDestroy(deployment: DeploymentRecord) {
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to destroy "${deployment.name}".`));
+      return;
+    }
     setDestroyingDeploymentId(deployment._id);
 
     try {
@@ -2050,6 +2118,10 @@ function DeploymentsPage({
   async function handleForceDestroy(deployment: DeploymentRecord) {
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to force destroy "${deployment.name}".`));
+      return;
+    }
     setForceDestroyingDeploymentId(deployment._id);
 
     try {
@@ -2067,6 +2139,10 @@ function DeploymentsPage({
   async function handleSyncDrift(deployment: DeploymentRecord) {
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to sync AWS drift for "${deployment.name}".`));
+      return;
+    }
     setDriftSyncingDeploymentId(deployment._id);
     try {
       const drift = await syncDeploymentDrift(deployment._id);
@@ -2112,6 +2188,10 @@ function DeploymentsPage({
             <button className="pipeline-icon-action" disabled={isLoadingDeployments} onClick={() => void refreshDeployments()} title="Refresh deployments" type="button">
               <RefreshCw size={15} />
             </button>
+            <button className="pipeline-link-button" onClick={() => setIsTemplateGuideOpen(true)} type="button">
+              <LayoutGrid size={14} />
+              Template guide
+            </button>
           </div>
         </header>
       </div>
@@ -2145,8 +2225,19 @@ function DeploymentsPage({
       <div className="deploy-console-grid">
         <section className="deploy-table-panel">
           <header>
-            <strong>Deployed diagrams</strong>
-            <span>{visibleDeployments.length} shown</span>
+            <div>
+              <strong>Deployed diagrams</strong>
+              <span>{visibleDeployments.length} shown</span>
+            </div>
+            <label className="admin-search deploy-table-search">
+              <Search size={15} />
+              <input
+                aria-label="Search deployment diagrams"
+                onChange={(event) => setDeploymentSearchTerm(event.target.value)}
+                placeholder="Search deployment diagrams"
+                value={deploymentSearchTerm}
+              />
+            </label>
           </header>
           <div className="dash-deploy-table-wrap">
             {isLoadingDeployments && !deploymentRecords.length ? (
@@ -2302,6 +2393,16 @@ function DeploymentsPage({
                                     {driftSyncingDeploymentId === deployment._id ? 'Syncing drift...' : 'Sync AWS drift'}
                                   </button>
                                 )}
+                                {deployment.drift?.status === 'drifted' && (
+                                  <button
+                                    onClick={() => setDriftReviewDeployment(deployment)}
+                                    title="Review what changed in AWS outside Infraflow, and choose which changes to bring into this deployment's saved diagram."
+                                    type="button"
+                                  >
+                                    <ListChecks size={15} />
+                                    Review changes
+                                  </button>
+                                )}
                                 {extractDestroyAttempts(deployment.logs).length > 0 && (
                                   <button
                                     onClick={() => setDestroyHistoryDeployment(deployment)}
@@ -2323,68 +2424,65 @@ function DeploymentsPage({
               </tbody>
             </table>
           ) : (
-            <EmptyState>No deployments match this status. Deploy a diagram from the visual builder to see it here.</EmptyState>
+            <EmptyState>
+              {normalizedDeploymentSearch
+                ? 'No deployment diagrams match your search.'
+                : 'No deployments match this status. Deploy a diagram from the visual builder to see it here.'}
+            </EmptyState>
           )}
         </div>
         </section>
 
       </div>
-
-      <div className="deploy-bottom-panels">
-        <section className="deploy-side-panel">
-          <header>
-            <strong>Deployment pipeline</strong>
-            <span>Reference</span>
-          </header>
-          <div className="dash-pipeline">
-            {deploymentPipeline.map((step) => {
-              const Icon = step.icon;
-              return (
-                <div className={`dash-pipeline-step dash-pipeline-step--${step.status}`} key={step.label}>
-                  <Icon size={18} />
-                  <span>{step.label}</span>
-                  <small>{step.status}</small>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="deploy-side-panel deploy-side-panel--scroll">
-          <header>
-            <strong>Infrastructure template guide</strong>
-            <span>{commonDeploymentTemplates.length} templates</span>
-          </header>
-          <div className="dash-deploy-template-picker">
-            <label>
-              <span>Application-compatible infrastructure</span>
-              <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
-                {commonDeploymentTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedTemplate && (
-              <div className="dash-deploy-template-summary">
-                <div>
-                  <strong>Compatible apps</strong>
-                  <p>{selectedTemplate.compatibility}</p>
-                </div>
-                <div>
-                  <strong>Infrastructure</strong>
-                  <p>{selectedTemplate.infrastructure}</p>
-                </div>
-                <div>
-                  <strong>Application deployment</strong>
-                  <p>{selectedTemplate.deploymentPath}</p>
-                </div>
+      {isTemplateGuideOpen && (
+        <div className="pipeline-result-backdrop" role="presentation" onClick={() => setIsTemplateGuideOpen(false)}>
+          <section className="pipeline-result-modal deploy-template-guide-modal" role="dialog" aria-modal="true" aria-label="Infrastructure template guide" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>{commonDeploymentTemplates.length} templates</span>
+                <h3>Infrastructure template guide</h3>
+                <p>Pick a deployment pattern to see the compatible application type, required infrastructure, and deployment path.</p>
               </div>
-            )}
-          </div>
-        </section>
-      </div>
+              <button className="pipeline-result-close" onClick={() => setIsTemplateGuideOpen(false)} type="button" aria-label="Close infrastructure template guide">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="dash-deploy-template-picker deploy-template-guide-modal__body">
+              <label>
+                <span>Application-compatible infrastructure</span>
+                <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                  {commonDeploymentTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedTemplate && (
+                <div className="dash-deploy-template-summary">
+                  <div>
+                    <strong>Compatible apps</strong>
+                    <p>{selectedTemplate.compatibility}</p>
+                  </div>
+                  <div>
+                    <strong>Infrastructure</strong>
+                    <p>{selectedTemplate.infrastructure}</p>
+                  </div>
+                  <div>
+                    <strong>Application deployment</strong>
+                    <p>{selectedTemplate.deploymentPath}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <footer>
+              <button className="dash-primary-action" onClick={() => setIsTemplateGuideOpen(false)} type="button">
+                Close
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       {pendingDestroyDeployment && (
         <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={() => !destroyingDeploymentId && setPendingDestroyDeployment(null)}>
           <section
@@ -2552,6 +2650,15 @@ function DeploymentsPage({
         <DestroyHistoryModal
           deployment={deploymentRecords.find((item) => item._id === destroyHistoryDeployment._id) ?? destroyHistoryDeployment}
           onClose={() => setDestroyHistoryDeployment(null)}
+        />
+      )}
+      {driftReviewDeployment && (
+        <DriftReviewModal
+          deployment={deploymentRecords.find((item) => item._id === driftReviewDeployment._id) ?? driftReviewDeployment}
+          onClose={() => setDriftReviewDeployment(null)}
+          onAccepted={(drift) => {
+            setDeploymentRecords((records) => records.map((item) => (item._id === driftReviewDeployment._id ? { ...item, drift } : item)));
+          }}
         />
       )}
     </div>
@@ -3229,6 +3336,10 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
 
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to deploy application pipeline "${selectedPipeline.name}".`));
+      return;
+    }
     markAppPipelineDeploymentRunning(selectedPipeline._id);
     deployingApplicationRef.current = true;
     setIsDeployingApplication(true);
@@ -3375,6 +3486,10 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     }
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to deploy application pipeline "${pipeline.name}".`));
+      return;
+    }
     markAppPipelineDeploymentRunning(pipeline._id);
     deployingApplicationRef.current = true;
     setIsDeployingApplication(true);
@@ -3474,7 +3589,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
 
   if (!canUseApplicationPipelines(user)) {
     return (
-      <div className="dash-page">
+      <div className="dash-page dash-page--app-pipeline-locked">
         <Panel title="Application Pipeline" action="Enterprise">
           <EmptyState>Application deployment pipelines are available only for Super admin or Enterprise workspaces.</EmptyState>
         </Panel>
@@ -3483,7 +3598,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }
 
   return (
-    <div className="dash-page dash-page--deployments dash-page--app-pipeline-inventory">
+    <div className="dash-page dash-page--deployments dash-page--app-pipeline-inventory dash-page--infra-pipeline">
       {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
       {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
 
@@ -4487,6 +4602,10 @@ function ApplicationPipelinePage() {
 
     setMessage('');
     setError('');
+    if (!hasCredits(user)) {
+      setError(await requestCreditsInsteadOf(`Requesting credits to deploy application pipeline "${selectedPipeline.name}".`));
+      return;
+    }
     const hasAccess = await verifyGithubAccess();
     if (!hasAccess) return;
     markAppPipelineDeploymentRunning(selectedPipeline._id);
@@ -5969,6 +6088,165 @@ function DestroyHistoryModal({ deployment, onClose }: { deployment: DeploymentRe
   );
 }
 
+// Reviews field-level AWS drift (see acceptDeploymentDrift on the backend) and lets the user pick
+// which changed values to bring into the diagram + Terraform state. A field only gets a checkbox if
+// it maps to a diagram node (via drift.nodeId, falling back to matching drift.label against a node's
+// label for deployments applied before node_id was stamped into outputs) AND is already a key in
+// that node's saved config — mirrors the backend's own safety filter, so nothing offered here would
+// be rejected server-side.
+function DriftReviewModal({
+  deployment,
+  onClose,
+  onAccepted,
+}: {
+  deployment: DeploymentRecord;
+  onClose: () => void;
+  onAccepted: (drift: DeploymentRecord['drift']) => void;
+}) {
+  const resources = deployment.drift?.resources ?? [];
+  const diagramNodes = deployment.diagram?.nodes ?? [];
+  const nodeIdByLabel = useMemo(() => new Map(diagramNodes.map((node) => [node.data.label, node.id])), [diagramNodes]);
+  const nodeById = useMemo(() => new Map(diagramNodes.map((node) => [node.id, node])), [diagramNodes]);
+
+  const reviewableResources = useMemo(
+    () =>
+      resources
+        .filter((resource) => resource.status !== 'unchanged' && resource.changes.length > 0)
+        .map((resource) => {
+          const nodeId = resource.nodeId ?? (resource.label ? nodeIdByLabel.get(resource.label) : undefined);
+          const node = nodeId ? nodeById.get(nodeId) : undefined;
+          const trackedChanges = node ? resource.changes.filter((change) => Object.prototype.hasOwnProperty.call(node.data.config ?? {}, change.field)) : [];
+          return { resource, nodeId, trackedChanges };
+        }),
+    [resources, nodeIdByLabel, nodeById],
+  );
+
+  const [selected, setSelected] = useState<Record<string, Set<string>>>({});
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [error, setError] = useState('');
+
+  function toggleField(nodeId: string, field: string) {
+    setSelected((current) => {
+      const next = { ...current };
+      const set = new Set(next[nodeId] ?? []);
+      if (set.has(field)) set.delete(field);
+      else set.add(field);
+      next[nodeId] = set;
+      return next;
+    });
+  }
+
+  const selectionCount = Object.values(selected).reduce((sum, set) => sum + set.size, 0);
+
+  async function handleAccept() {
+    const selections: AcceptDriftSelection[] = Object.entries(selected)
+      .filter(([, fields]) => fields.size > 0)
+      .map(([nodeId, fields]) => ({ nodeId, fields: Array.from(fields) }));
+    if (!selections.length) return;
+
+    setIsAccepting(true);
+    setError('');
+    try {
+      const drift = await acceptDeploymentDrift(deployment._id, selections);
+      onAccepted(drift);
+      onClose();
+    } catch (acceptError) {
+      setError(acceptError instanceof Error ? acceptError.message : 'Unable to accept these changes.');
+    } finally {
+      setIsAccepting(false);
+    }
+  }
+
+  return (
+    <div className="dash-destroy-dialog-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-labelledby="dash-drift-review-title"
+        aria-modal="true"
+        className="dash-destroy-history-dialog dash-drift-review-dialog"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <span className="dash-eyebrow">AWS drift review</span>
+            <h2 id="dash-drift-review-title">{deployment.name}</h2>
+          </div>
+          <button aria-label="Close drift review" className="dash-icon-button" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </header>
+
+        <p className="dash-drift-review__intro">
+          These resources changed in AWS outside Infraflow. Pick which fields to bring into this deployment&rsquo;s saved diagram &mdash;
+          accepted fields are refreshed in Terraform&rsquo;s state too, so the next update won&rsquo;t revert them. Nothing you don&rsquo;t
+          select here is touched.
+        </p>
+
+        {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
+
+        {reviewableResources.length ? (
+          <div className="dash-drift-review__list">
+            {reviewableResources.map(({ resource, nodeId, trackedChanges }) => (
+              <div className="dash-drift-review-resource" key={resource.address}>
+                <div className="dash-drift-review-resource__head">
+                  <strong>{resource.label || resource.name || resource.address}</strong>
+                  <span>{resource.type}</span>
+                </div>
+                {!nodeId && (
+                  <p className="dash-drift-review-resource__note">
+                    <AlertTriangle size={13} />
+                    Couldn&rsquo;t match this resource back to a diagram node &mdash; update this deployment once (Update button) to enable review here.
+                  </p>
+                )}
+                {nodeId && !trackedChanges.length && (
+                  <p className="dash-drift-review-resource__note">No changed fields on this resource are tracked as editable config here.</p>
+                )}
+                {trackedChanges.map((change) => (
+                  <label className="dash-drift-review-field" key={change.field}>
+                    <input
+                      checked={selected[nodeId ?? '']?.has(change.field) ?? false}
+                      onChange={() => nodeId && toggleField(nodeId, change.field)}
+                      type="checkbox"
+                    />
+                    <div>
+                      <strong>{change.field}</strong>
+                      <span>
+                        <code>{formatDriftValue(change.before)}</code> &rarr; <code>{formatDriftValue(change.after)}</code>
+                      </span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="dash-drift-review__empty">No reviewable field-level changes were found in the last drift sync.</p>
+        )}
+
+        <footer className="dash-drift-review__footer">
+          <button className="dash-secondary-action" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="dash-primary-action" disabled={!selectionCount || isAccepting} onClick={() => void handleAccept()} type="button">
+            <ListChecks size={15} />
+            {isAccepting ? 'Accepting...' : selectionCount ? `Accept ${selectionCount} selected & sync` : 'Accept selected & sync'}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function formatDriftValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '(empty)';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function SecurityPage({ insights }: { insights?: AwsInsights }) {
   const findings = insights?.securityFindings ?? securityFindings;
   return (
@@ -6160,44 +6438,6 @@ function ScrollHintIcon() {
         <span className="dash-scroll-hint__thumb" />
       </span>
     </div>
-  );
-}
-
-function KpiGrid({ insights }: { insights?: AwsInsights }) {
-  const [detail, setDetail] = useState<RuntimeLabDetail | null>(null);
-  const activeResourceCount = insights?.inventory.reduce((sum, resource) => sum + Number(resource.count ?? 0), 0) ?? 0;
-  const kpis = insights
-    ? [
-        { label: 'Monthly spend', value: `$${insights.billing.monthlySpend.toFixed(2)}`, change: insights.syncedAt ? 'Live sync' : 'No live sync', icon: BadgeDollarSign, tone: 'cyan' },
-        {
-          label: 'Active resources',
-          value: String(activeResourceCount),
-          change: 'Synced inventory',
-          icon: Server,
-          tone: 'violet',
-        },
-        { label: 'Estimated savings', value: `$${insights.billing.estimatedSavings}/mo`, change: `${insights.recommendations.length} actions`, icon: CheckCircle2, tone: 'emerald' },
-        { label: 'Security warnings', value: String(insights.resources.securityWarnings ?? 0), change: `${insights.securityFindings.length} findings`, icon: AlertTriangle, tone: 'amber' },
-      ]
-    : dashboardKpis;
-
-  return (
-    <>
-      <section className="dash-kpi-grid">
-        {kpis.map((kpi) => {
-          const Icon = kpi.icon;
-          return (
-            <button className={`dash-kpi-card dash-tone-${kpi.tone} runtime-lab-click-card`} key={kpi.label} onClick={() => setDetail(getDashboardKpiDetail(kpi))} type="button">
-              <Icon size={20} />
-              <strong>{kpi.value}</strong>
-              <span>{kpi.label}</span>
-              <em>{kpi.change}</em>
-            </button>
-          );
-        })}
-      </section>
-      {detail && <RuntimeLabDetailModal detail={detail} onClose={() => setDetail(null)} />}
-    </>
   );
 }
 

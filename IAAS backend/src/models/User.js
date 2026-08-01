@@ -11,7 +11,10 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: Object.values(roles), default: roles.VIEWER },
     status: { type: String, enum: ['active', 'invited', 'disabled'], default: 'active' },
     workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' },
-    demoCredits: { type: Number, default: 0, min: 0 },
+    // Universal credit balance, not demo-specific despite the field name (kept as-is to avoid a
+    // document-key migration) — every user starts with 10 and spends 1 per successful deploy,
+    // destroy, application-pipeline run, or AWS drift sync. See utils/credits.js.
+    demoCredits: { type: Number, default: 10, min: 0 },
     creditRequest: {
       status: { type: String, enum: ['none', 'pending', 'granted', 'rejected'], default: 'none' },
       requestedCredits: { type: Number, default: 0, min: 0 },

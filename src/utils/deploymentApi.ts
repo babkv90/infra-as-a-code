@@ -197,6 +197,14 @@ export async function verifyDeploymentResources(id: string) {
   return apiRequest<ResourceVerificationResult>(`/deployments/${id}/verify-resources`, { method: 'POST' });
 }
 
+// One attribute Terraform's refresh found different between state and live AWS — `before`/`after`
+// are whatever raw value Terraform reports for that attribute (string, number, list, etc.).
+export type DeploymentDriftChange = {
+  field: string;
+  before: unknown;
+  after: unknown;
+};
+
 export type DeploymentDriftResource = {
   address: string;
   type: string;
@@ -204,6 +212,12 @@ export type DeploymentDriftResource = {
   providerName: string;
   actions: string[];
   status: 'unchanged' | 'updated' | 'deleted' | 'replaced' | 'created';
+  // Present when the backend could map this Terraform resource back to the diagram node it came
+  // from (via terraform_address -> node_id, stamped into deployment.outputs since this field was
+  // added — older deployments may only have `label` until their next apply/update, see below).
+  nodeId?: string;
+  label?: string;
+  changes: DeploymentDriftChange[];
 };
 
 export type DeploymentDriftResult = {
@@ -229,6 +243,23 @@ export type DeploymentDriftResult = {
 // it refreshes state and stores a sanitized report, but never imports unmanaged resources or applies.
 export async function syncDeploymentDrift(id: string) {
   return apiRequest<DeploymentDriftResult>(`/deployments/${id}/sync-drift`, { method: 'POST' });
+}
+
+export type AcceptDriftSelection = {
+  nodeId: string;
+  fields: string[];
+};
+
+// Writes user-picked drifted fields (from the deployment's last-synced `drift.resources`) back into
+// the diagram and refreshes Terraform state to match — see the backend's acceptDeploymentDrift for
+// the exact safety rules (only fields already tracked in the node's config, values always taken from
+// the server's own last-synced drift data, never from the request). Returns the same
+// DeploymentDriftResult shape as sync-drift, re-checked after the refresh.
+export async function acceptDeploymentDrift(id: string, selections: AcceptDriftSelection[]) {
+  return apiRequest<DeploymentDriftResult>(`/deployments/${id}/accept-drift`, {
+    method: 'POST',
+    body: JSON.stringify({ selections }),
+  });
 }
 
 export type GithubRunStep = {

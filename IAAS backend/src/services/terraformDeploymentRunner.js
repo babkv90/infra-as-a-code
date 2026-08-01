@@ -7,12 +7,15 @@ import { DeleteObjectsCommand, ListObjectsV2Command, ListObjectVersionsCommand, 
 import { env } from '../config/env.js';
 import { AwsAccount } from '../models/AwsAccount.js';
 import { Deployment } from '../models/Deployment.js';
+import { Diagram } from '../models/Diagram.js';
 import { assumeAwsRole } from './awsRoleCredentials.js';
 import { assertDeployable, failDeployment, handleDeployFailureCleanup, stripAnsi } from './deploymentGuards.js';
 import { getLambdaZipUploadMetadata } from './lambdaZipUploads.js';
 import { createNotification } from './notificationService.js';
 import { storage } from '../storage/index.js';
 import { migrateSensitiveOutputsToSecretsManager } from '../utils/secretRedaction.js';
+import { buildDeploymentPlan } from '../utils/deploymentPlanner.js';
+import { chargeCredit } from '../utils/credits.js';
 
 const runningDeployments = new Set();
 
@@ -122,6 +125,13 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
       deployment.logs.push({ message: warning, level: 'warning' });
     }
     await deployment.save();
+
+    await chargeCredit(deployment.requestedBy, {
+      workspace: deployment.workspace,
+      action: isUpdate ? 'deploy_update' : 'deploy',
+      resourceType: 'Deployment',
+      resourceId: deployment._id,
+    });
 
     // A sitting-deployed deployment doesn't need the downloaded provider binaries (600MB+) on disk
     // until its next update or destroy, and TF_PLUGIN_CACHE_DIR means that next `terraform init`
@@ -264,6 +274,18 @@ export async function runTerraformDestroy(deploymentId, { force = false, auto = 
       level: 'info',
     });
     await deployment.save();
+
+    // auto-destroy (failure cleanup after a botched deploy) is system-initiated, not user-requested
+    // — the user never asked for it, so it must never cost a credit. Only destroyDeployment/
+    // forceDestroyDeployment (both always auto:false, always user-initiated) charge.
+    if (!auto) {
+      await chargeCredit(deployment.requestedBy, {
+        workspace: deployment.workspace,
+        action: 'destroy',
+        resourceType: 'Deployment',
+        resourceId: deployment._id,
+      });
+    }
 
     // A destroyed deployment will never run `apply` again, so its downloaded provider binaries
     // (600MB+ per deployment) serve no further purpose. Reclaim the disk space; terraform.tfstate
@@ -420,7 +442,7 @@ export async function syncDeploymentDrift(deploymentId) {
     await runProcess(env.TERRAFORM_BIN, ['plan', '-input=false', '-refresh-only', '-out=refresh.tfplan'], workDir, terraformEnv);
     const showOutput = await runProcess(env.TERRAFORM_BIN, ['show', '-json', 'refresh.tfplan'], workDir, terraformEnv);
     const planJson = JSON.parse(showOutput || '{}');
-    const drift = buildDeploymentDriftResult(planJson, account.defaultRegion, checkedAt);
+    const drift = buildDeploymentDriftResult(planJson, account.defaultRegion, checkedAt, deployment.outputs);
 
     deployment.drift = drift;
     deployment.logs.push({
@@ -450,10 +472,158 @@ export async function syncDeploymentDrift(deploymentId) {
   }
 }
 
-function buildDeploymentDriftResult(planJson, region, checkedAt) {
+// Reconciles user-selected drifted fields (task: "sync deployed infra back into the app") back into
+// the diagram, then refreshes Terraform state to match — deliberately narrow and manual, not an
+// auto-apply-everything sync:
+//   - `selections` is `[{ nodeId, fields: string[] }]`, built by the caller from a *previous*
+//     syncDeploymentDrift() result the user reviewed and picked from.
+//   - A field is only ever written if it's already a literal key in that node's saved
+//     `data.config` — this is the actual safety boundary. It means a field only appears if the
+//     diagram already tracks it as a real, editable value; connection-derived/computed attributes
+//     (auto-generated subnet groups, security-group associations, etc.) were never simple config
+//     keys to begin with, so they're implicitly excluded without needing a per-service allowlist.
+//   - The accepted value always comes from the deployment's own last-synced `drift.resources[].changes`
+//     (server-computed from a real Terraform refresh), never from the request body directly — a caller
+//     can only select *which* already-detected field to accept, not supply an arbitrary value.
+//   - Only runs `terraform apply -refresh-only`, mirroring syncDeploymentDrift/verifyDeploymentResources
+//     above: this can only update Terraform's own state bookkeeping to match what refresh already
+//     found: it cannot create, modify, or destroy real infrastructure.
+export async function acceptDeploymentDrift(deploymentId, selections, userId) {
+  const id = String(deploymentId);
+
+  // New code path (unlike the two read-only functions above, this one also runs a real, synchronous
+  // `terraform apply`) — guarded the same way runTerraformDeployment/runTerraformDestroy already are,
+  // since a Lambda-hosted backend has no budget for it. Checked first, before any diagram mutation.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw new Error(
+      "Accepting AWS drift runs a real terraform apply -refresh-only, which this Lambda-hosted backend can't do reliably (no budget for a synchronous apply). Use a deployment on the github-actions executor, or run this from a non-Lambda-hosted backend instance.",
+    );
+  }
+
+  const deployment = await Deployment.findById(id).populate('awsAccount');
+  if (!deployment) throw new Error('Deployment not found.');
+
+  const account = await AwsAccount.findById(deployment.awsAccount?._id ?? deployment.awsAccount);
+  if (!account) throw new Error('AWS account not found for this deployment.');
+  if (!deployment.terraform) throw new Error('No Terraform configuration was saved for this deployment.');
+
+  const driftResources = Array.isArray(deployment.drift?.resources) ? deployment.drift.resources : [];
+  if (!driftResources.length) {
+    throw new Error('No drift has been detected for this deployment yet. Run "Sync AWS drift" first, then choose which changes to accept.');
+  }
+
+  const diagram = await Diagram.findById(deployment.diagram);
+  if (!diagram) throw new Error('Underlying diagram not found.');
+
+  let acceptedCount = 0;
+  for (const selection of Array.isArray(selections) ? selections : []) {
+    const node = diagram.nodes.find((candidate) => candidate.id === selection.nodeId);
+    if (!node) continue;
+    const driftResource = driftResources.find(
+      (resource) => (resource.nodeId && resource.nodeId === selection.nodeId) || (!resource.nodeId && resource.label && resource.label === node.data?.label),
+    );
+    if (!driftResource) continue;
+
+    node.data = node.data ?? {};
+    node.data.config = node.data.config ?? {};
+    for (const field of Array.isArray(selection.fields) ? selection.fields : []) {
+      if (!Object.prototype.hasOwnProperty.call(node.data.config, field)) continue;
+      const change = (driftResource.changes ?? []).find((item) => item.field === field);
+      if (!change) continue;
+      node.data.config[field] = change.after;
+      acceptedCount += 1;
+    }
+  }
+
+  if (!acceptedCount) {
+    throw new Error('None of the selected fields could be accepted — they may not be tracked config fields on this diagram, or the drift data is stale (try syncing AWS drift again).');
+  }
+
+  diagram.markModified('nodes');
+  diagram.updatedBy = userId;
+  await diagram.save();
+
+  const plan = await buildDeploymentPlan(diagram, { deploymentId: deployment._id, remoteStateBackend: deployment.executor === 'github-actions' });
+  deployment.resourceCount = plan.resourceCount;
+  deployment.connectionCount = plan.connectionCount;
+  deployment.plan = plan.plan;
+  deployment.terraform = plan.terraform;
+  deployment.validationIssues = plan.validationIssues;
+  deployment.logs.push({ message: `Accepted ${acceptedCount} drifted field(s) from AWS into the diagram.`, level: 'info' });
+  await deployment.save();
+
+  const workDir = deployment.terraformWorkDir || (await storage.getWorkingDirectory(id));
+  try {
+    await mkdir(workDir, { recursive: true });
+    await writeFile(path.join(workDir, 'main.tf'), deployment.terraform, 'utf8');
+
+    const credentials = await assumeAwsRole(account);
+    const terraformEnv = {
+      ...process.env,
+      AWS_ACCESS_KEY_ID: credentials.accessKeyId,
+      AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey,
+      AWS_SESSION_TOKEN: credentials.sessionToken ?? '',
+      AWS_REGION: account.defaultRegion,
+      AWS_DEFAULT_REGION: account.defaultRegion,
+      TF_IN_AUTOMATION: 'true',
+      TF_PLUGIN_CACHE_DIR: await getPluginCacheDir(),
+    };
+
+    await runProcess(env.TERRAFORM_BIN, ['init', '-input=false'], workDir, terraformEnv);
+    await runProcess(env.TERRAFORM_BIN, ['apply', '-input=false', '-refresh-only', '-auto-approve'], workDir, terraformEnv);
+  } catch (error) {
+    deployment.logs.push({
+      message: `Diagram config was updated, but refreshing Terraform state failed: ${stripAnsi(error.message ?? String(error)).slice(0, 500)}. Run "Sync AWS drift" again once resolved.`,
+      level: 'error',
+    });
+    await deployment.save();
+    throw error;
+  } finally {
+    await removeProviderCache(workDir);
+  }
+
+  // Re-detect drift now that state has been refreshed, so accepted fields show as resolved and
+  // deployment.drift reflects reality instead of the stale pre-accept snapshot.
+  return syncDeploymentDrift(id);
+}
+
+// Maps each output group's `terraform_address` (e.g. "aws_instance.web_server") back to the diagram
+// node it came from, using the `node_id`/`label` literals terraformGenerator.js's resourceOutputBlock
+// stamps onto every output entry. Deployments applied before `node_id` existed only have `label` —
+// callers (the accept-drift flow, the frontend review modal) fall back to matching diagram nodes by
+// label in that case.
+export function addressToNodeLookup(outputs) {
+  const lookup = {};
+  for (const entry of Object.values(outputs && typeof outputs === 'object' ? outputs : {})) {
+    if (!entry || typeof entry !== 'object' || !entry.terraform_address) continue;
+    lookup[entry.terraform_address] = { nodeId: entry.node_id, label: entry.label };
+  }
+  return lookup;
+}
+
+// resource_drift[].change.before/.after are the actual attribute maps refresh found on either side —
+// present already in `terraform show -json`'s output today, just never read. Diffs every top-level key
+// that differs so the accept-drift review can show "field X: was A, is now B" instead of just "this
+// resource changed."
+export function diffResourceAttributes(before, after) {
+  if (!before || typeof before !== 'object' || !after || typeof after !== 'object') return [];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  const changes = [];
+  for (const field of keys) {
+    const beforeValue = before[field];
+    const afterValue = after[field];
+    if (JSON.stringify(beforeValue) === JSON.stringify(afterValue)) continue;
+    changes.push({ field, before: beforeValue ?? null, after: afterValue ?? null });
+  }
+  return changes;
+}
+
+export function buildDeploymentDriftResult(planJson, region, checkedAt, outputs = {}) {
   const changes = Array.isArray(planJson.resource_drift) ? planJson.resource_drift : [];
+  const addressToNode = addressToNodeLookup(outputs);
   const resources = changes.map((item) => {
     const actions = Array.isArray(item.change?.actions) ? item.change.actions : [];
+    const node = addressToNode[item.address ?? ''];
     return {
       address: item.address ?? '',
       type: item.type ?? '',
@@ -461,6 +631,9 @@ function buildDeploymentDriftResult(planJson, region, checkedAt) {
       providerName: item.provider_name ?? '',
       actions,
       status: driftStatusForActions(actions),
+      nodeId: node?.nodeId,
+      label: node?.label,
+      changes: diffResourceAttributes(item.change?.before, item.change?.after),
     };
   });
   const summary = summarizeDriftResources(resources);

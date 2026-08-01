@@ -1,4 +1,5 @@
 import {
+  CheckCircle2,
   ChevronDown,
   Download,
   FileCode2,
@@ -72,6 +73,7 @@ function Toolbar({
     activeView,
     activeRegion,
     isDark,
+    isValidated,
     history,
     future,
     setMode,
@@ -256,10 +258,6 @@ function Toolbar({
               <LayoutGrid size={15} />
               Auto-layout
             </button>
-            <button onClick={() => void handleValidate()} type="button">
-              <SearchCheck size={15} />
-              Validate
-            </button>
             <button onClick={exportHcl} type="button">
               <TerminalSquare size={15} />
               Generate Terraform
@@ -267,9 +265,24 @@ function Toolbar({
           </div>
         </details>
         <button
+          className={`text-button toolbar-validate-button ${isValidated ? 'toolbar-validate-button--ok' : ''}`}
+          onClick={() => void handleValidate()}
+          title={isValidated ? 'Diagram validated — re-run any time.' : 'Validate the diagram — required before Deploy unlocks.'}
+          type="button"
+        >
+          {isValidated ? <CheckCircle2 size={15} /> : <SearchCheck size={15} />}
+          {isValidated ? 'Validated' : 'Validate'}
+        </button>
+        <button
           className="text-button deploy-toolbar-button"
-          disabled={blockingErrorCount > 0}
-          title={blockingErrorCount > 0 ? `${blockingErrorCount} blocking error${blockingErrorCount === 1 ? '' : 's'} must be fixed first — click Validate to see them.` : undefined}
+          disabled={!isValidated || blockingErrorCount > 0}
+          title={
+            blockingErrorCount > 0
+              ? `${blockingErrorCount} blocking error${blockingErrorCount === 1 ? '' : 's'} must be fixed first — click Validate to see them.`
+              : !isValidated
+                ? 'Click Validate first — Deploy unlocks once the diagram has been validated with no blocking errors.'
+                : undefined
+          }
           onClick={() => {
             validate();
             onOpenDeployment?.();

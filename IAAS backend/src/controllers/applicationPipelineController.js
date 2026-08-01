@@ -6,6 +6,7 @@ import { Notification } from '../models/Notification.js';
 import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
 import { canUseApplicationPipelines } from '../utils/accessControl.js';
+import { assertHasCredits, chargeCredit } from '../utils/credits.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { createNotification } from '../services/notificationService.js';
@@ -339,6 +340,7 @@ async function provisionAndSyncDeployRole({ pipeline, token, owner, repo, branch
 
 export const deployApplicationPipeline = asyncHandler(async (req, res) => {
   await assertPipelineAccess(req);
+  assertHasCredits(req.user);
   const pipeline = await ApplicationPipeline.findOne({ _id: req.params.id, workspace: req.user.workspace });
   if (!pipeline) throw new ApiError(404, 'Application pipeline not found');
 
@@ -391,6 +393,11 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
       );
     }
   }
+
+  // Charged here — dispatch (or its registration-retry fallback) succeeded without throwing, so the
+  // pipeline run is confirmed to have actually started. The status-polling below is best-effort and
+  // must never undo an already-earned charge if it fails.
+  await chargeCredit(req.user._id, { workspace: req.user.workspace, action: 'pipeline_deploy', resourceType: 'ApplicationPipeline', resourceId: pipeline._id });
 
   let run = null;
   let statusUnavailable = false;

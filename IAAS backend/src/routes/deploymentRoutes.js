@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import {
+  acceptDeploymentDriftRoute,
+  acceptDriftSchema,
   applyDeployment,
   createCanvasDeploymentSchema,
   createDeploymentFromDiagram,
@@ -63,4 +65,5 @@ deploymentRouter.post('/:id/queue', authorize(roles.DEVOPS), queueDeployment);
 deploymentRouter.post('/:id/destroy', authorize(roles.DEVOPS), destroyDeployment);
 deploymentRouter.post('/:id/force-destroy', authorize(roles.DEVOPS), forceDestroyDeployment);
 deploymentRouter.post('/:id/sync-drift', authorize(roles.DEVOPS), syncDeploymentDriftRoute);
+deploymentRouter.post('/:id/accept-drift', authorize(roles.DEVOPS), validateRequest(acceptDriftSchema), acceptDeploymentDriftRoute);
 deploymentRouter.post('/:id/verify-resources', authorize(roles.DEVOPS), verifyDeploymentResourcesRoute);

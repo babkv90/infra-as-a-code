@@ -33,6 +33,11 @@ type DiagramStore = {
   // middleware on this store (see markSaved's comment), so this is what lets the UI warn before a
   // refresh/close silently discards everything back to history.length === 0.
   isDirty: boolean;
+  // True only when validate() has been run against the diagram exactly as it currently is, with no
+  // blocking errors. Any structural edit (see pushHistory) — including undo/redo — clears this back
+  // to false, since it went through pushHistory (or, for undo/redo, is cleared explicitly there since
+  // those bypass pushHistory). Drives the Deploy button's gate in Toolbar.tsx.
+  isValidated: boolean;
   isDark: boolean;
   issues: ValidationIssue[];
   history: DiagramSnapshot[];
@@ -88,6 +93,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   activeView: 'topology',
   activeRegion: 'ap-south-1',
   isDirty: false,
+  isValidated: false,
   isDark: false,
   issues: [],
   history: [],
@@ -408,6 +414,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       inspectorEdgeId: undefined,
       focusNodeIds: [],
       fitViewVersion: get().fitViewVersion + 1,
+      isValidated: false,
     });
   },
   redo: () => {
@@ -425,12 +432,14 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       inspectorEdgeId: undefined,
       focusNodeIds: [],
       fitViewVersion: get().fitViewVersion + 1,
+      isValidated: false,
     });
   },
   validate: () => {
     const issues = validateDiagram(get().nodes, get().edges, get().activeRegion);
     set((state) => ({
       issues,
+      isValidated: !issues.some((issue) => issue.severity === 'error'),
       nodes: state.nodes.map((node) => ({
         ...node,
         data: { ...node.data, warning: issues.find((issue) => issue.nodeId === node.id)?.message },
@@ -490,7 +499,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
 
 function pushHistory(set: (partial: Partial<DiagramStore>) => void, get: () => DiagramStore): void {
   const { nodes, edges, history } = get();
-  set({ history: [...history, { nodes, edges }].slice(-maxHistory), future: [], isDirty: true });
+  set({ history: [...history, { nodes, edges }].slice(-maxHistory), future: [], isDirty: true, isValidated: false });
 }
 
 function createNode(serviceId: string, position: XYPosition, id?: string): AwsNode {

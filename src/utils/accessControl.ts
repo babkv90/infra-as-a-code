@@ -57,20 +57,35 @@ export function isSuperAdmin(user?: AuthUser | null) {
   return user?.role === 'superadmin';
 }
 
+// Single source of truth for "unlimited or has a spendable balance" — mirrors the backend's
+// utils/credits.js hasCredits() exactly. While true, a user gets full access to every module except
+// the Super Admin console (which stays hard role-gated, unaffected by credits).
+export function hasCredits(user?: AuthUser | null) {
+  return isSuperAdmin(user) || Number(user?.demoCredits ?? 0) > 0;
+}
+
+// Mirrors the backend's authorize(roles.DEVOPS) check on every deployment-mutating route
+// (IAAS backend/src/routes/deploymentRoutes.js) — rank >= devops. Frontend-only UX gate; the backend
+// remains the real enforcement regardless of what this returns.
+export function canDeployByRole(user?: AuthUser | null) {
+  return (roleRank[user?.role ?? 'viewer'] ?? 0) >= roleRank.devops;
+}
+
 export function canUseAiAgent(user?: AuthUser | null) {
   const plan = getAccessPlan(user);
-  return isSuperAdmin(user) || plan === 'pro' || plan === 'enterprise' || Number(user?.demoCredits ?? 0) > 0;
+  return hasCredits(user) || plan === 'pro' || plan === 'enterprise';
 }
 
 export function canUseApplicationPipelines(user?: AuthUser | null) {
-  return isSuperAdmin(user) || getAccessPlan(user) === 'enterprise';
+  return hasCredits(user) || getAccessPlan(user) === 'enterprise';
 }
 
+// While a user has credits (or is superadmin), they get the full AWS service catalog regardless of
+// role or workspace plan — role/plan only decide the fallback tier once credits hit 0.
 export function allowedServiceIdsForUser(user?: AuthUser | null) {
-  if (isSuperAdmin(user)) return new Set(allServiceIds);
+  if (hasCredits(user)) return new Set(allServiceIds);
 
   const plan = getAccessPlan(user);
-  if ((plan === 'demo' || plan === 'free') && Number(user?.demoCredits ?? 0) > 0) return new Set(intermediateServiceIds);
   if (plan === 'demo' || plan === 'free') return new Set(basicServiceIds);
   if (plan === 'pro') return new Set(intermediateServiceIds);
 
@@ -82,9 +97,9 @@ export function allowedServiceIdsForUser(user?: AuthUser | null) {
 
 export function serviceAccessTierForUser(user?: AuthUser | null) {
   if (isSuperAdmin(user)) return 'Super admin';
+  if (hasCredits(user)) return 'Credits';
 
   const plan = getAccessPlan(user);
-  if ((plan === 'demo' || plan === 'free') && Number(user?.demoCredits ?? 0) > 0) return 'Demo credits intermediate';
   if (plan === 'demo') return 'Demo basic';
   if (plan === 'free') return 'Free basic';
   if (plan === 'pro') return 'Pro intermediate + AI';

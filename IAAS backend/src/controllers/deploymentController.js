@@ -7,6 +7,7 @@ import { Diagram } from '../models/Diagram.js';
 import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
 import { assertDiagramServiceAccess } from '../utils/accessControl.js';
+import { assertHasCredits, chargeCredit } from '../utils/credits.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
 import { normalizeDiagramPayload } from '../utils/diagramSchema.js';
@@ -15,7 +16,7 @@ import { lambdaZipUploadIdsFromNodes } from '../utils/terraformGenerator.js';
 import { saveLambdaZipUpload } from '../services/lambdaZipUploads.js';
 import { runTerraformDeployment, runTerraformDestroy } from '../services/deploymentExecutorDispatch.js';
 import { dispatchTerraformValidation } from '../services/githubTerraformValidator.js';
-import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
+import { acceptDeploymentDrift, syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 import { getWorkflowRun, getWorkflowJobLogsText, githubWorkflowRunJobs } from '../services/githubActionsClient.js';
 import { finishRun } from '../services/githubTerraformRunner.js';
 import { redactOutputsForResponse } from '../utils/secretRedaction.js';
@@ -80,6 +81,19 @@ export const updateCanvasDeploymentSchema = z.object({
     activeRegion: z.string().min(2).optional(),
     nodes: z.array(z.any()).default([]),
     edges: z.array(z.any()).default([]),
+  }),
+});
+
+export const acceptDriftSchema = z.object({
+  body: z.object({
+    selections: z
+      .array(
+        z.object({
+          nodeId: z.string().min(1),
+          fields: z.array(z.string().min(1)).min(1),
+        }),
+      )
+      .min(1, 'Select at least one drifted field to accept'),
   }),
 });
 
@@ -217,6 +231,11 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
   const needsAsyncValidation = canDispatchAsyncValidation && plan.cliValidationPending;
   const autoApply = Boolean(req.validated.body.autoApply);
+  // Checked here, not deeper inside startTerraformRun: this is the only point with req.user before
+  // the deferred-async-validation path (needsAsyncValidation) auto-applies later via a GitHub
+  // callback that has no req at all. Skipped entirely when saving a draft (no autoApply) — nothing
+  // is spent until the diagram is actually applied.
+  if (autoApply) assertHasCredits(req.user);
   const deployment = await Deployment.create({
     _id: deploymentId,
     workspace: req.user.workspace,
@@ -307,6 +326,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
   const workspace = await Workspace.findById(req.user.workspace);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });
+  assertHasCredits(req.user);
   if (deployment.status === 'deploying') {
     return res.json({ success: true, data: withRedactedSecrets(deployment) });
   }
@@ -353,6 +373,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   const workspace = await Workspace.findById(req.user.workspace);
   const diagramPayload = normalizeDiagramPayload(req.validated.body, diagram);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagramPayload.nodes });
+  assertHasCredits(req.user);
 
   diagram.schemaVersion = diagramPayload.schemaVersion;
   diagram.nodes = diagramPayload.nodes;
@@ -570,6 +591,7 @@ export const mergeDeploymentFromCanvas = asyncHandler(async (req, res) => {
 
   const workspace = await Workspace.findById(req.user.workspace);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes });
+  assertHasCredits(req.user);
 
   targetDiagram.nodes = nodes;
   targetDiagram.edges = edges;
@@ -732,6 +754,7 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
   if (!['deployed', 'failed'].includes(deployment.status)) {
     throw new ApiError(409, 'Only deployed infrastructure can be destroyed.');
   }
+  assertHasCredits(req.user);
 
   // Deliberately 'queued', not 'destroying': runTerraformDestroy/runTerraformDeployment (see
   // githubTerraformRunner.js) re-fetch the deployment and refuse to start if it's already in an
@@ -758,6 +781,10 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   if (['destroyed', 'cancelled'].includes(deployment.status)) {
     throw new ApiError(409, 'This deployment has already been destroyed or cancelled.');
   }
+  // Always user-initiated (auto-cleanup after a failed deploy goes through runTerraformDestroy
+  // directly with auto:true, bypassing this controller entirely) — costs a credit like a normal
+  // destroy.
+  assertHasCredits(req.user);
 
   const previousStatus = deployment.status;
   deployment.status = 'destroying';
@@ -788,8 +815,31 @@ export const syncDeploymentDriftRoute = asyncHandler(async (req, res) => {
   if (!deployment) throw new ApiError(404, 'Deployment not found');
   if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
   if (!deployment.terraform) throw new ApiError(409, 'Deployment does not have Terraform saved for drift sync');
+  assertHasCredits(req.user);
 
   await auditLog(req, 'deployment.sync_drift', 'Deployment', deployment._id);
   const result = await syncDeploymentDrift(deployment._id);
+  // Charged here (req.user, the actor who actually clicked "sync") rather than inside
+  // syncDeploymentDrift itself — unlike deploy/destroy, this whole action is controller-side with
+  // req available, so there's no need to fall back to deployment.requestedBy (which may not be the
+  // same person operating on the deployment today). result.status === 'error' means the sync itself
+  // failed (Secrets/Terraform-side issue) — only in_sync/drifted count as a successful sync.
+  if (result.status !== 'error') {
+    await chargeCredit(req.user._id, { workspace: req.user.workspace, action: 'drift_sync', resourceType: 'Deployment', resourceId: deployment._id });
+  }
+  res.json({ success: true, data: result });
+});
+
+// Reviews-and-accepts a user-selected subset of previously-detected drift (see acceptDeploymentDrift
+// in terraformDeploymentRunner.js) — separate from sync-drift (detection only) and from apply/update
+// (which regenerate Terraform purely from the saved diagram, with no AWS-state awareness at all).
+export const acceptDeploymentDriftRoute = asyncHandler(async (req, res) => {
+  const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
+  if (!deployment) throw new ApiError(404, 'Deployment not found');
+  if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
+  if (!deployment.terraform) throw new ApiError(409, 'Deployment does not have Terraform saved for drift sync');
+
+  await auditLog(req, 'deployment.accept_drift', 'Deployment', deployment._id, { selections: req.validated.body.selections });
+  const result = await acceptDeploymentDrift(deployment._id, req.validated.body.selections, req.user._id);
   res.json({ success: true, data: result });
 });
