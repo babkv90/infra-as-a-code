@@ -136,7 +136,7 @@ export const createApplicationPipeline = asyncHandler(async (req, res) => {
       provider: 'github',
       url: req.validated.body.repository.url,
       branch: req.validated.body.repository.branch,
-      workflowPath: workflowPathFor(req.validated.body.environment),
+      workflowPath: workflowPathFor(req.validated.body.environment, req.validated.body.name),
     },
     commands,
     target,
@@ -163,7 +163,7 @@ export const updateApplicationPipeline = asyncHandler(async (req, res) => {
   pipeline.repository.provider = 'github';
   pipeline.repository.url = req.validated.body.repository.url;
   pipeline.repository.branch = req.validated.body.repository.branch;
-  pipeline.repository.workflowPath = workflowPathFor(req.validated.body.environment);
+  pipeline.repository.workflowPath = workflowPathFor(req.validated.body.environment, req.validated.body.name);
   pipeline.repository.lastSyncedAt = undefined;
   pipeline.repository.lastSyncCommit = '';
   pipeline.commands = commands;
@@ -238,11 +238,12 @@ export const syncApplicationPipelineToGithub = asyncHandler(async (req, res) => 
     branch: req.validated.body.branch,
     message: req.validated.body.message || `Sync ${pipeline.name} ${pipeline.environment} pipeline from infraflow`,
     files: pipeline.generatedFiles,
-    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment, pipeline.name),
   });
 
   pipeline.repository.url = syncRepository.url;
   pipeline.repository.branch = req.validated.body.branch;
+  pipeline.repository.workflowPath = workflowPathFor(pipeline.environment, pipeline.name);
   pipeline.repository.lastSyncedAt = new Date();
   pipeline.repository.lastSyncCommit = result.commitSha;
   await pipeline.save();
@@ -382,7 +383,7 @@ export const deployApplicationPipeline = asyncHandler(async (req, res) => {
   } catch (error) {
     if (isWorkflowDispatchMissingError(error)) {
       autoSync = await regenerateAndSyncPipelineWorkflow({ pipeline, token, repository });
-      workflowId = workflowPathFor(pipeline.environment).split('/').pop();
+      workflowId = workflowPathFor(pipeline.environment, pipeline.name).split('/').pop();
       await dispatchWorkflowWithRegistrationRetry({ token, repository, workflowId, environment: pipeline.environment });
     } else
     if (!isGithubIntegrationPermissionError(error)) throw error;
@@ -469,7 +470,7 @@ async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }
     branch: repository.branch,
     message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch`,
     files: pipeline.generatedFiles,
-    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+    deletePaths: obsoleteWorkflowPathsFor(pipeline.environment, pipeline.name),
   });
 
   let defaultBranch = repository.branch;
@@ -492,13 +493,13 @@ async function regenerateAndSyncPipelineWorkflow({ pipeline, token, repository }
       branch: defaultBranch,
       message: `Regenerate ${pipeline.name} ${pipeline.environment} workflow with workflow_dispatch on default branch`,
       files: pipeline.generatedFiles,
-      deletePaths: obsoleteWorkflowPathsFor(pipeline.environment),
+      deletePaths: obsoleteWorkflowPathsFor(pipeline.environment, pipeline.name),
     });
   }
 
   pipeline.repository.url = `https://github.com/${repository.owner}/${repository.repo}`;
   pipeline.repository.branch = repository.branch;
-  pipeline.repository.workflowPath = workflowPathFor(pipeline.environment);
+  pipeline.repository.workflowPath = workflowPathFor(pipeline.environment, pipeline.name);
   pipeline.repository.lastSyncedAt = new Date();
   pipeline.repository.lastSyncCommit = result.commitSha;
   await pipeline.save();
@@ -838,7 +839,7 @@ function generatePipelineFiles({ name, appType, environment, repository, command
   const resolvedAccountId = accountId || '<ACCOUNT_ID>';
   return [
     {
-      path: workflowPathFor(environment),
+      path: workflowPathFor(environment, name),
       language: 'yaml',
       purpose: 'GitHub Actions deployment pipeline triggered by Infraflow workflow dispatch.',
       content: githubWorkflow({ name, appType, environment, branch: repository.branch || 'main', commands, target }),
@@ -1488,14 +1489,29 @@ function pipelineChecklist(targetType) {
   ];
 }
 
-function workflowPathFor(environment) {
-  return `.github/workflows/infraflow-${environment}-deploy.yml`;
+// Must be unique per pipeline, not just per environment — two pipelines targeting the same repo +
+// environment (e.g. a React app and a Lambda app both set to "development") previously collided on
+// the exact same generated filename, so whichever synced last silently overwrote the other's
+// workflow definition on GitHub. Dispatching pipeline A would then actually run pipeline B's
+// workflow (a real run, but not the one the user asked for) — confirmed against a live repo where
+// this had happened. The pipeline's own name is already required/known at every call site, so it's
+// folded into the filename as a slug.
+function slugifyPipelineName(name) {
+  return String(name || 'pipeline')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'pipeline';
 }
 
-function obsoleteWorkflowPathsFor(environment) {
+function workflowPathFor(environment, name) {
+  return `.github/workflows/infraflow-${slugifyPipelineName(name)}-${environment}-deploy.yml`;
+}
+
+function obsoleteWorkflowPathsFor(environment, name) {
   return environments
     .filter((item) => item !== environment)
-    .map(workflowPathFor);
+    .map((item) => workflowPathFor(item, name));
 }
 
 function firstConfig(nodes, keys) {

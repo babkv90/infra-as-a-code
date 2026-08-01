@@ -76,7 +76,13 @@ export const env = {
   ),
   BCRYPT_ROUNDS: readNumber('BCRYPT_ROUNDS', 12),
   RATE_LIMIT_WINDOW_MS: readNumber('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
-  RATE_LIMIT_MAX: readNumber('RATE_LIMIT_MAX', 300),
+  RATE_LIMIT_MAX: readNumber('RATE_LIMIT_MAX', 600),
+  // Separate, far more generous limit for the small set of frequent read-only status-polling GET
+  // routes (deployment/GitHub-run/pipeline status, notifications — see app.js's POLLING_ROUTE_PATTERNS).
+  // A single browser tab watching one active deployment can legitimately generate ~800+ requests in
+  // a 15-minute window across those endpoints alone (2.2s/4s/8s/15s poll intervals) — comfortably
+  // under RATE_LIMIT_MAX would throttle completely normal usage, not abuse.
+  POLLING_RATE_LIMIT_MAX: readNumber('POLLING_RATE_LIMIT_MAX', 3000),
   APP_BASE_URL: readString('APP_BASE_URL', 'http://localhost:5173'),
   SMTP_HOST: readString('SMTP_HOST'),
   SMTP_PORT: readNumber('SMTP_PORT', 587),

@@ -183,7 +183,6 @@ export function SupportPage() {
         <header className="pipeline-console-header">
           <div>
             <span className="dash-eyebrow">Feedback & support</span>
-            <h2>{isSuperAdmin ? 'Support inbox' : 'Support tickets'}</h2>
           </div>
           <div className="pipeline-header-badges">
             <span className="pipeline-badge">{tickets.filter((ticket) => ticket.status === 'open').length} open</span>

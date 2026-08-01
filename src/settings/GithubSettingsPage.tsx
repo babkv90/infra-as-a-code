@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Github, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
+import { BadgeCheck, Building2, Github, LogOut, Mail, Moon, RefreshCw, ShieldCheck, Sun, UserCircle } from 'lucide-react';
 import AppLogo from '../components/AppLogo';
 import GithubConsentInfo from '../components/GithubConsentInfo';
 import { PageAlert } from '../components/PageAlert';
 import { clearAuthSession, getStoredUser } from '../auth/authClient';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
-import { currentLegalVersions } from '../legal/legalDocs';
+import { getAccessPlan, serviceAccessTierForUser } from '../utils/accessControl';
 
 type SettingsPageProps = {
   theme: ThemeMode;
@@ -15,6 +15,14 @@ type SettingsPageProps = {
 
 export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPageProps) {
   const user = getStoredUser();
+  const accessPlan = getAccessPlan(user);
+  const accessTier = serviceAccessTierForUser(user);
+  const profileInitials = (user?.name || user?.email || 'U')
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
   const [connection, setConnection] = useState<GithubConnection>({ connected: false, login: '', scopes: [] });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -105,6 +113,51 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
           <p>{user?.email}</p>
         </div>
 
+        <article className="settings-profile-card" aria-label="User profile information">
+          <div className="settings-profile-card__identity">
+            <div className="settings-profile-avatar">
+              {profileInitials || <UserCircle size={28} />}
+            </div>
+            <div>
+              <span className="dash-eyebrow">User profile</span>
+              <strong>{user?.name || 'Unnamed user'}</strong>
+              <p>{user?.email || 'No email recorded'}</p>
+            </div>
+          </div>
+          <div className="settings-profile-grid">
+            <div>
+              <Mail size={15} />
+              <span>Email</span>
+              <strong>{user?.email || 'Not recorded'}</strong>
+            </div>
+            <div>
+              <ShieldCheck size={15} />
+              <span>Role</span>
+              <strong>{user?.role || 'viewer'}</strong>
+            </div>
+            <div>
+              <BadgeCheck size={15} />
+              <span>Access plan</span>
+              <strong>{accessTier} / {accessPlan}</strong>
+            </div>
+            <div>
+              <Building2 size={15} />
+              <span>Workspace</span>
+              <strong>{user?.workspaceName || user?.workspace || 'Personal workspace'}</strong>
+            </div>
+            <div>
+              <UserCircle size={15} />
+              <span>Status</span>
+              <strong>{user?.status || 'active'}</strong>
+            </div>
+            <div>
+              <RefreshCw size={15} />
+              <span>Demo credits</span>
+              <strong>{Number(user?.demoCredits ?? 0)}</strong>
+            </div>
+          </div>
+        </article>
+
         <article className="settings-github-card">
           <div className="settings-github-card__main">
             <div className="settings-github-icon">
@@ -162,29 +215,6 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
           </div>
         </article>
 
-        <article className="settings-legal-card">
-          <div className="settings-heading settings-heading--compact">
-            <span className="dash-eyebrow">Legal</span>
-            <h2>Legal documents</h2>
-            <p>Current document versions and the versions accepted by your account.</p>
-          </div>
-          <div className="settings-legal-grid">
-            <a href="/legal/terms" rel="noreferrer" target="_blank">
-              <strong>Terms of Service</strong>
-              <span>Current: {currentLegalVersions.terms}</span>
-              <span>Accepted: {user?.legalConsent?.termsVersionAccepted || 'Not recorded'}</span>
-            </a>
-            <a href="/legal/privacy" rel="noreferrer" target="_blank">
-              <strong>Privacy Policy</strong>
-              <span>Current: {currentLegalVersions.privacy}</span>
-              <span>Accepted: {user?.legalConsent?.privacyVersionAccepted || 'Not recorded'}</span>
-            </a>
-          </div>
-          <p className="settings-legal-accepted">
-            Accepted at:{' '}
-            {user?.legalConsent?.acceptedAt ? new Date(user.legalConsent.acceptedAt).toLocaleString() : 'Not recorded'}
-          </p>
-        </article>
       </section>
     </main>
   );

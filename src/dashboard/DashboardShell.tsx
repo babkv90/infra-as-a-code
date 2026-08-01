@@ -2178,7 +2178,6 @@ function DeploymentsPage({
         <header className="pipeline-console-header">
           <div>
             <span className="dash-eyebrow">Infrastructure lifecycle</span>
-            <h2>Deployments</h2>
           </div>
           <div className="pipeline-header-badges">
             {insights?.syncedAt && <span className="pipeline-badge">Synced {new Date(insights.syncedAt).toLocaleString()}</span>}
@@ -2716,7 +2715,6 @@ function ResourceInfoPage() {
         <header className="pipeline-console-header">
           <div>
             <span className="dash-eyebrow">Deployed infrastructure</span>
-            <h2>Resource Info</h2>
           </div>
           <div className="pipeline-header-badges">
             <span className="pipeline-badge">{deployments.length} deployments</span>
@@ -2817,6 +2815,10 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const [pendingDeletePipeline, setPendingDeletePipeline] = useState<ApplicationPipelineRecord | null>(null);
   const [pendingBulkDeletePipelines, setPendingBulkDeletePipelines] = useState<ApplicationPipelineRecord[]>([]);
   const [selectedPipelineIds, setSelectedPipelineIds] = useState<string[]>([]);
+  const [pipelineSearchTerm, setPipelineSearchTerm] = useState('');
+  const [pipelineSyncFilter, setPipelineSyncFilter] = useState<'all' | 'synced' | 'pending'>('all');
+  const [pipelineTargetFilter, setPipelineTargetFilter] = useState('all');
+  const [pipelineRoleFilter, setPipelineRoleFilter] = useState<'all' | 'provisioned' | 'pending' | 'failed'>('all');
   const [activePreviewTab, setActivePreviewTab] = useState<'overview' | 'workflow' | 'files' | 'activity'>('overview');
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -2866,8 +2868,31 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const lambdaPipelineCount = pipelines.filter((pipeline) => pipeline.target.type === 'lambda').length;
   const provisionedRoleCount = pipelines.filter((pipeline) => pipeline.awsDeployRole?.status === 'provisioned').length;
   const resourceHealthMetrics = resourceHealthDeployment ? buildDeploymentResourceMetrics(resourceHealthDeployment, insights) : [];
-  const selectedPipelines = pipelines.filter((pipeline) => selectedPipelineIds.includes(pipeline._id));
-  const areAllPipelinesSelected = pipelines.length > 0 && selectedPipelineIds.length === pipelines.length;
+  const pipelineTargetOptions = Array.from(new Set(pipelines.map((pipeline) => pipeline.target.type).filter(Boolean))).sort();
+  const normalizedPipelineSearch = pipelineSearchTerm.trim().toLowerCase();
+  const filteredPipelines = pipelines.filter((pipeline) => {
+    if (pipelineSyncFilter === 'synced' && !pipeline.repository.lastSyncedAt) return false;
+    if (pipelineSyncFilter === 'pending' && pipeline.repository.lastSyncedAt) return false;
+    if (pipelineTargetFilter !== 'all' && pipeline.target.type !== pipelineTargetFilter) return false;
+    if (pipelineRoleFilter !== 'all' && (pipeline.awsDeployRole?.status ?? 'pending') !== pipelineRoleFilter) return false;
+    if (!normalizedPipelineSearch) return true;
+    const searchableText = [
+      pipeline.name,
+      pipeline.appType,
+      pipeline.environment,
+      pipeline.target.type,
+      pipeline.target.region,
+      pipeline.repository.url,
+      pipeline.repository.branch,
+      pipeline.awsDeployRole?.status,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return searchableText.includes(normalizedPipelineSearch);
+  });
+  const selectedPipelines = filteredPipelines.filter((pipeline) => selectedPipelineIds.includes(pipeline._id));
+  const areAllPipelinesSelected = filteredPipelines.length > 0 && filteredPipelines.every((pipeline) => selectedPipelineIds.includes(pipeline._id));
 
   async function refreshPipelineData() {
     setIsLoading(true);
@@ -3541,7 +3566,11 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }
 
   function toggleAllPipelineSelection(checked: boolean) {
-    setSelectedPipelineIds(checked ? pipelines.map((pipeline) => pipeline._id) : []);
+    const visibleIds = filteredPipelines.map((pipeline) => pipeline._id);
+    setSelectedPipelineIds((current) => {
+      if (!checked) return current.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...current, ...visibleIds]));
+    });
   }
 
   async function deleteApplicationPipelineRow(pipeline: ApplicationPipelineRecord) {
@@ -3598,66 +3627,102 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   }
 
   return (
-    <div className="dash-page dash-page--deployments dash-page--app-pipeline-inventory dash-page--infra-pipeline">
+    <div className="dash-page dash-page--app-pipeline-inventory dash-page--infra-pipeline">
       {message && <PageAlert message={message} onDismiss={() => setMessage('')} />}
       {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
 
-      <header className="pipeline-console-header">
-        <div>
-          <span className="dash-eyebrow">Infrastructure deployment pipeline</span>
-          <h2>Infra Pipeline</h2>
-        </div>
-        <div className="pipeline-header-badges">
-          {selectedPipeline && (
-            <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
-              <Plus size={14} />
-              New pipeline
-            </button>
-          )}
-          <span className={`pipeline-badge ${githubConnection.connected ? 'pipeline-badge--success' : 'pipeline-badge--warning'}`}>
-            <Github size={13} />
-            {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
-          </span>
-          {githubConnection.connected ? (
-            <button className="pipeline-github-action pipeline-github-action--connected" onClick={() => void disconnectGithubAccount()} type="button">
-              <Github size={14} />
-              Disconnect GitHub
-            </button>
-          ) : (
-            <div className="legal-connect-group legal-connect-group--compact">
-              <GithubConsentInfo />
-              <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
-                <Github size={14} />
-                {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
+      <div className="dash-page-head-group">
+        <header className="pipeline-console-header">
+          <div>
+            <span className="dash-eyebrow">Infrastructure deployment pipeline</span>
+          </div>
+          <div className="pipeline-header-badges">
+            <details className="pipeline-summary-dropdown">
+              <summary>
+                <Activity size={14} />
+                Pipeline summary
+              </summary>
+              <div className="pipeline-summary-dropdown__content">
+                <div>
+                  <span>Total pipelines</span>
+                  <strong>{pipelines.length}</strong>
+                </div>
+                <div>
+                  <span>Synced to GitHub</span>
+                  <strong>{syncedPipelineCount}</strong>
+                </div>
+                <div>
+                  <span>Lambda pipelines</span>
+                  <strong>{lambdaPipelineCount}</strong>
+                </div>
+                <div>
+                  <span>AWS roles ready</span>
+                  <strong>{provisionedRoleCount}</strong>
+                </div>
+              </div>
+            </details>
+            {selectedPipeline && (
+              <button className="pipeline-link-button" onClick={startNewPipeline} title="Start a new pipeline instead of editing this one" type="button">
+                <Plus size={14} />
+                New pipeline
               </button>
-            </div>
-          )}
-        </div>
-      </header>
-
-      <section className="deployment-summary">
-        <div>
-          <span>Total pipelines</span>
-          <strong>{pipelines.length}</strong>
-        </div>
-        <div>
-          <span>Synced to GitHub</span>
-          <strong>{syncedPipelineCount}</strong>
-        </div>
-        <div>
-          <span>Lambda pipelines</span>
-          <strong>{lambdaPipelineCount}</strong>
-        </div>
-        <div>
-          <span>AWS roles ready</span>
-          <strong>{provisionedRoleCount}</strong>
-        </div>
-      </section>
+            )}
+            <span className={`pipeline-badge ${githubConnection.connected ? 'pipeline-badge--success' : 'pipeline-badge--warning'}`}>
+              <Github size={13} />
+              {githubConnection.connected ? `@${githubConnection.login}` : 'GitHub not connected'}
+            </span>
+            {githubConnection.connected ? (
+              <button className="pipeline-github-action pipeline-github-action--connected" onClick={() => void disconnectGithubAccount()} type="button">
+                <Github size={14} />
+                Disconnect GitHub
+              </button>
+            ) : (
+              <div className="legal-connect-group legal-connect-group--compact">
+                <GithubConsentInfo />
+                <button className="pipeline-github-action" disabled={isGithubLoading} onClick={connectGithub} type="button">
+                  <Github size={14} />
+                  {isGithubLoading ? 'Checking...' : 'Connect GitHub'}
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+      </div>
 
       <Panel
         title="Application Pipelines"
-        action={`${pipelines.length} pipelines`}
+        action={`${filteredPipelines.length} of ${pipelines.length} pipelines`}
       >
+        <div className="app-pipeline-filter-bar">
+          <label className="admin-search app-pipeline-search">
+            <Search size={14} />
+            <input
+              aria-label="Search application pipelines"
+              onChange={(event) => setPipelineSearchTerm(event.target.value)}
+              placeholder="Search pipelines"
+              value={pipelineSearchTerm}
+            />
+          </label>
+          <select aria-label="Filter by sync status" onChange={(event) => setPipelineSyncFilter(event.target.value as typeof pipelineSyncFilter)} value={pipelineSyncFilter}>
+            <option value="all">All sync</option>
+            <option value="synced">Synced</option>
+            <option value="pending">Pending sync</option>
+          </select>
+          <select aria-label="Filter by target" onChange={(event) => setPipelineTargetFilter(event.target.value)} value={pipelineTargetFilter}>
+            <option value="all">All targets</option>
+            {pipelineTargetOptions.map((target) => (
+              <option key={target} value={target}>
+                {target}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Filter by AWS role status" onChange={(event) => setPipelineRoleFilter(event.target.value as typeof pipelineRoleFilter)} value={pipelineRoleFilter}>
+            <option value="all">All roles</option>
+            <option value="provisioned">Role ready</option>
+            <option value="pending">Role pending</option>
+            <option value="failed">Role failed</option>
+          </select>
+        </div>
         {pipelines.length > 0 && (
           <div className="pipeline-bulk-actions">
             <span>{selectedPipelineIds.length ? `${selectedPipelineIds.length} selected` : 'Select pipelines to delete multiple records'}</span>
@@ -3673,7 +3738,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
           </div>
         )}
         <div className="dash-deploy-table-wrap">
-          {pipelines.length ? (
+          {filteredPipelines.length ? (
             <table className="dash-deploy-table app-pipeline-inventory-table">
               <thead>
                 <tr>
@@ -3695,7 +3760,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
                 </tr>
               </thead>
               <tbody>
-                {pipelines.map((pipeline) => {
+                {filteredPipelines.map((pipeline) => {
                   const isPipelineDeploymentRunning = runningPipelineIds.includes(pipeline._id);
                   return (
                     <Fragment key={pipeline._id}>
@@ -3782,7 +3847,13 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
               </tbody>
             </table>
           ) : (
-            <EmptyState>{isLoading ? 'Loading application pipelines...' : 'No application pipelines yet. Create one to deploy application code from GitHub.'}</EmptyState>
+            <EmptyState>
+              {isLoading
+                ? 'Loading application pipelines...'
+                : pipelines.length
+                  ? 'No application pipelines match these filters.'
+                  : 'No application pipelines yet. Create one to deploy application code from GitHub.'}
+            </EmptyState>
           )}
         </div>
       </Panel>
@@ -4713,7 +4784,6 @@ function ApplicationPipelinePage() {
       <header className="pipeline-console-header">
         <div>
           <span className="dash-eyebrow">CI/CD pipeline builder</span>
-          <h2>{selectedPipeline ? `Editing "${selectedPipeline.name}"` : 'Create deployment pipeline'}</h2>
         </div>
         <div className="pipeline-header-badges">
           <span className={`pipeline-badge pipeline-badge--${environment}`}>{environment}</span>

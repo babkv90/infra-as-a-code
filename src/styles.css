@@ -227,6 +227,12 @@ textarea {
   gap: 8px;
 }
 
+.settings-topbar > a,
+.settings-topbar .app-logo,
+.settings-topbar .app-logo img {
+  background: transparent;
+}
+
 .settings-panel {
   display: grid;
   gap: 16px;
@@ -259,6 +265,93 @@ textarea {
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.72);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.2);
+}
+
+.settings-profile-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.2);
+}
+
+.settings-profile-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-profile-card__identity > div:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-profile-card__identity strong {
+  color: #fff;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.settings-profile-card__identity p {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.settings-profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(124, 58, 237, 0.18));
+  color: #f8fafc;
+  font-size: 18px;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.settings-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-profile-grid > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.24);
+}
+
+.settings-profile-grid svg {
+  color: #67e8f9;
+}
+
+.settings-profile-grid span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.settings-profile-grid strong {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .settings-profile-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-github-card__main,
@@ -6279,14 +6372,15 @@ button.lp-security-item {
   height: 100%;
   min-height: 0;
   gap: 10px;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: visible;
 }
 
 .dash-content:has(.dash-page--admin) {
   height: calc(100vh - 78px);
   padding: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dash-page--overview {
@@ -6432,7 +6526,20 @@ button.lp-security-item {
 
 .dash-content:has(.dash-page--infra-pipeline),
 .dash-page--infra-pipeline {
-  min-height: 100vh;
+  height: calc(100vh - 78px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dash-page--infra-pipeline {
+  width: 100%;
+  max-width: none;
+  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dash-content:has(.dash-page--infra-pipeline) {
+  padding: 12px;
 }
 
 .dash-content:has(.dash-page--app-pipeline-locked),
@@ -6634,12 +6741,13 @@ button.lp-security-item {
 .dash-overview-graphs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 13px;
+  gap: 14px;
 }
 
 .dash-overview-chart {
   min-width: 0;
-  padding: var(--dash-card-padding);
+  min-height: 192px;
+  padding: 20px 18px 18px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: var(--dash-radius-xl);
   background:
@@ -6683,7 +6791,9 @@ button.lp-security-item {
 
 .dash-overview-bars {
   display: grid;
+  align-content: end;
   gap: var(--dash-gap-md);
+  min-height: 104px;
 }
 
 .dash-overview-bar-row {
@@ -8954,6 +9064,33 @@ button.dash-kpi-card {
   min-width: 980px;
 }
 
+.app-pipeline-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.app-pipeline-filter-bar select {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.56);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 11px;
+}
+
+.app-pipeline-search {
+  min-width: min(280px, 100%);
+}
+
 .pipeline-bulk-actions {
   display: flex;
   align-items: center;
@@ -9466,6 +9603,12 @@ button.dash-kpi-card {
   border-radius: 8px;
 }
 
+.pipeline-console-header .dash-eyebrow {
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0.025em;
+}
+
 .pipeline-console-header h2 {
   margin: 1px 0 0;
   color: #f8fafc;
@@ -9480,6 +9623,68 @@ button.dash-kpi-card {
   gap: 7px;
   min-width: 0;
   flex-wrap: wrap;
+}
+
+.pipeline-summary-dropdown {
+  position: relative;
+}
+
+.pipeline-summary-dropdown summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pipeline-summary-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.pipeline-summary-dropdown__content {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.96);
+  box-shadow: 0 18px 50px rgba(2, 6, 23, 0.34);
+}
+
+.pipeline-summary-dropdown__content div {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.pipeline-summary-dropdown__content span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pipeline-summary-dropdown__content strong {
+  color: #f8fafc;
+  font-size: 18px;
 }
 
 .pipeline-badge,
@@ -10540,9 +10745,10 @@ button.dash-kpi-card {
 .admin-console-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.64fr) minmax(300px, 0.36fr);
+  align-items: start;
   gap: 10px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .admin-users-panel,
@@ -10554,8 +10760,12 @@ button.dash-kpi-card {
 }
 
 .admin-users-panel {
+  position: sticky;
+  top: 10px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
+  max-height: calc(100vh - 190px);
   min-height: 0;
   overflow: hidden;
   padding: 10px;
@@ -10564,11 +10774,16 @@ button.dash-kpi-card {
 }
 
 .admin-users-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  padding-bottom: 2px;
+  background: rgba(2, 6, 23, 0.92);
 }
 
 .admin-users-panel-title {
@@ -10646,7 +10861,7 @@ button.dash-kpi-card {
 .admin-users-table thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   padding: 9px 10px;
   background: rgba(7, 17, 31, 0.98);
   color: #94a3b8;
@@ -10745,9 +10960,9 @@ button.dash-kpi-card {
 
 .admin-side-col {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   gap: 10px;
 }
 
@@ -10898,11 +11113,27 @@ button.dash-kpi-card {
 .admin-activity-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
+  max-height: calc(100vh - 190px);
+  height: calc(100vh - 190px);
   min-height: 0;
   overflow: hidden;
   padding: 12px;
   border-radius: 8px;
   gap: 8px;
+}
+
+.admin-user-access-modal {
+  width: min(780px, calc(100vw - 32px));
+}
+
+.admin-detail-panel--modal {
+  max-height: min(68vh, 640px);
+  overflow-y: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .admin-activity-panel > header {
@@ -10964,11 +11195,18 @@ button.dash-kpi-card {
 
 .admin-tab-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 10px;
   background: rgba(2, 6, 23, 0.72);
+}
+
+.admin-tab-bar--top {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: max-content;
 }
 
 .admin-tab {
@@ -11495,6 +11733,154 @@ button.dash-kpi-card {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+.app-theme-light .changelog-form,
+.app-theme-light .backlog-form,
+.app-theme-light .changelog-list-panel,
+.app-theme-light .backlog-list-panel,
+.app-theme-light .perf-chart {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.app-theme-light .changelog-form > header strong,
+.app-theme-light .backlog-form > header strong,
+.app-theme-light .changelog-list-panel > header strong,
+.app-theme-light .backlog-list-panel > header strong,
+.app-theme-light .changelog-entry-head strong,
+.app-theme-light .backlog-table td strong,
+.app-theme-light .perf-chart-head strong {
+  color: var(--text-primary);
+}
+
+.app-theme-light .changelog-form > header span,
+.app-theme-light .backlog-form > header span,
+.app-theme-light .changelog-list-panel > header span,
+.app-theme-light .backlog-list-panel > header span,
+.app-theme-light .changelog-entry-meta,
+.app-theme-light .backlog-table th,
+.app-theme-light .backlog-table td span,
+.app-theme-light .perf-chart-head > div span,
+.app-theme-light .perf-chart-metric span,
+.app-theme-light .perf-chart-legend span,
+.app-theme-light .perf-axis-label {
+  color: var(--text-secondary);
+  fill: var(--text-secondary);
+}
+
+.app-theme-light .changelog-direction-btn,
+.app-theme-light .changelog-link-list,
+.app-theme-light .changelog-entry,
+.app-theme-light .changelog-snapshot span,
+.app-theme-light .backlog-filters select,
+.app-theme-light .backlog-status-select,
+.app-theme-light .perf-chart-metric select {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.app-theme-light .changelog-link-item,
+.app-theme-light .changelog-desc {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .changelog-cat,
+.app-theme-light .backlog-origin {
+  color: var(--accent-primary);
+}
+
+.app-theme-light .backlog-table th,
+.app-theme-light .backlog-table td {
+  border-bottom-color: var(--border-subtle);
+}
+
+.app-theme-light .backlog-table tr.is-closed td strong {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .perf-grid-line {
+  stroke: var(--border-subtle);
+}
+
+.app-theme-light .perf-line {
+  stroke: rgba(var(--accent-primary-rgb), 0.75);
+}
+
+.app-theme-pearl .changelog-form,
+.app-theme-pearl .backlog-form,
+.app-theme-pearl .changelog-list-panel,
+.app-theme-pearl .backlog-list-panel,
+.app-theme-pearl .perf-chart {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface);
+  box-shadow: 0 14px 38px rgba(20, 33, 61, 0.1);
+}
+
+.app-theme-pearl .changelog-form > header strong,
+.app-theme-pearl .backlog-form > header strong,
+.app-theme-pearl .changelog-list-panel > header strong,
+.app-theme-pearl .backlog-list-panel > header strong,
+.app-theme-pearl .changelog-entry-head strong,
+.app-theme-pearl .backlog-table td strong,
+.app-theme-pearl .perf-chart-head strong {
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .changelog-form > header span,
+.app-theme-pearl .backlog-form > header span,
+.app-theme-pearl .changelog-list-panel > header span,
+.app-theme-pearl .backlog-list-panel > header span,
+.app-theme-pearl .changelog-entry-meta,
+.app-theme-pearl .backlog-table th,
+.app-theme-pearl .backlog-table td span,
+.app-theme-pearl .perf-chart-head > div span,
+.app-theme-pearl .perf-chart-metric span,
+.app-theme-pearl .perf-chart-legend span,
+.app-theme-pearl .perf-axis-label {
+  color: var(--pearl-muted);
+  fill: var(--pearl-muted);
+}
+
+.app-theme-pearl .changelog-direction-btn,
+.app-theme-pearl .changelog-link-list,
+.app-theme-pearl .changelog-entry,
+.app-theme-pearl .changelog-snapshot span,
+.app-theme-pearl .backlog-filters select,
+.app-theme-pearl .backlog-status-select,
+.app-theme-pearl .perf-chart-metric select {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface-strong);
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .changelog-link-item,
+.app-theme-pearl .changelog-desc {
+  color: var(--pearl-text);
+}
+
+.app-theme-pearl .changelog-cat,
+.app-theme-pearl .backlog-origin {
+  color: var(--pearl-cyan);
+}
+
+.app-theme-pearl .backlog-table th,
+.app-theme-pearl .backlog-table td {
+  border-bottom-color: var(--pearl-border);
+}
+
+.app-theme-pearl .backlog-table tr.is-closed td strong {
+  color: var(--pearl-muted);
+}
+
+.app-theme-pearl .perf-grid-line {
+  stroke: var(--pearl-border);
+}
+
+.app-theme-pearl .perf-line {
+  stroke: rgba(8, 145, 178, 0.78);
 }
 
 @media (max-width: 900px) {
@@ -13140,6 +13526,16 @@ button.dash-kpi-card {
   .admin-console-grid {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(340px, 0.58fr) minmax(0, 0.42fr);
+  }
+
+  .admin-users-panel {
+    position: static;
+    max-height: none;
+  }
+
+  .admin-activity-panel {
+    height: auto;
+    max-height: none;
   }
 
   .ticket-console-grid {
@@ -16531,20 +16927,36 @@ button.dash-kpi-card {
 }
 
 .app-theme-light .settings-heading h1,
+.app-theme-light .settings-profile-card__identity strong,
+.app-theme-light .settings-profile-grid strong,
 .app-theme-light .settings-github-card strong {
   color: var(--text-primary);
 }
 
 .app-theme-light .settings-heading p,
+.app-theme-light .settings-profile-card__identity p,
+.app-theme-light .settings-profile-grid span,
 .app-theme-light .settings-github-card span {
   color: var(--text-secondary);
 }
 
+.app-theme-light .settings-profile-card,
+.app-theme-light .settings-profile-grid > div,
 .app-theme-light .settings-github-card,
 .app-theme-light .settings-github-profile,
 .app-theme-light .settings-github-icon {
   border-color: var(--border-subtle);
   background: var(--bg-surface);
+}
+
+.app-theme-light .settings-profile-avatar {
+  color: var(--text-primary);
+  border-color: rgba(37, 99, 235, 0.2);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(14, 165, 233, 0.1));
+}
+
+.app-theme-light .settings-profile-grid svg {
+  color: var(--accent-primary);
 }
 
 .app-theme-light .settings-github-icon {
@@ -17187,7 +17599,8 @@ button.dash-kpi-card {
 .app-theme-light .admin-kpi-card,
 .app-theme-light .admin-users-panel,
 .app-theme-light .admin-detail-panel,
-.app-theme-light .admin-activity-panel {
+.app-theme-light .admin-activity-panel,
+.app-theme-light .admin-tab-bar {
   border-color: var(--border-subtle);
   background: var(--bg-surface);
   box-shadow: var(--shadow-card);
@@ -17201,7 +17614,24 @@ button.dash-kpi-card {
   color: var(--text-primary);
 }
 
+.app-theme-light .admin-tab {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .admin-tab:hover {
+  color: var(--text-primary);
+}
+
+.app-theme-light .admin-tab--active {
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  color: var(--text-primary);
+}
+
 .app-theme-light .admin-users-table thead th {
+  background: var(--bg-surface);
+}
+
+.app-theme-light .admin-users-panel > header {
   background: var(--bg-surface);
 }
 
@@ -17609,6 +18039,16 @@ button.dash-kpi-card {
   color: var(--text-secondary);
 }
 
+.app-theme-light .deployment-request-credit-button {
+  border-color: rgba(var(--warning-rgb), 0.36);
+  color: var(--warning);
+}
+
+.app-theme-light .deployment-credit-request-icon {
+  background: rgba(var(--warning-rgb), 0.14);
+  color: var(--warning);
+}
+
 .app-theme-light .admin-kpi-icon {
   background: rgba(var(--info-rgb), 0.14);
   color: var(--info);
@@ -17916,7 +18356,9 @@ button.dash-kpi-card {
 }
 
 .app-theme-light .pipeline-bulk-actions,
-.app-theme-pearl .pipeline-bulk-actions {
+.app-theme-light .app-pipeline-filter-bar,
+.app-theme-pearl .pipeline-bulk-actions,
+.app-theme-pearl .app-pipeline-filter-bar {
   border-color: var(--border-subtle);
   background: var(--bg-surface-hover);
 }
@@ -17924,6 +18366,23 @@ button.dash-kpi-card {
 .app-theme-light .pipeline-bulk-actions span,
 .app-theme-pearl .pipeline-bulk-actions span {
   color: var(--text-secondary);
+}
+
+.app-theme-light .app-pipeline-filter-bar select {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.app-theme-pearl .app-pipeline-filter-bar {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface);
+}
+
+.app-theme-pearl .app-pipeline-filter-bar select {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface-strong);
+  color: var(--pearl-ink);
 }
 
 .app-theme-light .dash-page--pipeline {
@@ -17938,6 +18397,22 @@ button.dash-kpi-card {
   border-color: var(--border-subtle);
   background: var(--bg-surface);
   box-shadow: var(--shadow-card);
+}
+
+.app-theme-light .pipeline-summary-dropdown summary,
+.app-theme-light .pipeline-summary-dropdown__content,
+.app-theme-light .pipeline-summary-dropdown__content div {
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.app-theme-light .pipeline-summary-dropdown__content span {
+  color: var(--text-secondary);
+}
+
+.app-theme-light .pipeline-summary-dropdown__content strong {
+  color: var(--text-primary);
 }
 
 .app-theme-light .pipeline-console-header h2 {
@@ -18931,20 +19406,36 @@ button.dash-kpi-card {
 }
 
 .app-theme-pearl .settings-heading h1,
+.app-theme-pearl .settings-profile-card__identity strong,
+.app-theme-pearl .settings-profile-grid strong,
 .app-theme-pearl .settings-github-card strong {
   color: var(--pearl-ink);
 }
 
 .app-theme-pearl .settings-heading p,
+.app-theme-pearl .settings-profile-card__identity p,
+.app-theme-pearl .settings-profile-grid span,
 .app-theme-pearl .settings-github-card span {
   color: var(--pearl-muted);
 }
 
+.app-theme-pearl .settings-profile-card,
+.app-theme-pearl .settings-profile-grid > div,
 .app-theme-pearl .settings-github-card,
 .app-theme-pearl .settings-github-profile,
 .app-theme-pearl .settings-github-icon {
   border-color: var(--pearl-border);
   background: rgba(255, 252, 246, 0.78);
+}
+
+.app-theme-pearl .settings-profile-avatar {
+  color: var(--pearl-ink);
+  border-color: rgba(8, 145, 178, 0.22);
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.12), rgba(190, 92, 30, 0.1));
+}
+
+.app-theme-pearl .settings-profile-grid svg {
+  color: var(--pearl-accent);
 }
 
 .app-theme-pearl .settings-github-icon {
@@ -19390,7 +19881,8 @@ button.dash-kpi-card {
 .app-theme-pearl .admin-kpi-card,
 .app-theme-pearl .admin-users-panel,
 .app-theme-pearl .admin-detail-panel,
-.app-theme-pearl .admin-activity-panel {
+.app-theme-pearl .admin-activity-panel,
+.app-theme-pearl .admin-tab-bar {
   border-color: var(--pearl-border);
   background: var(--pearl-surface);
 }
@@ -19403,8 +19895,32 @@ button.dash-kpi-card {
   color: var(--pearl-ink);
 }
 
+.app-theme-pearl .admin-tab {
+  color: var(--pearl-muted);
+}
+
+.app-theme-pearl .admin-tab:hover {
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .admin-tab--active {
+  background: rgba(8, 145, 178, 0.1);
+  color: var(--pearl-ink);
+}
+
+.app-theme-light .admin-detail-panel--modal,
+.app-theme-pearl .admin-detail-panel--modal {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .app-theme-pearl .admin-users-table thead th {
   background: var(--pearl-surface-strong);
+}
+
+.app-theme-pearl .admin-users-panel > header {
+  background: var(--pearl-surface);
 }
 
 .app-theme-pearl .admin-meta-grid div,
@@ -19436,6 +19952,22 @@ button.dash-kpi-card {
 .app-theme-pearl .deploy-kpi-card.active {
   border-color: var(--pearl-cyan);
   background: rgba(8, 145, 178, 0.08);
+}
+
+.app-theme-pearl .pipeline-summary-dropdown summary,
+.app-theme-pearl .pipeline-summary-dropdown__content,
+.app-theme-pearl .pipeline-summary-dropdown__content div {
+  border-color: var(--pearl-border);
+  background: var(--pearl-surface);
+  color: var(--pearl-ink);
+}
+
+.app-theme-pearl .pipeline-summary-dropdown__content span {
+  color: var(--pearl-muted);
+}
+
+.app-theme-pearl .pipeline-summary-dropdown__content strong {
+  color: var(--pearl-ink);
 }
 
 .app-theme-pearl .deploy-kpi-card strong,
@@ -20100,6 +20632,16 @@ button.dash-kpi-card {
 .app-theme-pearl .deployment-credit-request-popup p,
 .app-theme-pearl .deployment-credit-request-popup__issues {
   color: var(--pearl-text);
+}
+
+.app-theme-pearl .deployment-request-credit-button {
+  border-color: rgba(217, 119, 6, 0.34);
+  color: var(--pearl-amber);
+}
+
+.app-theme-pearl .deployment-credit-request-icon {
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--pearl-amber);
 }
 
 .app-theme-pearl .dash-nav button {

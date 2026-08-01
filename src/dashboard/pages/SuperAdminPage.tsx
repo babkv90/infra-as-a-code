@@ -1,4 +1,4 @@
-import { BadgeDollarSign, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow } from 'lucide-react';
+import { BadgeDollarSign, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
@@ -30,9 +30,11 @@ export function SuperAdminPage() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
+  const [isAccessPopupOpen, setIsAccessPopupOpen] = useState(false);
 
   const users = overview?.users ?? [];
   const selectedUser = users.find((candidate) => candidate.id === selectedUserId) ?? users[0];
+  const selectedUserAccessLabel = selectedUser ? `${formatAdminLabel(selectedUser.workspace?.plan ?? 'free')} ${formatAdminLabel(selectedUser.role)}` : 'User access';
 
   const filteredUsers = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -122,12 +124,32 @@ export function SuperAdminPage() {
       {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-page-head-group">
         <header className="pipeline-console-header">
-          <div>
-            <span className="dash-eyebrow">Platform control</span>
-            <h2>Super Admin</h2>
-          </div>
+          <nav className="admin-tab-bar admin-tab-bar--top" role="tablist">
+            {ADMIN_TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  className={`admin-tab ${activeTab === tab.id ? 'admin-tab--active' : ''}`}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  type="button"
+                >
+                  <Icon size={15} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
           <div className="pipeline-header-badges">
             <span className="pipeline-badge">{kpis.totalUsers} users</span>
+            {activeTab === 'users' && (
+              <button className="pipeline-link-button" disabled={!selectedUser} onClick={() => setIsAccessPopupOpen(true)} type="button">
+                <UserCheck size={14} />
+                {selectedUserAccessLabel}
+              </button>
+            )}
             {kpis.pendingCredits > 0 && <span className="pipeline-badge pipeline-badge--warning">{kpis.pendingCredits} credit requests</span>}
             <button className="pipeline-icon-action" disabled={isLoading} onClick={() => void refreshOverview()} title="Refresh" type="button">
               <RefreshCw size={15} />
@@ -135,25 +157,6 @@ export function SuperAdminPage() {
           </div>
         </header>
       </div>
-
-      <nav className="admin-tab-bar" role="tablist">
-        {ADMIN_TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              className={`admin-tab ${activeTab === tab.id ? 'admin-tab--active' : ''}`}
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              type="button"
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
 
       {activeTab === 'changelog' && <ChangeLogTab />}
       {activeTab === 'backlog' && <BacklogTab />}
@@ -322,91 +325,6 @@ export function SuperAdminPage() {
         </section>
 
         <aside className="admin-side-col">
-          <section className="admin-detail-panel">
-            {selectedUser ? (
-              <>
-                <header className="admin-detail-header">
-                  <div>
-                    <strong>{selectedUser.name}</strong>
-                    <span>{selectedUser.email}</span>
-                  </div>
-                  <div className="admin-detail-header-pills">
-                    <span className={`admin-status-pill admin-status-pill--${selectedUser.status}`}>{selectedUser.status}</span>
-                    <span className="admin-role-pill">{selectedUser.role}</span>
-                  </div>
-                </header>
-
-                <div className="admin-meta-grid">
-                  <div>
-                    <span>Workspace</span>
-                    <strong>{selectedUser.workspace?.name ?? 'No workspace'}</strong>
-                  </div>
-                  <div>
-                    <span>Plan</span>
-                    <strong>{selectedUser.workspace?.plan ?? 'free'}</strong>
-                  </div>
-                  <div>
-                    <span>Access tier</span>
-                    <strong>{selectedUser.accessTier}</strong>
-                  </div>
-                  <div>
-                    <span>Services / AI</span>
-                    <strong>
-                      {selectedUser.allowedServices} services{selectedUser.aiEnabled ? ', AI on' : ', AI off'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Joined</span>
-                    <strong>{formatAdminDate(selectedUser.createdAt)}</strong>
-                  </div>
-                  <div>
-                    <span>Last login</span>
-                    <strong>{formatAdminDate(selectedUser.lastLoginAt)}</strong>
-                  </div>
-                  <div>
-                    <span>Diagrams / deployments</span>
-                    <strong>
-                      {selectedUser.diagramsCreated} / {selectedUser.deploymentsCreated}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Last action</span>
-                    <strong>{selectedUser.lastAction ?? 'No recent action'}</strong>
-                  </div>
-                </div>
-
-                <div className={`admin-credit-card admin-credit-card--${selectedUser.creditRequest?.status ?? 'none'}`}>
-                  <header>
-                    <strong>Credit request</strong>
-                    <span>{selectedUser.creditRequest?.status ?? 'none'}</span>
-                  </header>
-                  <p>{selectedUser.creditRequest?.reason || 'No request reason submitted.'}</p>
-                  {selectedUser.creditRequest?.note && <p className="admin-credit-note">Admin note: {selectedUser.creditRequest.note}</p>}
-                  <div className="admin-credit-dates">
-                    {selectedUser.creditRequest?.requestedAt && <span>Requested {formatAdminDate(selectedUser.creditRequest.requestedAt)}</span>}
-                    {selectedUser.creditRequest?.reviewedAt && <span>Reviewed {formatAdminDate(selectedUser.creditRequest.reviewedAt)}</span>}
-                  </div>
-                </div>
-
-                <div className="admin-form-row">
-                  <label className="pipeline-field">
-                    <span>Demo credits</span>
-                    <input min={0} onChange={(event) => setCredits(event.target.value)} type="number" value={credits} />
-                  </label>
-                  <label className="pipeline-field pipeline-field--wide">
-                    <span>Admin note</span>
-                    <textarea onChange={(event) => setNote(event.target.value)} placeholder="Optional note for this credit grant" rows={2} value={note} />
-                  </label>
-                </div>
-                <button className="pipeline-primary-compact admin-grant-button" onClick={() => void grantCredits(selectedUser)} type="button">
-                  Grant credits
-                </button>
-              </>
-            ) : (
-              <EmptyState>Select a user to manage role and demo credits.</EmptyState>
-            )}
-          </section>
-
           <section className="admin-activity-panel">
             <header>
               <strong>Recent activity</strong>
@@ -432,6 +350,106 @@ export function SuperAdminPage() {
           </section>
         </aside>
       </div>
+      {isAccessPopupOpen && (
+        <div className="pipeline-result-backdrop" role="presentation" onClick={() => setIsAccessPopupOpen(false)}>
+          <section className="pipeline-result-modal admin-user-access-modal" role="dialog" aria-modal="true" aria-label="User access detail" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>{selectedUserAccessLabel}</span>
+                <h3>User access detail</h3>
+                <p>{selectedUser ? `${selectedUser.name} - ${selectedUser.email}` : 'Select a user from the table to manage access.'}</p>
+              </div>
+              <button className="pipeline-result-close" onClick={() => setIsAccessPopupOpen(false)} type="button" aria-label="Close user access detail">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="admin-detail-panel admin-detail-panel--modal">
+              {selectedUser ? (
+                <>
+                  <header className="admin-detail-header">
+                    <div>
+                      <strong>{selectedUser.name}</strong>
+                      <span>{selectedUser.email}</span>
+                    </div>
+                    <div className="admin-detail-header-pills">
+                      <span className={`admin-status-pill admin-status-pill--${selectedUser.status}`}>{selectedUser.status}</span>
+                      <span className="admin-role-pill">{selectedUser.role}</span>
+                    </div>
+                  </header>
+
+                  <div className="admin-meta-grid">
+                    <div>
+                      <span>Workspace</span>
+                      <strong>{selectedUser.workspace?.name ?? 'No workspace'}</strong>
+                    </div>
+                    <div>
+                      <span>Plan</span>
+                      <strong>{selectedUser.workspace?.plan ?? 'free'}</strong>
+                    </div>
+                    <div>
+                      <span>Access tier</span>
+                      <strong>{selectedUser.accessTier}</strong>
+                    </div>
+                    <div>
+                      <span>Services / AI</span>
+                      <strong>
+                        {selectedUser.allowedServices} services{selectedUser.aiEnabled ? ', AI on' : ', AI off'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Joined</span>
+                      <strong>{formatAdminDate(selectedUser.createdAt)}</strong>
+                    </div>
+                    <div>
+                      <span>Last login</span>
+                      <strong>{formatAdminDate(selectedUser.lastLoginAt)}</strong>
+                    </div>
+                    <div>
+                      <span>Diagrams / deployments</span>
+                      <strong>
+                        {selectedUser.diagramsCreated} / {selectedUser.deploymentsCreated}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Last action</span>
+                      <strong>{selectedUser.lastAction ?? 'No recent action'}</strong>
+                    </div>
+                  </div>
+
+                  <div className={`admin-credit-card admin-credit-card--${selectedUser.creditRequest?.status ?? 'none'}`}>
+                    <header>
+                      <strong>Credit request</strong>
+                      <span>{selectedUser.creditRequest?.status ?? 'none'}</span>
+                    </header>
+                    <p>{selectedUser.creditRequest?.reason || 'No request reason submitted.'}</p>
+                    {selectedUser.creditRequest?.note && <p className="admin-credit-note">Admin note: {selectedUser.creditRequest.note}</p>}
+                    <div className="admin-credit-dates">
+                      {selectedUser.creditRequest?.requestedAt && <span>Requested {formatAdminDate(selectedUser.creditRequest.requestedAt)}</span>}
+                      {selectedUser.creditRequest?.reviewedAt && <span>Reviewed {formatAdminDate(selectedUser.creditRequest.reviewedAt)}</span>}
+                    </div>
+                  </div>
+
+                  <div className="admin-form-row">
+                    <label className="pipeline-field">
+                      <span>Demo credits</span>
+                      <input min={0} onChange={(event) => setCredits(event.target.value)} type="number" value={credits} />
+                    </label>
+                    <label className="pipeline-field pipeline-field--wide">
+                      <span>Admin note</span>
+                      <textarea onChange={(event) => setNote(event.target.value)} placeholder="Optional note for this credit grant" rows={2} value={note} />
+                    </label>
+                  </div>
+                  <button className="pipeline-primary-compact admin-grant-button" onClick={() => void grantCredits(selectedUser)} type="button">
+                    Grant credits
+                  </button>
+                </>
+              ) : (
+                <EmptyState>Select a user to manage role and demo credits.</EmptyState>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
       </>
       )}
     </div>
@@ -440,4 +458,12 @@ export function SuperAdminPage() {
 
 function formatAdminDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never';
+}
+
+function formatAdminLabel(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }
