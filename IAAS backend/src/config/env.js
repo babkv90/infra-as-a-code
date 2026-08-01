@@ -132,6 +132,19 @@ export const env = {
   // this API with its run's outcome/outputs — a shared secret, not a user credential, since the caller
   // is a GitHub Actions job, not a logged-in user.
   DEPLOYMENT_CALLBACK_SECRET: readString('DEPLOYMENT_CALLBACK_SECRET'),
+  // Vault for sensitive Terraform output values (SSH private keys, DB endpoints) captured after a
+  // deploy — see secretRedaction.js/secretsManagerService.js. Off by default (readString(...) ===
+  // 'true' only) so a fresh checkout keeps working with no AWS setup; sensitive outputs just stay in
+  // deployment.outputs as they always have until this is turned on. Uses the platform's OWN AWS
+  // identity (makeEnvCredentials(), same as the STS-assume-role calls in awsRoleCredentials.js) rather
+  // than the customer's assumed role, since these are the app's own secrets about a customer's
+  // deployment, not resources inside the customer's account, and a customer's IAM role has no reason
+  // to grant secretsmanager:* permissions.
+  SECRETS_MANAGER_ENABLED: readString('SECRETS_MANAGER_ENABLED') === 'true',
+  SECRETS_MANAGER_REGION: readString('SECRETS_MANAGER_REGION') || readString('AWS_REGION', 'us-east-1'),
+  // Optional — omitted, Secrets Manager encrypts with its own AWS-managed default key
+  // (aws/secretsmanager). Set to a customer-managed KMS key ARN/id for stricter key control.
+  SECRETS_MANAGER_KMS_KEY_ID: readString('SECRETS_MANAGER_KMS_KEY_ID'),
 };
 
 if (!env.MONGODB_URI) {

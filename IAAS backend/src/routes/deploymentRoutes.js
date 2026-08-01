@@ -26,10 +26,12 @@ import {
 } from '../controllers/deploymentController.js';
 import { callbackSchema, receiveTerraformDeployCallback } from '../controllers/terraformDeployCallbackController.js';
 import { terraformValidateCallbackSchema, receiveTerraformValidateCallback } from '../controllers/terraformValidateCallbackController.js';
+import { revealDeploymentOutputSecret } from '../controllers/deploymentSecretController.js';
 import { roles } from '../constants/roles.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authorize } from '../middleware/authorize.js';
 import { lambdaZipUpload } from '../middleware/lambdaZipUpload.js';
+import { secretRevealRateLimit } from '../middleware/secretRateLimit.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
 export const deploymentRouter = Router();
@@ -44,6 +46,10 @@ deploymentRouter.use(requireAuth);
 deploymentRouter.get('/', listDeployments);
 deploymentRouter.post('/lambda-zip', authorize(roles.DEVOPS), lambdaZipUpload('zip'), uploadLambdaZip);
 deploymentRouter.get('/:id', getDeployment);
+// Broker endpoint for masked/sensitive resource-info fields (task item 2) — fetches from Secrets
+// Manager server-side, audit-logged, rate-limited per user. Same requireAuth + workspace-ownership
+// model as every other :id route above/below it, deliberately not a new auth scheme.
+deploymentRouter.get('/:id/secrets/output/:resourceKey/:fieldKey', secretRevealRateLimit, revealDeploymentOutputSecret);
 deploymentRouter.get('/:id/github-run', getDeploymentGithubRun);
 deploymentRouter.get('/:id/github-run/jobs/:jobId/logs', getDeploymentGithubRunJobLogs);
 deploymentRouter.post('/from-canvas', authorize(roles.DEVOPS), validateRequest(createCanvasDeploymentSchema), createDeploymentFromCanvas);

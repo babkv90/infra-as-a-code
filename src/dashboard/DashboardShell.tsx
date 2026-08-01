@@ -142,6 +142,7 @@ import {
   type ResourceVerificationResult,
 } from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
+import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseAiAgent, canUseApplicationPipelines, serviceAccessTierForUser } from '../utils/accessControl';
 
@@ -5699,7 +5700,10 @@ function formatDeploymentOutputValue(value: unknown) {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
 
   try {
-    return JSON.stringify(value);
+    // Sensitive fields nested in here (SSH keys, DB endpoints) arrive as a { __secretPlaceholder }
+    // marker, never the real value — see the backend's secretRedaction.js. Render those as a plain
+    // label instead of dumping the marker's own shape as JSON; view Resource Info to reveal them.
+    return JSON.stringify(value, (_key, nested) => (isSecretPlaceholder(nested) ? 'Hidden — view in Resource Info to reveal' : nested));
   } catch {
     return String(value);
   }

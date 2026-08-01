@@ -2641,6 +2641,17 @@ textarea {
   color: #a5f3fc;
 }
 
+.resource-info-row__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.resource-info-row__error {
+  grid-column: 1 / -1;
+  color: #f87171;
+  font-size: 10px;
+}
+
 .resource-info-section {
   display: grid;
   gap: 6px;
@@ -2832,6 +2843,19 @@ textarea {
   color: #cbd5e1;
   font-size: 14px;
   line-height: 1.55;
+}
+
+.deployment-success-secret-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24 !important;
+  font-size: 12px !important;
+  text-align: left;
 }
 
 .deploy-toolbar-button {

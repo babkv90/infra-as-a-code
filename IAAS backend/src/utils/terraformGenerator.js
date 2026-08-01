@@ -1058,6 +1058,7 @@ function resourceOutputBlock(nodes, names) {
       return `    ${resourceName} = {
       label = ${formatValue(node.data?.label ?? node.data?.serviceName ?? serviceId)}
       service = ${formatValue(node.data?.serviceName ?? serviceId)}
+      service_id = ${formatValue(serviceId)}
       terraform_address = ${formatValue(`${terraformType}.${resourceName}`)}
 ${attrs}
     }`;

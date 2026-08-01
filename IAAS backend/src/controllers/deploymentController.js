@@ -18,6 +18,19 @@ import { dispatchTerraformValidation } from '../services/githubTerraformValidato
 import { syncDeploymentDrift, verifyDeploymentResources } from '../services/terraformDeploymentRunner.js';
 import { getWorkflowRun, getWorkflowJobLogsText, githubWorkflowRunJobs } from '../services/githubActionsClient.js';
 import { finishRun } from '../services/githubTerraformRunner.js';
+import { redactOutputsForResponse } from '../utils/secretRedaction.js';
+
+// Applied to every deployment sent back to a client (list, get, and every mutating action that
+// echoes the deployment back). Sensitive fields inside `outputs` (SSH private keys, DB
+// endpoints/addresses — see sensitiveOutputKeys.js) are replaced with a `{ __secretPlaceholder,
+// revealPath }` marker the frontend resolves through the reveal broker endpoint on demand; the real
+// value never rides along in this payload. Returns a plain object, never mutates the Mongoose doc.
+function withRedactedSecrets(deployment) {
+  const plain = typeof deployment.toObject === 'function' ? deployment.toObject() : { ...deployment };
+  plain.outputs = redactOutputsForResponse(plain.outputs, plain.secretRefs, `/deployments/${plain._id}/secrets`);
+  delete plain.secretRefs;
+  return plain;
+}
 
 // runTerraformDeployment/runTerraformDestroy resolve differently depending on executor:
 // github-actions now only dispatches and returns (fast — see githubTerraformRunner.js's top comment
@@ -123,7 +136,7 @@ export const listDeployments = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .populate('diagram', 'name activeRegion nodes edges')
     .populate('requestedBy', 'name email role');
-  res.json({ success: true, data: deployments });
+  res.json({ success: true, data: deployments.map(withRedactedSecrets) });
 });
 
 export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
@@ -163,7 +176,7 @@ export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
   });
 
   await auditLog(req, 'deployment.create', 'Deployment', deployment._id, { diagram: diagram._id });
-  res.status(201).json({ success: true, data: deployment });
+  res.status(201).json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
@@ -261,7 +274,7 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
     await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
   }
 
-  res.status(201).json({ success: true, data: deployment });
+  res.status(201).json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const queueDeployment = asyncHandler(async (req, res) => {
@@ -280,7 +293,7 @@ export const queueDeployment = asyncHandler(async (req, res) => {
   await deployment.save();
 
   await auditLog(req, 'deployment.queue', 'Deployment', deployment._id);
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const applyDeployment = asyncHandler(async (req, res) => {
@@ -295,7 +308,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   const workspace = await Workspace.findById(req.user.workspace);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });
   if (deployment.status === 'deploying') {
-    return res.json({ success: true, data: deployment });
+    return res.json({ success: true, data: withRedactedSecrets(deployment) });
   }
 
   deployment.status = 'queued';
@@ -304,7 +317,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.apply', 'Deployment', deployment._id);
   await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id));
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 // Updates an already-deployed (or previously-failed) deployment's underlying diagram and re-applies
@@ -380,7 +393,7 @@ export const updateDeploymentFromCanvas = asyncHandler(async (req, res) => {
   await startTerraformRun(deployment, () => runTerraformDeployment(deployment._id, { isUpdate: true }));
 
   await deployment.populate('diagram', 'name activeRegion nodes edges');
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 // Remaps every source node/edge id so it can never collide with a target diagram's existing ids,
@@ -600,13 +613,13 @@ export const mergeDeploymentFromCanvas = asyncHandler(async (req, res) => {
   await startTerraformRun(target, () => runTerraformDeployment(target._id, { isUpdate: true }));
 
   await target.populate('diagram', 'name activeRegion nodes edges');
-  res.json({ success: true, data: { target, source: sourceDeployment } });
+  res.json({ success: true, data: { target: withRedactedSecrets(target), source: withRedactedSecrets(sourceDeployment) } });
 });
 
 export const getDeployment = asyncHandler(async (req, res) => {
   const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace }).populate('diagram', 'name activeRegion nodes edges');
   if (!deployment) throw new ApiError(404, 'Deployment not found');
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 // Which GitHub Actions run currently matters for this deployment, across every stage the
@@ -705,7 +718,7 @@ export const renameDeployment = asyncHandler(async (req, res) => {
 
   await auditLog(req, 'deployment.rename', 'Deployment', deployment._id, { previousName, name: deployment.name });
   await deployment.populate('diagram', 'name activeRegion nodes edges');
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const destroyDeployment = asyncHandler(async (req, res) => {
@@ -734,7 +747,7 @@ export const destroyDeployment = asyncHandler(async (req, res) => {
   await auditLog(req, 'deployment.destroy', 'Deployment', deployment._id);
   await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const forceDestroyDeployment = asyncHandler(async (req, res) => {
@@ -757,7 +770,7 @@ export const forceDestroyDeployment = asyncHandler(async (req, res) => {
   await auditLog(req, 'deployment.force_destroy', 'Deployment', deployment._id, { previousStatus });
   await startTerraformRun(deployment, () => runTerraformDestroy(deployment._id, { force: true }));
   await deployment.populate('diagram', 'name activeRegion nodes edges');
-  res.json({ success: true, data: deployment });
+  res.json({ success: true, data: withRedactedSecrets(deployment) });
 });
 
 export const verifyDeploymentResourcesRoute = asyncHandler(async (req, res) => {
