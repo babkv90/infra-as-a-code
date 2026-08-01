@@ -1,0 +1,157 @@
+name: "ReactPipeline development CI/CD"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        default: development
+        type: choice
+        options:
+          - development
+          - test
+          - staging
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+jobs:
+  deploy:
+    name: Build, scan, and deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'react-vue-angular-static-frontend-app' }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'infraflow-cluster' }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE || 'react-app-service' }}
+      S3_BUCKET: ${{ vars.S3_BUCKET || 'infraflow-static-20260726153431179400000001' }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+      LAMBDA_FUNCTION: ${{ vars.LAMBDA_FUNCTION || 'replace-with-lambda-function' }}
+      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'default' }}
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.INFRAFLOW_API_BASE_URL || vars.INFRAFLOW_API_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Normalize Lambda function name
+        run: |
+          CLEAN_LAMBDA_FUNCTION="$(echo "$LAMBDA_FUNCTION" | xargs)"
+          if [ -z "$CLEAN_LAMBDA_FUNCTION" ]; then
+            echo "::error::LAMBDA_FUNCTION is empty. Set GitHub variable LAMBDA_FUNCTION to the Lambda function name."
+            exit 1
+          fi
+          echo "LAMBDA_FUNCTION=$CLEAN_LAMBDA_FUNCTION" >> "$GITHUB_ENV"
+          echo "Deploying Lambda function: $CLEAN_LAMBDA_FUNCTION"
+
+
+      - name: Setup Node.js
+        if: contains('react-app', 'react') || contains('react-app', 'node') || contains('react-app', 'static') || contains('react-app', 'serverless') || contains('react-app', 'kubernetes')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            IAAS backend/package-lock.json
+
+      - name: Setup Python
+        if: contains('react-app', 'python')
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Java
+        if: contains('react-app', 'java')
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+
+        run: npm ci
+
+      - name: Run tests
+        timeout-minutes: 3
+        env:
+          CI: true
+          NODE_ENV: test
+
+        run: |
+          if [ ! -f package.json ]; then
+            echo "No package.json found; skipping test step."
+            exit 0
+          fi
+          TEST_SCRIPT="$(node -e "const pkg = require('./package.json'); process.stdout.write(pkg.scripts?.test || '')")"
+          if [ -z "$TEST_SCRIPT" ]; then
+            echo "No npm test script found; skipping test step."
+            exit 0
+          fi
+          if echo "$TEST_SCRIPT" | grep -Eiq 'no test specified|exit 1'; then
+            echo "Default placeholder npm test script found; skipping test step."
+            exit 0
+          fi
+          timeout 150s npm test -- --watch=false
+
+
+      - name: Verify frontend API URL
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Set GitHub variable VITE_API_BASE_URL or secret/variable INFRAFLOW_API_BASE_URL to the current API Gateway /api/v1 URL before deploying the frontend."
+            exit 1
+          fi
+
+
+      - name: Build application
+
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+        run: npm run build
+
+      - name: Verify AWS deploy role secret
+        run: |
+          if [ -z "${{ secrets.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::Set AWS_DEPLOY_ROLE_ARN as a repository secret or on the selected GitHub Environment: ${{ inputs.environment }}."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify build output
+        run: |
+          echo "Looking for a static build output directory (dist/ or build/)..."
+          if [ -d dist ]; then
+            echo "Found dist/ with $(find dist -type f | wc -l) file(s), $(du -sh dist | cut -f1) total."
+            find dist -maxdepth 2 -type f | head -20
+          elif [ -d build ]; then
+            echo "Found build/ with $(find build -type f | wc -l) file(s), $(du -sh build | cut -f1) total."
+            find build -maxdepth 2 -type f | head -20
+          else
+            echo "::error::No static build output found. Expected dist/ (Vite) or build/ (Create React App)."
+            echo "Contents of the repository root after the build step:"
+            ls -la
+            echo "If your build tool writes elsewhere (e.g. Angular's dist/<project-name>/), update this pipeline's build command or the target output directory."
+            exit 1
+          fi
+
+      - name: Deploy static build to S3
+        run: |
+          if [ -d dist ]; then BUILD_DIR=dist; else BUILD_DIR=build; fi
+          echo "Syncing $BUILD_DIR/ to s3://${{ env.S3_BUCKET }} ..."
+          aws s3 sync "$BUILD_DIR/" s3://${{ env.S3_BUCKET }} --delete
+          echo "Sync complete. Bucket now contains:"
+          aws s3 ls "s3://${{ env.S3_BUCKET }}" --recursive --summarize | tail -5
+
+      - name: Invalidate CloudFront cache
+        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: aws cloudfront create-invalidation --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
