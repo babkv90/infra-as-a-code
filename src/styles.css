@@ -412,6 +412,24 @@ textarea {
   flex-wrap: wrap;
 }
 
+.settings-canvas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-canvas-actions .dash-secondary-action {
+  min-width: 124px;
+  justify-content: center;
+}
+
+.settings-canvas-actions .dash-secondary-action.is-active {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr) 30px;
@@ -427,6 +445,8 @@ textarea {
 }
 
 .toolbar {
+  position: relative;
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: var(--dash-gap-md);
@@ -653,6 +673,11 @@ textarea {
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
 
+.toolbar-tools-menu--align-right .toolbar-tools-menu__content {
+  right: 0;
+  left: auto;
+}
+
 .dark .toolbar-tools-menu__content {
   background: rgba(15, 23, 42, 0.98);
   border-color: rgba(100, 116, 139, 0.54);
@@ -682,8 +707,42 @@ textarea {
   color: #2563eb;
 }
 
+.toolbar-tools-menu__content button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.toolbar-tools-menu__content button:disabled:hover {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.toolbar-tools-menu__content button.is-active {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+.toolbar-tools-menu__label {
+  padding: 4px 8px 2px;
+  color: #94a3b8;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toolbar-tools-menu__check {
+  margin-left: auto;
+}
+
 .dark .toolbar-tools-menu__content button:hover {
   background: rgba(14, 165, 233, 0.14);
+  color: #67e8f9;
+}
+
+.dark .toolbar-tools-menu__content button.is-active {
+  background: rgba(14, 165, 233, 0.12);
   color: #67e8f9;
 }
 
@@ -908,6 +967,10 @@ textarea {
   will-change: transform;
 }
 
+.canvas-shell--layout-transition .react-flow__node {
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .canvas-shell--moving .aws-node__tile,
 .canvas-shell--moving .label-node,
 .canvas-shell--moving .group-box.selected {
@@ -950,6 +1013,88 @@ textarea {
   color: #cbd5e1;
 }
 
+.architecture-view-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
+}
+
+.architecture-view-toggle button {
+  min-height: 30px;
+  border: 0;
+  border-right: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 0 13px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.architecture-view-toggle button:last-child {
+  border-right: 0;
+}
+
+.architecture-view-toggle button.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.dark .architecture-view-toggle {
+  border-color: rgba(100, 116, 139, 0.5);
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.architecture-lane-node {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1.5px solid color-mix(in srgb, var(--architecture-lane-color, #2563eb) 42%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--architecture-lane-color, #2563eb) 7%, transparent), transparent 42%),
+    rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+.architecture-lane-node__header {
+  display: grid;
+  place-items: center;
+  height: 50px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--architecture-lane-color, #2563eb) 34%, transparent);
+  color: var(--architecture-lane-color, #2563eb);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.architecture-node-card .aws-node {
+  width: 150px;
+  padding: 0;
+}
+
+.architecture-node-card .aws-node__tile {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+}
+
+.architecture-node-card .aws-node__label {
+  width: 142px;
+  min-height: 32px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.react-flow__node-architectureLane {
+  z-index: -30 !important;
+  pointer-events: none !important;
+}
+
 .react-flow__node-awsService {
   background: transparent;
   border: 0;
@@ -958,6 +1103,10 @@ textarea {
 
 .react-flow .react-flow__node.react-flow__node-groupBox {
   pointer-events: none !important;
+}
+
+.react-flow .react-flow__node.react-flow__node-groupBox .react-flow__resize-control {
+  pointer-events: all;
 }
 
 .react-flow__node.focus-dim {
@@ -1087,13 +1236,27 @@ textarea {
 }
 
 .port-handle--in {
-  left: -6px;
   background: #8b9097;
 }
 
 .port-handle--out {
-  right: -6px;
   background: #8b9097;
+}
+
+.port-handle--left {
+  left: -6px;
+}
+
+.port-handle--right {
+  right: -6px;
+}
+
+.port-handle--top {
+  top: -6px;
+}
+
+.port-handle--bottom {
+  bottom: -6px;
 }
 
 .status-pill {
@@ -1214,6 +1377,63 @@ textarea {
   font-weight: 700;
 }
 
+.group-box__select-edge {
+  position: absolute;
+  pointer-events: all;
+  cursor: move;
+}
+
+.group-box__select-edge--top,
+.group-box__select-edge--bottom {
+  left: 0;
+  right: 0;
+  height: 14px;
+}
+
+.group-box__select-edge--top {
+  top: 0;
+}
+
+.group-box__select-edge--bottom {
+  bottom: 0;
+}
+
+.group-box__select-edge--left,
+.group-box__select-edge--right {
+  top: 0;
+  bottom: 0;
+  width: 14px;
+}
+
+.group-box__select-edge--left {
+  left: 0;
+}
+
+.group-box__select-edge--right {
+  right: 0;
+}
+
+/* Enlarge NodeResizer's hit targets — the library defaults (4px handles, 1px lines) are
+   reliable with a mouse but not much else. The extra size stays centered on the same
+   corner/edge (translate(-50%) in the library's own CSS), so the visible line/handle position
+   is unaffected — only the invisible draggable area grows. */
+.group-box__resize-handle.react-flow__resize-control.handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  border-radius: 3px;
+}
+
+.group-box__resize-line.react-flow__resize-control.line.left,
+.group-box__resize-line.react-flow__resize-control.line.right {
+  width: 14px;
+}
+
+.group-box__resize-line.react-flow__resize-control.line.top,
+.group-box__resize-line.react-flow__resize-control.line.bottom {
+  height: 14px;
+}
+
 .label-node {
   max-width: 280px;
   min-width: 160px;
@@ -1263,14 +1483,20 @@ textarea {
 
 .edge-label {
   position: absolute;
-  padding: 3px 7px;
+  z-index: 5;
+  max-width: 160px;
+  padding: 4px 8px;
   border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
   color: #334155;
   font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
   pointer-events: all;
+  text-align: center;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  overflow-wrap: anywhere;
 }
 
 .edge-label--selected {
@@ -1279,8 +1505,122 @@ textarea {
 }
 
 .dark .edge-label {
-  background: rgba(15, 23, 42, 0.88);
+  background: rgba(15, 23, 42, 0.94);
   color: #e2e8f0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Whiteboard Mode — paper-style rendering skin. Same node/edge/group data */
+/* as the default theme; only className branching + these rules change.   */
+/* ---------------------------------------------------------------------- */
+
+.canvas-shell--whiteboard .react-flow {
+  background-color: #fafaf8;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.02 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 120px 120px;
+}
+
+.canvas-shell--whiteboard .canvas-mode-pill {
+  border-color: rgba(17, 17, 17, 0.22);
+  background: rgba(250, 250, 248, 0.86);
+  color: #111111;
+}
+
+.aws-node--whiteboard {
+  color: #111111;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.aws-node__tile--whiteboard {
+  border-radius: 8px;
+  box-shadow: none;
+  transition: transform 140ms ease;
+}
+
+.aws-node__tile--badge {
+  border: none;
+  background: var(--aws-node-badge-color, #1e73e8);
+}
+
+.aws-node__tile--outline {
+  border: 1.5px solid #111111;
+  background: transparent;
+}
+
+.aws-node--whiteboard:hover .aws-node__tile--whiteboard {
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.aws-node--whiteboard.selected .aws-node__tile--whiteboard {
+  box-shadow: 0 0 0 2px rgba(59, 95, 168, 0.4);
+}
+
+.aws-node__label--whiteboard {
+  color: #111111;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-weight: 400;
+}
+
+.group-box--whiteboard {
+  border: 1.5px dashed #111111;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.group-box--whiteboard.selected {
+  box-shadow: inset 0 0 0 1px #3b5fa8, 0 0 0 1px #3b5fa8;
+}
+
+.group-box__whiteboard-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 20px);
+  margin: 10px;
+  pointer-events: all;
+}
+
+.group-box__whiteboard-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 5px;
+  border-radius: 5px;
+  background: #111111;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.group-box__whiteboard-label {
+  overflow: hidden;
+  color: #111111;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.group-title-input--whiteboard {
+  min-width: 0;
+  flex: 1;
+  color: #111111;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.edge-label--whiteboard {
+  border-color: rgba(17, 17, 17, 0.24);
+  background: rgba(250, 250, 248, 0.92);
+  color: #111111;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 .panel-heading {
@@ -8043,17 +8383,25 @@ button.dash-kpi-card {
 }
 
 .dash-page--builder .toolbar {
+  flex-wrap: wrap;
   gap: var(--dash-gap-sm);
   padding: 5px 8px;
 }
 
 .dash-page--builder .toolbar__section {
+  flex: 0 0 auto;
   gap: 4px;
   padding-right: 6px;
 }
 
 .dash-page--builder .toolbar__section--grow {
-  flex: 1 1 auto;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.dash-page--builder .toolbar__section:last-child {
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .dash-page--builder .icon-button,

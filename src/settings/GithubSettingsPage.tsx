@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Building2, Github, LogOut, Mail, Moon, RefreshCw, ShieldCheck, Sun, UserCircle } from 'lucide-react';
+import { BadgeCheck, Building2, Check, Github, LayoutGrid, LogOut, Mail, Moon, PenTool, RefreshCw, ShieldCheck, Sun, UserCircle } from 'lucide-react';
 import AppLogo from '../components/AppLogo';
 import GithubConsentInfo from '../components/GithubConsentInfo';
 import { PageAlert } from '../components/PageAlert';
 import { clearAuthSession, getStoredUser } from '../auth/authClient';
+import { useDiagramStore } from '../store/diagramStore';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
 import { getAccessPlan, serviceAccessTierForUser } from '../utils/accessControl';
@@ -15,6 +16,8 @@ type SettingsPageProps = {
 
 export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPageProps) {
   const user = getStoredUser();
+  const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const setWhiteboardMode = useDiagramStore((state) => state.setWhiteboardMode);
   const accessPlan = getAccessPlan(user);
   const accessTier = serviceAccessTierForUser(user);
   const profileInitials = (user?.name || user?.email || 'U')
@@ -155,6 +158,30 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
               <span>Demo credits</span>
               <strong>{Number(user?.demoCredits ?? 0)}</strong>
             </div>
+          </div>
+        </article>
+
+        <article className="settings-github-card">
+          <div className="settings-github-card__main">
+            <div className="settings-github-icon">
+              <LayoutGrid size={22} />
+            </div>
+            <div>
+              <strong>Application canvas</strong>
+              <span>Choose the default diagram style used by the visual builder.</span>
+            </div>
+          </div>
+          <div className="settings-canvas-actions">
+            <button className={`dash-secondary-action ${!whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(false)} type="button">
+              <LayoutGrid size={16} />
+              Diagram
+              {!whiteboardMode && <Check size={15} />}
+            </button>
+            <button className={`dash-secondary-action ${whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(true)} type="button">
+              <PenTool size={16} />
+              Whiteboard
+              {whiteboardMode && <Check size={15} />}
+            </button>
           </div>
         </article>
 

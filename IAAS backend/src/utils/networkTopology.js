@@ -67,6 +67,33 @@ export function validateNetworkTopology(nodes = [], edges = []) {
     }
   }
 
+  for (const ec2 of serviceNodes.filter((node) => node.data?.serviceId === 'ec2')) {
+    const subnet = connectedNode(ec2, edges, nodeById, 'subnet');
+    const securityGroup = connectedNode(ec2, edges, nodeById, 'security-group');
+    const hasExplicitSubnet = String(ec2.data?.config?.subnet_id ?? '').trim().length > 0;
+    const hasSecurityGroups = Boolean(securityGroup) || String(ec2.data?.config?.vpc_security_group_ids ?? '').trim().length > 0;
+
+    if (hasSecurityGroups && !hasExplicitSubnet && !subnet) {
+      issues.push({
+        nodeId: ec2.id,
+        severity: 'error',
+        message: `${ec2.data?.label || 'EC2'} uses VPC security groups but is not pinned to a subnet. Connect it to a subnet or set subnet_id before deployment.`,
+      });
+    }
+
+    if (subnet && securityGroup) {
+      const subnetVpc = findRelatedVpc(subnet, nodes, edges, nodeById);
+      const securityGroupVpc = findRelatedVpc(securityGroup, nodes, edges, nodeById);
+      if (subnetVpc?.id && securityGroupVpc?.id && subnetVpc.id !== securityGroupVpc.id) {
+        issues.push({
+          nodeId: ec2.id,
+          severity: 'error',
+          message: `${ec2.data?.label || 'EC2'} subnet and security group belong to different VPCs.`,
+        });
+      }
+    }
+  }
+
   return issues;
 }
 

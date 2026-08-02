@@ -204,6 +204,17 @@ export async function syncFilesToGithubCommit({ token, owner, repo, branch, mess
     throw new ApiError(createTreeResponse.status, `GitHub tree create failed: ${nextTree?.message ?? 'unknown error'}`);
   }
 
+  // Two commits can point at the identical tree (same content, different timestamp/message), so
+  // without this check every sync mints a brand-new commit sha even when nothing actually changed.
+  if (nextTree.sha === baseCommit.tree.sha) {
+    return {
+      files: nextFiles.map((file) => ({ path: file.path, commitSha: baseCommitSha, skipped: true })),
+      deletedWorkflowFiles: [],
+      commitSha: baseCommitSha,
+      skipped: true,
+    };
+  }
+
   const createCommitResponse = await fetch(`${apiBase}/git/commits`, {
     method: 'POST',
     headers,

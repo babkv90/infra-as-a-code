@@ -1,3 +1,4 @@
+import dagre from 'dagre';
 import { MarkerType } from 'reactflow';
 import { awsServices, serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsNode, DiagramSnapshot, EdgeConnectionType, GroupKind, NodeBinding, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
@@ -672,52 +673,166 @@ export function applyEnterpriseLayout(nodes: AwsNode[], edges: AwsEdge[]): AwsNo
   return [...buildEnterpriseGroupNodes(laidOut, edges), ...passthroughNodes, ...laidOut];
 }
 
-function layoutTerraformNodes(nodes: AwsNode[], edges: AwsEdge[]): AwsNode[] {
-  const inboundCount = new Map<string, number>();
-  const outboundCount = new Map<string, number>();
-
-  for (const edge of edges) {
-    outboundCount.set(edge.source, (outboundCount.get(edge.source) ?? 0) + 1);
-    inboundCount.set(edge.target, (inboundCount.get(edge.target) ?? 0) + 1);
-  }
-
-  const columns = new Map<number, AwsNode[]>();
-  for (const node of nodes) {
-    const rank = terraformLayoutRank(node);
-    const bucket = columns.get(rank) ?? [];
-    bucket.push(node);
-    columns.set(rank, bucket);
-  }
-
-  const orderedRanks = Array.from(columns.keys()).sort((a, b) => a - b);
-  const columnGap = 330;
-  const rowGap = 174;
-  const startX = 120;
-  const startY = 90;
-
-  return orderedRanks.flatMap((rank, columnIndex) => {
-    const columnNodes = (columns.get(rank) ?? []).sort((left, right) => {
-      const orderDelta = terraformLayoutOrder(left) - terraformLayoutOrder(right);
-      if (orderDelta !== 0) return orderDelta;
-
-      const connectivityDelta = (outboundCount.get(right.id) ?? 0) + (inboundCount.get(right.id) ?? 0) - ((outboundCount.get(left.id) ?? 0) + (inboundCount.get(left.id) ?? 0));
-      if (connectivityDelta !== 0) return connectivityDelta;
-
-      return left.data.label.localeCompare(right.data.label);
+export function resolveServiceNodeOverlaps(nodes: AwsNode[]): AwsNode[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const foregroundNodes = nodes
+    .filter((node) => node.type !== 'groupBox')
+    .map((node) => {
+      const parent = node.parentNode ? nodeById.get(node.parentNode) : undefined;
+      return parent ? { ...node, position: { x: node.position.x + parent.position.x, y: node.position.y + parent.position.y } } : node;
     });
-
-    return columnNodes.map((node, rowIndex) => ({
-      ...node,
-      position: {
-        x: startX + columnIndex * columnGap,
-        y: startY + rowIndex * rowGap,
-      },
-    }));
-  });
+  const resolvedById = new Map(
+    removeNodeOverlaps(foregroundNodes).map((node) => {
+      const originalNode = nodeById.get(node.id);
+      const parent = originalNode?.parentNode ? nodeById.get(originalNode.parentNode) : undefined;
+      return [
+        node.id,
+        parent
+          ? {
+              ...node,
+              position: {
+                x: node.position.x - parent.position.x,
+                y: node.position.y - parent.position.y,
+              },
+            }
+          : node,
+      ];
+    }),
+  );
+  return nodes.map((node) => resolvedById.get(node.id) ?? node);
 }
 
-const nodeWidth = 142;
-const nodeHeight = 104;
+const nodeWidth = 126;
+const nodeHeight = 86;
+const MIN_HORIZONTAL_GAP = 100;
+const MIN_VERTICAL_GAP = 100;
+
+// Left-to-right layered layout via dagre — the same approach React Flow's own docs recommend for
+// auto-layout. Rank (column) comes purely from the real edge graph (dagre runs its acyclic pass
+// first, so cycles can't break it), so "client → edge → compute → data" ordering falls out of the
+// actual dependency direction already encoded by inferHclEdges/inferImportedEdges rather than a
+// hardcoded per-service-type table — that generalizes to topologies this app's service catalog
+// doesn't special-case. ranksep/nodesep land in the 180-260 / 90-160px ranges that keep icons and
+// labels legible without the diagram collapsing into the current viewport.
+function layoutTerraformNodes(nodes: AwsNode[], edges: AwsEdge[]): AwsNode[] {
+  if (!nodes.length) return [];
+
+  const graph = new dagre.graphlib.Graph({ multigraph: true });
+  graph.setDefaultEdgeLabel(() => ({}));
+  graph.setGraph({
+    rankdir: 'LR',
+    align: 'UL',
+    ranksep: 300,
+    nodesep: 170,
+    edgesep: 54,
+    marginx: 96,
+    marginy: 96,
+  });
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  for (const node of nodes) {
+    const degree = edges.filter((edge) => edge.source === node.id || edge.target === node.id).length;
+    const { width, height } = measuredNodeSize(node);
+    graph.setNode(node.id, {
+      width: width + Math.min(96, degree * 12),
+      height: height + Math.min(80, degree * 10),
+    });
+  }
+
+  let edgeIndex = 0;
+  for (const edge of edges) {
+    if (edge.source === edge.target || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+    graph.setEdge(edge.source, edge.target, {}, `e${edgeIndex}`);
+    edgeIndex += 1;
+  }
+
+  dagre.layout(graph);
+
+  return removeNodeOverlaps(nodes.map((node) => {
+    const placed = graph.node(node.id);
+    if (!placed) return node;
+    const { width, height } = measuredNodeSize(node);
+    // dagre positions by center; React Flow positions by top-left corner.
+    return withVisualPosition(node, { x: placed.x - width / 2, y: placed.y - height / 2 }, width, height);
+  }));
+}
+
+function measuredNodeSize(node: AwsNode): { width: number; height: number } {
+  const visual = node.data.visual;
+  const width = Number(node.width ?? node.style?.width ?? visual?.width ?? nodeWidth);
+  const height = Number(node.height ?? node.style?.height ?? visual?.height ?? nodeHeight);
+  return {
+    width: Number.isFinite(width) ? width : nodeWidth,
+    height: Number.isFinite(height) ? height : nodeHeight,
+  };
+}
+
+function withVisualPosition(node: AwsNode, position: { x: number; y: number }, width: number, height: number): AwsNode {
+  return {
+    ...node,
+    position,
+    data: {
+      ...node.data,
+      visual: {
+        ...node.data.visual,
+        x: position.x,
+        y: position.y,
+        width,
+        height,
+      },
+    },
+  };
+}
+
+function removeNodeOverlaps(nodes: AwsNode[]): AwsNode[] {
+  const sortedNodes = [...nodes].sort((left, right) => left.position.x - right.position.x || left.position.y - right.position.y);
+  const columns = buildLayoutColumns(sortedNodes);
+  const placed: AwsNode[] = [];
+
+  for (const column of columns) {
+    const columnNodes = column.nodes.sort((left, right) => left.position.y - right.position.y);
+    let nextY = Math.min(...columnNodes.map((node) => node.position.y));
+
+    for (const node of columnNodes) {
+      const size = measuredNodeSize(node);
+      const position = {
+        x: column.x,
+        y: Math.max(node.position.y, nextY),
+      };
+      placed.push(withVisualPosition(node, position, size.width, size.height));
+      nextY = position.y + size.height + MIN_VERTICAL_GAP;
+    }
+  }
+
+  return placed;
+}
+
+function buildLayoutColumns(nodes: AwsNode[]): Array<{ x: number; width: number; nodes: AwsNode[] }> {
+  const columns: Array<{ x: number; width: number; nodes: AwsNode[] }> = [];
+
+  for (const node of nodes) {
+    const size = measuredNodeSize(node);
+    const centerX = node.position.x + size.width / 2;
+    const existingColumn = columns.find((column) => Math.abs(centerX - (column.x + column.width / 2)) <= Math.max(column.width, size.width));
+
+    if (existingColumn) {
+      existingColumn.nodes.push(node);
+      existingColumn.width = Math.max(existingColumn.width, size.width);
+      existingColumn.x = Math.min(existingColumn.x, node.position.x);
+    } else {
+      columns.push({ x: node.position.x, width: size.width, nodes: [node] });
+    }
+  }
+
+  columns.sort((left, right) => left.x - right.x);
+  let nextX = columns[0]?.x ?? 0;
+  for (const column of columns) {
+    column.x = Math.max(column.x, nextX);
+    nextX = column.x + column.width + MIN_HORIZONTAL_GAP;
+  }
+
+  return columns;
+}
 
 function buildEnterpriseGroupNodes(nodes: AwsNode[], edges: AwsEdge[]): AwsNode[] {
   const groups: AwsNode[] = [];
@@ -899,76 +1014,6 @@ function groupBy<T>(items: T[], keyForItem: (item: T) => string): Map<string, T[
 
 function safeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown';
-}
-
-function terraformLayoutRank(node: AwsNode): number {
-  switch (node.data.serviceId) {
-    case 'vpc':
-      return 0;
-    case 'igw':
-    case 'nat':
-      return 1;
-    case 'subnet':
-      return 2;
-    case 'route-table':
-      return 3;
-    case 'security-group':
-    case 'iam':
-    case 'kms':
-    case 'secrets':
-    case 'waf':
-      return 4;
-    case 'alb':
-    case 'lb-listener':
-    case 'lb-target-group':
-    case 'apigw':
-    case 'cloudfront':
-    case 'route53':
-      return 5;
-    case 'ec2':
-    case 'lambda':
-    case 'ecs':
-    case 'eks':
-    case 'beanstalk':
-      return 6;
-    case 'docdb-subnet-group':
-      return 7;
-    case 'rds':
-    case 'docdb':
-    case 'docdb-instance':
-    case 'dynamodb':
-    case 'elasticache':
-    case 'redshift':
-      return 8;
-    default:
-      return 9;
-  }
-}
-
-function terraformLayoutOrder(node: AwsNode): number {
-  const label = node.data.label.toLowerCase();
-  if (node.data.serviceId === 'subnet') {
-    if (label.includes('public') || stringValue(node.data.config.map_public_ip_on_launch) === 'true') return 0;
-    if (label.includes('private')) return 1;
-  }
-
-  const serviceOrder: Record<string, number> = {
-    vpc: 0,
-    igw: 0,
-    nat: 1,
-    subnet: 2,
-    'route-table': 3,
-    'security-group': 4,
-    alb: 5,
-    'lb-listener': 6,
-    'lb-target-group': 7,
-    ec2: 8,
-    'docdb-subnet-group': 9,
-    docdb: 10,
-    'docdb-instance': 11,
-  };
-
-  return serviceOrder[node.data.serviceId ?? ''] ?? 50;
 }
 
 type TerraformBlock = {
