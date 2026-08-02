@@ -225,6 +225,13 @@ export const commonDeploymentTemplates = [
     deploymentPath: 'Build the React app, sync dist/ or build/ to the S3 website bucket, and use the returned website endpoint.',
   },
   {
+    id: 'react-lambda-serverless',
+    name: 'React frontend + Lambda API',
+    compatibility: 'React/Vite SPA with serverless API, admin dashboards, lightweight full-stack apps',
+    infrastructure: 'S3 static site, CloudFront default HTTPS certificate, API Gateway HTTP API, Lambda, IAM, DynamoDB, CloudWatch',
+    deploymentPath: 'Deploy the React build to S3/CloudFront and expose Lambda through API Gateway for frontend API calls.',
+  },
+  {
     id: 'static-spa-cdn',
     name: 'React / Vue / Angular static frontend',
     compatibility: 'Single page apps, static sites, dashboards, docs portals',
@@ -419,6 +426,8 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         { id: 'tpl-starter-subnet', serviceId: 'subnet', label: 'Public subnet A', x: 340, y: 210, config: { cidr_block: '10.20.1.0/24', availability_zone: 'ap-south-1a', map_public_ip_on_launch: 'true' } },
         { id: 'tpl-starter-igw', serviceId: 'igw', label: 'Internet gateway', x: 90, y: 330, config: {} },
         { id: 'tpl-starter-rt', serviceId: 'route-table', label: 'Public route table', x: 580, y: 210, config: {} },
+        { id: 'tpl-starter-route', serviceId: 'route', label: 'Internet route', x: 760, y: 250, config: { destination_cidr_block: '0.0.0.0/0' } },
+        { id: 'tpl-starter-route-assoc', serviceId: 'route-association', label: 'Public route association', x: 760, y: 330, config: {} },
         { id: 'tpl-starter-sg', serviceId: 'security-group', label: 'Web security group', x: 580, y: 350, config: { description: 'Allow SSH and HTTP to the starter EC2 instance', ingress_ports: '22,80', ingress_cidr_blocks: '0.0.0.0/0', egress_cidr_blocks: '0.0.0.0/0' } },
         { id: 'tpl-starter-ec2', serviceId: 'ec2', label: 'Web server', x: 340, y: 350, config: { name: 'starter-web-server', instance_type: 't3.micro', associate_public_ip_address: 'true' } },
       ],
@@ -426,6 +435,10 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         { source: 'tpl-starter-vpc', target: 'tpl-starter-subnet', label: 'contains', protocol: 'VPC' },
         { source: 'tpl-starter-vpc', target: 'tpl-starter-igw', label: 'attached to', protocol: 'VPC' },
         { source: 'tpl-starter-vpc', target: 'tpl-starter-rt', label: 'routes', protocol: 'VPC' },
+        { source: 'tpl-starter-rt', target: 'tpl-starter-route', label: 'default route', protocol: 'VPC' },
+        { source: 'tpl-starter-igw', target: 'tpl-starter-route', label: 'internet gateway', protocol: 'VPC' },
+        { source: 'tpl-starter-rt', target: 'tpl-starter-route-assoc', label: 'associates', protocol: 'VPC' },
+        { source: 'tpl-starter-subnet', target: 'tpl-starter-route-assoc', label: 'uses route table', protocol: 'VPC' },
         { source: 'tpl-starter-vpc', target: 'tpl-starter-sg', label: 'security scope', connectionType: 'security', protocol: 'VPC' },
         { source: 'tpl-starter-subnet', target: 'tpl-starter-ec2', label: 'hosts', protocol: 'VPC' },
         { source: 'tpl-starter-sg', target: 'tpl-starter-ec2', label: 'protects', connectionType: 'security', protocol: 'VPC' },
@@ -452,6 +465,39 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         },
       ],
       [],
+    ),
+    'react-lambda-serverless': templateSnapshot(
+      [
+        {
+          id: 'tpl-react-lambda-s3',
+          serviceId: 's3',
+          label: 'React build bucket',
+          x: 80,
+          y: 140,
+          config: {
+            bucket_prefix: 'infraflow-react-lambda-',
+            website_index_document: 'index.html',
+            website_error_document: 'index.html',
+            public_read: 'true',
+          },
+        },
+        { id: 'tpl-react-lambda-cloudfront', serviceId: 'cloudfront', label: 'Frontend CDN + HTTPS', x: 340, y: 140, config: { enabled: 'true', comment: 'React frontend with default CloudFront HTTPS certificate', default_root_object: 'index.html', price_class: 'PriceClass_100' } },
+        { id: 'tpl-react-lambda-waf', serviceId: 'waf', label: 'Edge WAF', x: 340, y: 320, config: { scope: 'CLOUDFRONT', default_action: 'allow', metric_name: 'ReactLambdaWebAcl' } },
+        { id: 'tpl-react-lambda-apigw', serviceId: 'apigw', label: 'Backend API', x: 640, y: 140, config: { protocol_type: 'HTTP' } },
+        { id: 'tpl-react-lambda-iam', serviceId: 'iam', label: 'Lambda execution role', x: 640, y: 320, config: {} },
+        { id: 'tpl-react-lambda-fn', serviceId: 'lambda', label: 'API Lambda', x: 920, y: 140, config: { runtime: 'nodejs20.x', handler: 'index.handler', memory_size: 512, timeout: 30, filename: 'react-api.zip', inline_filename: 'index.js', inline_source: 'exports.handler = async () => ({ statusCode: 200, headers: { "content-type": "application/json", "access-control-allow-origin": "*" }, body: JSON.stringify({ ok: true, service: "react-lambda-api" }) });' } },
+        { id: 'tpl-react-lambda-ddb', serviceId: 'dynamodb', label: 'App data table', x: 1180, y: 140, config: { billing_mode: 'PAY_PER_REQUEST', hash_key: 'id', hash_key_type: 'S' } },
+        { id: 'tpl-react-lambda-cloudwatch', serviceId: 'cloudwatch', label: 'API error alarm', x: 920, y: 320, config: { comparison_operator: 'GreaterThanThreshold', evaluation_periods: 1, metric_name: 'Errors', namespace: 'AWS/Lambda', period: 300, statistic: 'Sum', threshold: 1 } },
+      ],
+      [
+        { source: 'tpl-react-lambda-cloudfront', target: 'tpl-react-lambda-s3', label: 'serves React assets', protocol: 'HTTPS', port: '443' },
+        { source: 'tpl-react-lambda-waf', target: 'tpl-react-lambda-cloudfront', label: 'edge protection', connectionType: 'security', protocol: 'HTTPS', port: '443' },
+        { source: 'tpl-react-lambda-cloudfront', target: 'tpl-react-lambda-apigw', label: 'frontend API calls', protocol: 'HTTPS', port: '443' },
+        { source: 'tpl-react-lambda-apigw', target: 'tpl-react-lambda-fn', label: 'invoke', connectionType: 'event', protocol: 'HTTP' },
+        { source: 'tpl-react-lambda-iam', target: 'tpl-react-lambda-fn', label: 'execution role', connectionType: 'security', protocol: 'IAM' },
+        { source: 'tpl-react-lambda-fn', target: 'tpl-react-lambda-ddb', label: 'read/write', protocol: 'DynamoDB' },
+        { source: 'tpl-react-lambda-fn', target: 'tpl-react-lambda-cloudwatch', label: 'logs/metrics', connectionType: 'monitoring', protocol: 'CloudWatch' },
+      ],
     ),
     'static-spa-cdn': templateSnapshot(
       [
@@ -515,7 +561,7 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         { id: 'tpl-node-target-group', serviceId: 'lb-target-group', label: 'App target group', x: 470, y: 330, config: { port: 3000, protocol: 'HTTP', target_type: 'ip', vpc_id: 'data.aws_vpc.default.id', health_check_path: '/' } },
         { id: 'tpl-node-ecs', serviceId: 'ecs', label: 'Next.js ECS service', x: 610, y: 150, config: { desired_count: 2, launch_type: 'FARGATE', container_port: 3000, cpu: 256, memory: 512, subnets: 'data.aws_subnets.default.ids', secret_env_var_name: 'DATABASE_URL' } },
         { id: 'tpl-node-ecr', serviceId: 'ecr', label: 'Container registry', x: 610, y: 330, config: { image_tag_mutability: 'IMMUTABLE', scan_on_push: 'true' } },
-        { id: 'tpl-node-rds', serviceId: 'rds', label: 'Application database', x: 890, y: 150, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'appuser', password: 'replace-with-a-strong-database-password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-node-rds', serviceId: 'rds', label: 'Application database', x: 890, y: 150, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'appuser', password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-node-secrets', serviceId: 'secrets', label: 'App secrets', x: 890, y: 330, config: { description: 'Runtime environment secrets' } },
       ],
       [
@@ -533,10 +579,10 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     'rest-api-serverless': templateSnapshot(
       [
         { id: 'tpl-api-apigw', serviceId: 'apigw', label: 'REST API endpoint', x: 100, y: 160, config: { protocol_type: 'HTTP' } },
-        { id: 'tpl-api-lambda', serviceId: 'lambda', label: 'API handler', x: 380, y: 160, config: { runtime: 'nodejs20.x', handler: 'index.handler', memory_size: 512, timeout: 30, role_arn: 'var.lambda_role_arn', filename: 'dist/api.zip' } },
+        { id: 'tpl-api-lambda', serviceId: 'lambda', label: 'API handler', x: 380, y: 160, config: { runtime: 'nodejs20.x', handler: 'index.handler', memory_size: 512, timeout: 30, filename: 'api.zip', inline_filename: 'index.js', inline_source: 'exports.handler = async () => ({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true }) });' } },
         { id: 'tpl-api-dynamodb', serviceId: 'dynamodb', label: 'API table', x: 670, y: 160, config: { billing_mode: 'PAY_PER_REQUEST', hash_key: 'id', hash_key_type: 'S' } },
         { id: 'tpl-api-iam', serviceId: 'iam', label: 'Lambda role', x: 380, y: 340, config: { assume_role_policy: 'data.aws_iam_policy_document.lambda_assume_role.json' } },
-        { id: 'tpl-api-cloudwatch', serviceId: 'cloudwatch', label: 'API alarms', x: 670, y: 340, config: { metric_name: 'Errors', namespace: 'AWS/Lambda' } },
+        { id: 'tpl-api-cloudwatch', serviceId: 'cloudwatch', label: 'API alarms', x: 670, y: 340, config: { comparison_operator: 'GreaterThanThreshold', evaluation_periods: 1, metric_name: 'Errors', namespace: 'AWS/Lambda', period: 300, statistic: 'Sum', threshold: 1 } },
       ],
       [
         { source: 'tpl-api-apigw', target: 'tpl-api-lambda', label: 'invoke', connectionType: 'event', protocol: 'HTTP' },
@@ -547,10 +593,10 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     ),
     'python-fastapi-container': templateSnapshot(
       [
-        { id: 'tpl-fastapi-alb', serviceId: 'alb', label: 'API load balancer', x: 100, y: 160, config: { load_balancer_type: 'application', internal: 'false' } },
+        { id: 'tpl-fastapi-alb', serviceId: 'alb', label: 'API load balancer', x: 100, y: 160, config: { load_balancer_type: 'application', internal: 'false', subnets: 'data.aws_subnets.default.ids' } },
         { id: 'tpl-fastapi-ecs', serviceId: 'ecs', label: 'FastAPI service', x: 380, y: 160, config: { desired_count: 2, launch_type: 'FARGATE' } },
         { id: 'tpl-fastapi-ecr', serviceId: 'ecr', label: 'FastAPI image repo', x: 380, y: 340, config: { scan_on_push: 'true' } },
-        { id: 'tpl-fastapi-rds', serviceId: 'rds', label: 'Postgres database', x: 670, y: 160, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'appuser', password: 'var.db_password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-fastapi-rds', serviceId: 'rds', label: 'Postgres database', x: 670, y: 160, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'appuser', password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-fastapi-secrets', serviceId: 'secrets', label: 'Runtime secrets', x: 670, y: 340, config: {} },
       ],
       [
@@ -562,11 +608,11 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     ),
     'java-springboot-service': templateSnapshot(
       [
-        { id: 'tpl-java-alb', serviceId: 'alb', label: 'Service load balancer', x: 100, y: 160, config: { load_balancer_type: 'application', internal: 'false' } },
+        { id: 'tpl-java-alb', serviceId: 'alb', label: 'Service load balancer', x: 100, y: 160, config: { load_balancer_type: 'application', internal: 'false', subnets: 'data.aws_subnets.default.ids' } },
         { id: 'tpl-java-ecs', serviceId: 'ecs', label: 'Spring Boot service', x: 380, y: 160, config: { desired_count: 2, launch_type: 'FARGATE' } },
-        { id: 'tpl-java-rds', serviceId: 'rds', label: 'Transactional database', x: 670, y: 160, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 30, username: 'appuser', password: 'var.db_password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-java-rds', serviceId: 'rds', label: 'Transactional database', x: 670, y: 160, config: { engine: 'postgres', instance_class: 'db.t3.micro', allocated_storage: 30, username: 'appuser', password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-java-cache', serviceId: 'elasticache', label: 'Redis cache', x: 670, y: 340, config: { engine: 'redis', node_type: 'cache.t3.micro', num_cache_nodes: 1, port: 6379 } },
-        { id: 'tpl-java-cloudwatch', serviceId: 'cloudwatch', label: 'JVM alarms', x: 380, y: 340, config: { metric_name: 'CPUUtilization', namespace: 'AWS/ECS' } },
+        { id: 'tpl-java-cloudwatch', serviceId: 'cloudwatch', label: 'JVM alarms', x: 380, y: 340, config: { comparison_operator: 'GreaterThanThreshold', evaluation_periods: 2, metric_name: 'CPUUtilization', namespace: 'AWS/ECS', period: 300, statistic: 'Average', threshold: 80 } },
       ],
       [
         { source: 'tpl-java-alb', target: 'tpl-java-ecs', label: 'HTTP traffic', protocol: 'HTTP', port: '80' },
@@ -577,14 +623,12 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     ),
     'php-wordpress-cms': templateSnapshot(
       [
-        { id: 'tpl-php-route53', serviceId: 'route53', label: 'Site DNS', x: 60, y: 160, config: { name: 'cms.example.com', type: 'A' } },
-        { id: 'tpl-php-alb', serviceId: 'alb', label: 'CMS load balancer', x: 310, y: 160, config: { load_balancer_type: 'application', internal: 'false' } },
+        { id: 'tpl-php-alb', serviceId: 'alb', label: 'CMS load balancer', x: 310, y: 160, config: { load_balancer_type: 'application', internal: 'false', subnets: 'data.aws_subnets.default.ids' } },
         { id: 'tpl-php-ec2', serviceId: 'ec2', label: 'PHP web server', x: 570, y: 160, config: { name: 'cms-web', instance_type: 't3.small', key_name: 'app-keypair', associate_public_ip_address: 'false' } },
-        { id: 'tpl-php-rds', serviceId: 'rds', label: 'MySQL database', x: 830, y: 160, config: { engine: 'mysql', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'wordpress', password: 'var.db_password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-php-rds', serviceId: 'rds', label: 'MySQL database', x: 830, y: 160, config: { engine: 'mysql', instance_class: 'db.t3.micro', allocated_storage: 20, username: 'wordpress', password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-php-efs', serviceId: 'efs', label: 'Shared uploads', x: 570, y: 340, config: { creation_token: 'cms-uploads', encrypted: 'true', performance_mode: 'generalPurpose', throughput_mode: 'bursting' } },
       ],
       [
-        { source: 'tpl-php-route53', target: 'tpl-php-alb', label: 'DNS alias', protocol: 'DNS' },
         { source: 'tpl-php-alb', target: 'tpl-php-ec2', label: 'HTTP traffic', protocol: 'HTTP', port: '80' },
         { source: 'tpl-php-ec2', target: 'tpl-php-rds', label: 'SQL', protocol: 'MySQL', port: '3306' },
         { source: 'tpl-php-ec2', target: 'tpl-php-efs', label: 'shared files', protocol: 'NFS', port: '2049' },
@@ -592,16 +636,16 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     ),
     'kubernetes-microservices': templateSnapshot(
       [
-        { id: 'tpl-eks-route53', serviceId: 'route53', label: 'Service DNS', x: 60, y: 150, config: { name: 'api.example.com', type: 'A' } },
-        { id: 'tpl-eks-alb', serviceId: 'alb', label: 'Ingress load balancer', x: 310, y: 150, config: { load_balancer_type: 'application', internal: 'false' } },
-        { id: 'tpl-eks-cluster', serviceId: 'eks', label: 'EKS cluster', x: 580, y: 150, config: { version: '1.30', role_arn: 'var.eks_role_arn' } },
+        { id: 'tpl-eks-alb', serviceId: 'alb', label: 'Ingress load balancer', x: 310, y: 150, config: { load_balancer_type: 'application', internal: 'false', subnets: 'data.aws_subnets.default.ids' } },
+        { id: 'tpl-eks-cluster', serviceId: 'eks', label: 'EKS cluster', x: 580, y: 150, config: { version: '1.30', role_arn: 'aws_iam_role.eks_cluster_role.arn', subnet_ids: 'data.aws_subnets.default.ids' } },
+        { id: 'tpl-eks-iam', serviceId: 'iam', label: 'EKS cluster role', x: 580, y: 470, config: { name: 'eks-cluster-role', assume_role_policy: 'jsonencode({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]})' } },
         { id: 'tpl-eks-ecr', serviceId: 'ecr', label: 'Service images', x: 580, y: 330, config: { scan_on_push: 'true' } },
-        { id: 'tpl-eks-rds', serviceId: 'rds', label: 'Shared database', x: 850, y: 150, config: { engine: 'postgres', instance_class: 'db.t3.small', allocated_storage: 30, username: 'appuser', password: 'var.db_password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-eks-rds', serviceId: 'rds', label: 'Shared database', x: 850, y: 150, config: { engine: 'postgres', instance_class: 'db.t3.small', allocated_storage: 30, username: 'appuser', password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-eks-cache', serviceId: 'elasticache', label: 'Shared cache', x: 850, y: 330, config: { engine: 'redis', node_type: 'cache.t3.micro', num_cache_nodes: 1, port: 6379 } },
       ],
       [
-        { source: 'tpl-eks-route53', target: 'tpl-eks-alb', label: 'DNS alias', protocol: 'DNS' },
         { source: 'tpl-eks-alb', target: 'tpl-eks-cluster', label: 'ingress', protocol: 'HTTPS', port: '443' },
+        { source: 'tpl-eks-iam', target: 'tpl-eks-cluster', label: 'cluster role', connectionType: 'security', protocol: 'IAM' },
         { source: 'tpl-eks-ecr', target: 'tpl-eks-cluster', label: 'image pull', protocol: 'ECR' },
         { source: 'tpl-eks-cluster', target: 'tpl-eks-rds', label: 'SQL', protocol: 'Postgres', port: '5432' },
         { source: 'tpl-eks-cluster', target: 'tpl-eks-cache', label: 'cache', protocol: 'Redis', port: '6379' },
@@ -610,9 +654,9 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     'realtime-websocket-app': templateSnapshot(
       [
         { id: 'tpl-ws-apigw', serviceId: 'apigw', label: 'WebSocket API', x: 100, y: 160, config: { protocol_type: 'WEBSOCKET' } },
-        { id: 'tpl-ws-lambda', serviceId: 'lambda', label: 'Socket route handler', x: 380, y: 160, config: { runtime: 'nodejs20.x', handler: 'index.handler', memory_size: 512, timeout: 30, role_arn: 'var.lambda_role_arn', filename: 'dist/websocket.zip' } },
+        { id: 'tpl-ws-lambda', serviceId: 'lambda', label: 'Socket route handler', x: 380, y: 160, config: { runtime: 'nodejs20.x', handler: 'index.handler', memory_size: 512, timeout: 30, role_arn: 'aws_iam_role.socket_lambda_role.arn', role_arn_source: 'new_json', role_arn_new_name: 'socket-lambda-role', filename: 'websocket.zip', inline_filename: 'index.js', inline_source: 'exports.handler = async () => ({ statusCode: 200, body: "ok" });' } },
         { id: 'tpl-ws-ddb', serviceId: 'dynamodb', label: 'Connections table', x: 670, y: 160, config: { billing_mode: 'PAY_PER_REQUEST', hash_key: 'connectionId', hash_key_type: 'S' } },
-        { id: 'tpl-ws-eventbridge', serviceId: 'eventbridge', label: 'Realtime events', x: 380, y: 340, config: { event_pattern: 'var.event_pattern' } },
+        { id: 'tpl-ws-eventbridge', serviceId: 'eventbridge', label: 'Realtime events', x: 380, y: 340, config: { schedule_expression: 'rate(5 minutes)' } },
       ],
       [
         { source: 'tpl-ws-apigw', target: 'tpl-ws-lambda', label: 'route invoke', connectionType: 'event', protocol: 'WebSocket' },
@@ -625,8 +669,8 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         { id: 'tpl-worker-s3', serviceId: 's3', label: 'Job input bucket', x: 90, y: 160, config: { bucket_prefix: 'infraflow-worker-', versioning: 'Enabled' } },
         { id: 'tpl-worker-eventbridge', serviceId: 'eventbridge', label: 'Job scheduler', x: 340, y: 160, config: { schedule_expression: 'rate(5 minutes)' } },
         { id: 'tpl-worker-sqs', serviceId: 'sqs', label: 'Work queue', x: 590, y: 160, config: { fifo_queue: 'false', visibility_timeout_seconds: 60, message_retention_seconds: 345600 } },
-        { id: 'tpl-worker-lambda', serviceId: 'lambda', label: 'Worker function', x: 840, y: 160, config: { runtime: 'python3.12', handler: 'handler.main', memory_size: 1024, timeout: 120, role_arn: 'var.lambda_role_arn', filename: 'dist/worker.zip' } },
-        { id: 'tpl-worker-cloudwatch', serviceId: 'cloudwatch', label: 'Queue alarms', x: 590, y: 340, config: { metric_name: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS' } },
+        { id: 'tpl-worker-lambda', serviceId: 'lambda', label: 'Worker function', x: 840, y: 160, config: { runtime: 'python3.12', handler: 'handler.main', memory_size: 1024, timeout: 120, role_arn: 'aws_iam_role.worker_lambda_role.arn', role_arn_source: 'new_json', role_arn_new_name: 'worker-lambda-role', filename: 'worker.zip', inline_filename: 'handler.py', inline_source: 'def main(event, context):\n    return {"statusCode": 200, "body": "ok"}\n' } },
+        { id: 'tpl-worker-cloudwatch', serviceId: 'cloudwatch', label: 'Queue alarms', x: 590, y: 340, config: { comparison_operator: 'GreaterThanThreshold', evaluation_periods: 1, metric_name: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS', period: 300, statistic: 'Average', threshold: 10 } },
       ],
       [
         { source: 'tpl-worker-s3', target: 'tpl-worker-sqs', label: 'object event', connectionType: 'event', protocol: 'S3 Event' },
@@ -639,10 +683,10 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
       [
         { id: 'tpl-data-s3-raw', serviceId: 's3', label: 'Raw data lake', x: 90, y: 150, config: { bucket_prefix: 'infraflow-analytics-raw-', versioning: 'Enabled' } },
         { id: 'tpl-data-eventbridge', serviceId: 'eventbridge', label: 'ETL schedule', x: 340, y: 150, config: { schedule_expression: 'rate(1 day)' } },
-        { id: 'tpl-data-lambda', serviceId: 'lambda', label: 'ETL transform job', x: 590, y: 150, config: { runtime: 'python3.12', handler: 'handler.main', memory_size: 2048, timeout: 300, role_arn: 'var.lambda_role_arn', filename: 'dist/etl.zip' } },
+        { id: 'tpl-data-lambda', serviceId: 'lambda', label: 'ETL transform job', x: 590, y: 150, config: { runtime: 'python3.12', handler: 'handler.main', memory_size: 2048, timeout: 300, role_arn: 'aws_iam_role.etl_lambda_role.arn', role_arn_source: 'new_json', role_arn_new_name: 'etl-lambda-role', filename: 'etl.zip', inline_filename: 'handler.py', inline_source: 'def main(event, context):\n    return {"statusCode": 200, "body": "ok"}\n' } },
         { id: 'tpl-data-s3-curated', serviceId: 's3', label: 'Curated data bucket', x: 840, y: 150, config: { bucket_prefix: 'infraflow-analytics-curated-', versioning: 'Enabled' } },
         { id: 'tpl-data-kinesis', serviceId: 'kinesis', label: 'Streaming ingest', x: 90, y: 330, config: { shard_count: 1, retention_period: 24 } },
-        { id: 'tpl-data-cloudwatch', serviceId: 'cloudwatch', label: 'Pipeline alarms', x: 590, y: 330, config: { metric_name: 'Errors', namespace: 'AWS/Lambda' } },
+        { id: 'tpl-data-cloudwatch', serviceId: 'cloudwatch', label: 'Pipeline alarms', x: 590, y: 330, config: { comparison_operator: 'GreaterThanThreshold', evaluation_periods: 1, metric_name: 'Errors', namespace: 'AWS/Lambda', period: 300, statistic: 'Sum', threshold: 1 } },
       ],
       [
         { source: 'tpl-data-eventbridge', target: 'tpl-data-lambda', label: 'schedule', connectionType: 'event', protocol: 'EventBridge' },
@@ -712,7 +756,7 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
 
         // --- Database ---
         { id: 'tpl-full-docdb-subnets', serviceId: 'docdb-subnet-group', label: 'Database subnet group', x: 1040, y: 580, config: {} },
-        { id: 'tpl-full-docdb', serviceId: 'docdb', label: 'MongoDB-compatible cluster', x: 1300, y: 500, config: { engine: 'docdb', master_username: 'docdbadmin', master_password: 'replace-with-a-strong-database-password', skip_final_snapshot: 'true' } },
+        { id: 'tpl-full-docdb', serviceId: 'docdb', label: 'MongoDB-compatible cluster', x: 1300, y: 500, config: { engine: 'docdb', master_username: 'docdbadmin', master_password: 'InfraflowDemo123!', skip_final_snapshot: 'true' } },
         { id: 'tpl-full-docdb-instance', serviceId: 'docdb-instance', label: 'Database instance', x: 1300, y: 660, config: { instance_class: 'db.t3.medium', engine: 'docdb' } },
       ],
       [
@@ -766,7 +810,7 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
     'apigateway-lambda-iam': templateSnapshot(
       [
         { id: 'tpl-al-iam', serviceId: 'iam', label: 'iaasNode execution role', x: 100, y: 260, config: {} },
-        { id: 'tpl-al-lambda', serviceId: 'lambda', label: 'iaasNode', x: 380, y: 150, config: { runtime: 'nodejs20.x', handler: 'index.handler', filename: 'dist/iaasNode.zip', memory_size: 256, timeout: 15 } },
+        { id: 'tpl-al-lambda', serviceId: 'lambda', label: 'iaasNode', x: 380, y: 150, config: { runtime: 'nodejs20.x', handler: 'index.handler', filename: 'iaasNode.zip', inline_filename: 'index.js', inline_source: 'exports.handler = async () => ({ statusCode: 200, body: "ok" });', memory_size: 256, timeout: 15 } },
         { id: 'tpl-al-apigw', serviceId: 'apigw', label: 'iaasNode API', x: 660, y: 150, config: { protocol_type: 'HTTP' } },
       ],
       [

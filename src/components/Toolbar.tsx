@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   Maximize2,
   Minimize2,
+  Focus,
   Network,
   Redo2,
   Rocket,
@@ -29,11 +30,14 @@ import { useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
 import { useReactFlow, useViewport } from 'reactflow';
 import { PageAlert } from './PageAlert';
+import { getStoredUser } from '../auth/authClient';
 import { groupKinds } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
+import { validateServiceAccess } from '../utils/accessControl';
 import { exportTerraform } from '../utils/exportTerraform';
-import { applyEnterpriseLayout, normalizeImportedDiagram } from '../utils/importDiagram';
+import { normalizeImportedDiagram } from '../utils/importDiagram';
 import { sendTerraformPayload } from '../utils/terraformPayloadApi';
+import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import { validateDiagram } from '../utils/validate';
 import type { AwsNode, DiagramViewMode, GroupKind, ToolMode } from '../types';
 import type { ThemeMode } from '../theme';
@@ -62,6 +66,7 @@ function Toolbar({
   const fileRef = useRef<HTMLInputElement>(null);
   const [boundaryKind, setBoundaryKind] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [isArranging, setIsArranging] = useState(false);
   const flow = useReactFlow();
   const viewport = useViewport();
   const {
@@ -84,15 +89,21 @@ function Toolbar({
     deleteSelection,
     validate,
     importDiagram,
+    autoArrange,
     markSaved,
   } = useDiagramStore();
   const selectedCount = nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length;
   const hasSelection = selectedCount > 0 || Boolean(selectedNodeId) || Boolean(selectedEdgeId);
   const effectiveIsDark = theme ? theme === 'dark' : isDark;
+  const user = useMemo(() => getStoredUser(), []);
+  const liveTerraform = useMemo(() => exportTerraform(nodes, edges), [nodes, edges]);
   // Computed live rather than read from the store's `issues` field, which only updates when
   // validate() has actually been called — the Deploy gate needs to be correct even if the user never
   // clicked "Validate" first.
-  const liveIssues = useMemo(() => validateDiagram(nodes, edges, activeRegion), [nodes, edges, activeRegion]);
+  const liveIssues = useMemo(
+    () => [...validateDiagram(nodes, edges, activeRegion), ...validateGeneratedTerraform(liveTerraform), ...validateServiceAccess(nodes, user)],
+    [activeRegion, liveTerraform, nodes, edges, user],
+  );
   const blockingErrorCount = liveIssues.filter((issue) => issue.severity === 'error').length;
 
   const tools: Array<{ mode: ToolMode; label: string; icon: typeof ScanLine }> = [
@@ -161,8 +172,19 @@ function Toolbar({
   }
 
   function autoLayout() {
-    useDiagramStore.setState({ nodes: applyEnterpriseLayout(nodes, edges) });
-    requestAnimationFrame(() => flow.fitView({ padding: 0.18 }));
+    if (isArranging) return;
+    setIsArranging(true);
+    // Scoped to this one action (not a global rule) so ordinary node dragging and boundary
+    // resizing stay perfectly 1:1 with the pointer — only an auto-layout reflow animates.
+    const canvasShell = document.querySelector('.canvas-shell');
+    canvasShell?.classList.add('canvas-shell--layout-transition');
+    window.setTimeout(() => {
+      autoArrange();
+      window.setTimeout(() => {
+        canvasShell?.classList.remove('canvas-shell--layout-transition');
+        setIsArranging(false);
+      }, 420);
+    }, 0);
   }
 
   async function handleValidate() {
@@ -232,6 +254,9 @@ function Toolbar({
         <button className="icon-button" title="Zoom in" onClick={() => flow.zoomIn()}>
           <ZoomIn size={18} />
         </button>
+        <button className="icon-button" title="Fit view — frame the whole diagram (separate from Auto-layout, which also repositions nodes)" onClick={() => flow.fitView({ padding: 0.18, duration: 320 })}>
+          <Focus size={18} />
+        </button>
       </div>
       <div className="toolbar__section toolbar__section--grow">
         <select
@@ -254,9 +279,9 @@ function Toolbar({
             <ChevronDown size={14} />
           </summary>
           <div className="toolbar-tools-menu__content">
-            <button onClick={autoLayout} type="button">
+            <button disabled={isArranging || !nodes.length} onClick={autoLayout} type="button">
               <LayoutGrid size={15} />
-              Auto-layout
+              {isArranging ? 'Arranging...' : 'Auto arrange'}
             </button>
             <button onClick={exportHcl} type="button">
               <TerminalSquare size={15} />
@@ -299,21 +324,35 @@ function Toolbar({
         )}
       </div>
       <div className="toolbar__section">
-        <button className="icon-button" title="Import JSON" onClick={() => fileRef.current?.click()}>
-          <Upload size={18} />
-        </button>
-        <button className="icon-button" title="Export JSON" onClick={exportJson}>
-          <FileJson size={18} />
-        </button>
-        <button className="icon-button" title="Export Terraform" onClick={exportHcl}>
-          <FileCode2 size={18} />
-        </button>
-        <button className="icon-button" title="Export PNG" onClick={() => exportImage('png')}>
-          <ImageDown size={18} />
-        </button>
-        <button className="icon-button" title="Export SVG" onClick={() => exportImage('svg')}>
-          <Download size={18} />
-        </button>
+        <details className="toolbar-tools-menu toolbar-tools-menu--align-right">
+          <summary className="text-button toolbar-tools-menu__summary">
+            <Download size={16} />
+            Export
+            <ChevronDown size={14} />
+          </summary>
+          <div className="toolbar-tools-menu__content">
+            <button onClick={() => fileRef.current?.click()} type="button">
+              <Upload size={15} />
+              Import JSON
+            </button>
+            <button onClick={exportJson} type="button">
+              <FileJson size={15} />
+              Export JSON
+            </button>
+            <button onClick={exportHcl} type="button">
+              <FileCode2 size={15} />
+              Export Terraform
+            </button>
+            <button onClick={() => exportImage('png')} type="button">
+              <ImageDown size={15} />
+              Export PNG
+            </button>
+            <button onClick={() => exportImage('svg')} type="button">
+              <Download size={15} />
+              Export SVG
+            </button>
+          </div>
+        </details>
         <button
           className="text-button save-toolbar-button"
           title={saveDiagramTitle ?? saveDiagramLabel}

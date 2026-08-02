@@ -6,10 +6,12 @@ import type React from 'react';
 export function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="dash-panel">
-      <header>
-        <h2>{title}</h2>
-        {typeof action === 'string' ? <button>{action}</button> : action}
-      </header>
+      {(title || action) && (
+        <header>
+          {title && <h2>{title}</h2>}
+          {typeof action === 'string' ? <button>{action}</button> : action}
+        </header>
+      )}
       {children}
     </section>
   );

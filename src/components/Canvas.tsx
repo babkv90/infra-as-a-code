@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
+  ConnectionLineType,
   Controls,
   MarkerType,
   MiniMap,
@@ -13,23 +14,43 @@ import ReactFlow, {
   type EdgeTypes,
 } from 'reactflow';
 import FlowEdge from './edges/FlowEdge';
+import ArchitectureLaneNode from './nodes/ArchitectureLaneNode';
 import AwsServiceNode from './nodes/AwsServiceNode';
 import GroupBoxNode from './nodes/GroupBoxNode';
 import LabelNode from './nodes/LabelNode';
 import { useDiagramStore } from '../store/diagramStore';
-import type { AwsEdge } from '../types';
+import type { AwsEdge, AwsNode } from '../types';
 import { getStoredUser } from '../auth/authClient';
 import { isServiceAllowedForUser } from '../utils/accessControl';
+import { withOptimalEdgeHandles } from '../utils/connectionRouting';
+import { serviceById } from '../data/awsServices';
 
 const nodeTypes: NodeTypes = {
   awsService: AwsServiceNode,
   groupBox: GroupBoxNode,
   labelNode: LabelNode,
+  architectureLane: ArchitectureLaneNode,
 };
 
 const edgeTypes: EdgeTypes = {
   flowEdge: FlowEdge,
 };
+
+type PresentationViewMode = 'architecture' | 'full';
+
+const architectureLanes = [
+  { id: 'edge', title: '1. Edge & Delivery', color: '#7c3aed', x: 0, width: 250 },
+  { id: 'network', title: '2. Network Boundary', color: '#2563eb', x: 350, width: 560 },
+  { id: 'api', title: '3. API Entry', color: '#f97316', x: 1010, width: 250 },
+  { id: 'compute', title: '4. Compute & Platform', color: '#16a34a', x: 1360, width: 560 },
+  { id: 'data', title: '5. Data Layer', color: '#7c3aed', x: 2020, width: 330 },
+] as const;
+
+type ArchitectureLaneId = (typeof architectureLanes)[number]['id'];
+const ARCHITECTURE_NODE_WIDTH = 150;
+const ARCHITECTURE_NODE_HEIGHT = 90;
+const ARCHITECTURE_NODE_GAP = 100;
+const MIN_PRESENTATION_NODE_GAP = 100;
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -49,14 +70,17 @@ function Canvas() {
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const selectionFitTimeoutRef = useRef<number | null>(null);
   const suppressSelectionFocusUntilRef = useRef(0);
+  const lastViewportFitVersionRef = useRef<number | null>(null);
   const reactFlow = useReactFlow();
   const nodesInitialized = useNodesInitialized();
   const [isNodeMoving, setIsNodeMoving] = useState(false);
+  const [presentationView, setPresentationView] = useState<PresentationViewMode>('architecture');
   const {
     nodes,
     edges,
     mode,
     activeView,
+    whiteboardMode,
     focusNodeIds,
     fitViewVersion,
     onNodesChange,
@@ -186,28 +210,59 @@ function Canvas() {
     return nodes.filter((node) => node.type === 'groupBox' || node.data.serviceId === 'iam' || node.data.serviceId === 'security-group' || node.data.serviceId === 'kms' || securityNodeIds.has(node.id));
   }, [activeView, nodes, visibleEdges]);
 
+  const architectureNodes = useMemo(() => {
+    if (presentationView !== 'architecture') return visibleNodes;
+    return enforcePresentationNodeSpacing(buildArchitecturePresentationNodes(visibleNodes));
+  }, [presentationView, visibleNodes]);
+
+  const routingNodeById = useMemo(() => {
+    const byId = new Map(architectureNodes.map((node) => [node.id, node]));
+    return new Map(
+      architectureNodes.map((node) => {
+        const parent = node.parentNode ? byId.get(node.parentNode) : undefined;
+        return [
+          node.id,
+          parent
+            ? {
+                ...node,
+                position: {
+                  x: node.position.x + parent.position.x,
+                  y: node.position.y + parent.position.y,
+                },
+              }
+            : node,
+        ];
+      }),
+    );
+  }, [architectureNodes]);
+
+  const routedVisibleEdges = useMemo(() => visibleEdges.map((edge) => withOptimalEdgeHandles(edge, routingNodeById)), [routingNodeById, visibleEdges]);
+
   useEffect(() => {
-    if (!visibleNodes.length || !nodesInitialized) return;
+    if (!architectureNodes.length || !nodesInitialized) return;
+    if (lastViewportFitVersionRef.current === fitViewVersion) return;
+    lastViewportFitVersionRef.current = fitViewVersion;
+    if (architectureNodes.length > 24 && presentationView !== 'architecture') return;
     const fitWholeDiagram = () => reactFlow.fitView({ padding: 0.12, duration: 360, maxZoom: 1.1 });
     requestAnimationFrame(fitWholeDiagram);
     const settledFit = window.setTimeout(fitWholeDiagram, 180);
     return () => window.clearTimeout(settledFit);
-  }, [fitViewVersion, nodesInitialized, reactFlow, visibleNodes.length]);
+  }, [architectureNodes.length, fitViewVersion, nodesInitialized, presentationView, reactFlow]);
 
-  const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
+  const visibleNodeById = useMemo(() => new Map(architectureNodes.map((node) => [node.id, node])), [architectureNodes]);
   const focusedNodeSet = useMemo(() => new Set(focusNodeIds), [focusNodeIds]);
 
   const presentationNodes = useMemo(() => {
-    if (!focusedNodeSet.size || isNodeMoving) return visibleNodes;
-    return visibleNodes.map((node) => ({
+    if (!focusedNodeSet.size || isNodeMoving) return architectureNodes;
+    return architectureNodes.map((node) => ({
       ...node,
       className: `${node.className ?? ''} ${focusedNodeSet.has(node.id) ? 'focus-hit' : 'focus-dim'}`.trim(),
     }));
-  }, [focusedNodeSet, isNodeMoving, visibleNodes]);
+  }, [architectureNodes, focusedNodeSet, isNodeMoving]);
 
   const presentationEdges = useMemo(() => {
-    if (!focusedNodeSet.size || isNodeMoving) return visibleEdges;
-    return visibleEdges.map((edge) => {
+    if (!focusedNodeSet.size || isNodeMoving) return routedVisibleEdges;
+    return routedVisibleEdges.map((edge) => {
       const inFocus = focusedNodeSet.has(edge.source) || focusedNodeSet.has(edge.target);
       return {
         ...edge,
@@ -215,7 +270,7 @@ function Canvas() {
         style: { ...edge.style, opacity: inFocus ? 1 : 0.14 },
       };
     });
-  }, [focusedNodeSet, isNodeMoving, visibleEdges]);
+  }, [focusedNodeSet, isNodeMoving, routedVisibleEdges]);
 
   const getNodeBounds = useCallback(
     (nodeId: string) => {
@@ -495,7 +550,7 @@ function Canvas() {
 
   return (
     <main
-      className={`canvas-shell ${isNodeMoving ? 'canvas-shell--moving' : ''}`}
+      className={`canvas-shell ${isNodeMoving ? 'canvas-shell--moving' : ''} ${whiteboardMode ? 'canvas-shell--whiteboard' : ''}`}
       ref={wrapperRef}
       onMouseDownCapture={beginAreaSelectionGesture}
       onMouseUpCapture={finishAreaSelectionGesture}
@@ -529,9 +584,9 @@ function Canvas() {
           suppressSelectionFocusUntilRef.current = Date.now() + 450;
           if (selectionFitTimeoutRef.current) {
             window.clearTimeout(selectionFitTimeoutRef.current);
-            selectionFitTimeoutRef.current = null;
-          }
-          if (node.type === 'awsService') openInspector(node.id, undefined);
+      selectionFitTimeoutRef.current = null;
+      }
+      if (node.type === 'awsService') openInspector(node.id, undefined);
         }}
         onEdgeClick={(_, edge) => {
           closeInspector();
@@ -553,6 +608,11 @@ function Canvas() {
         }}
         onSelectionEnd={focusSelectionGesture}
         onPaneClick={(event) => {
+          if (presentationView === 'architecture') {
+            closeInspector();
+            setSelection(undefined, undefined);
+            return;
+          }
           const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
           if (mode === 'group') addGroupNode('VPC', position);
           if (mode === 'label') addLabelNode(position);
@@ -573,8 +633,9 @@ function Canvas() {
         snapToGrid
         snapGrid={[24, 24]}
         defaultViewport={{ x: 0, y: 0, zoom: 1.25 }}
-        minZoom={0.18}
-        maxZoom={2}
+        minZoom={0.08}
+        maxZoom={2.2}
+        connectionLineType={ConnectionLineType.SmoothStep}
         panOnScroll
         panOnDrag={[0, 1, 2]}
         panActivationKeyCode="Space"
@@ -582,24 +643,176 @@ function Canvas() {
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode="Shift"
         deleteKeyCode={null}
-        nodesConnectable={mode !== 'label'}
-        edgesUpdatable
+        nodesConnectable={mode !== 'label' && presentationView === 'full'}
+        edgesUpdatable={presentationView === 'full'}
         edgeUpdaterRadius={16}
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
         elementsSelectable
         proOptions={{ hideAttribution: true }}
       >
-        {!isNodeMoving && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />}
+        {!isNodeMoving && !whiteboardMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />}
         <Controls position="bottom-left" showInteractive={false} />
         {!isNodeMoving && <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />}
+        <Panel position="top-left" className="architecture-view-toggle">
+          <button className={presentationView === 'architecture' ? 'active' : ''} onClick={() => setPresentationView('architecture')} type="button">
+            Architecture
+          </button>
+          <button className={presentationView === 'full' ? 'active' : ''} onClick={() => setPresentationView('full')} type="button">
+            Full topology
+          </button>
+        </Panel>
         <Panel position="top-center" className="canvas-mode-pill">
-          {activeView === 'topology' ? 'Topology view' : activeView === 'dependencies' ? 'Dependency view' : 'Security view'} -{' '}
+          {presentationView === 'architecture' ? 'Architecture view' : activeView === 'topology' ? 'Topology view' : activeView === 'dependencies' ? 'Dependency view' : 'Security view'} -{' '}
           {mode === 'connect' ? 'Connect mode' : mode === 'group' ? 'Click canvas to add boundary' : mode === 'label' ? 'Click canvas to add label' : 'Select mode'}
         </Panel>
       </ReactFlow>
     </main>
   );
+}
+
+function buildArchitecturePresentationNodes(nodes: AwsNode[]): AwsNode[] {
+  const visibleServiceNodes = nodes.filter((node) => node.type !== 'groupBox');
+  const byLane = new Map<ArchitectureLaneId, AwsNode[]>();
+  architectureLanes.forEach((lane) => byLane.set(lane.id, []));
+
+  visibleServiceNodes.forEach((node) => {
+    byLane.get(architectureLaneForNode(node))?.push(node);
+  });
+
+  const placedNodes: AwsNode[] = [];
+  const laneHeight = Math.max(
+    520,
+    Math.max(
+      ...architectureLanes.map((lane) => {
+        const laneNodes = byLane.get(lane.id) ?? [];
+        const columns = lane.width >= ARCHITECTURE_NODE_WIDTH * 2 + ARCHITECTURE_NODE_GAP + 64 && laneNodes.length > 5 ? 2 : 1;
+        const rows = Math.ceil(laneNodes.length / columns);
+        return 86 + rows * ARCHITECTURE_NODE_HEIGHT + Math.max(0, rows - 1) * ARCHITECTURE_NODE_GAP + 48;
+      }),
+    ),
+  );
+
+  architectureLanes.forEach((lane) => {
+    placedNodes.push(createArchitectureLaneNode(lane, laneHeight));
+    const laneNodes = byLane.get(lane.id) ?? [];
+    const columns = lane.width >= ARCHITECTURE_NODE_WIDTH * 2 + ARCHITECTURE_NODE_GAP + 64 && laneNodes.length > 5 ? 2 : 1;
+    const cardStepX = ARCHITECTURE_NODE_WIDTH + ARCHITECTURE_NODE_GAP;
+    const cardStepY = ARCHITECTURE_NODE_HEIGHT + ARCHITECTURE_NODE_GAP;
+    laneNodes.forEach((node, index) => {
+      const column = columns === 2 ? index % 2 : 0;
+      const row = columns === 2 ? Math.floor(index / 2) : index;
+      placedNodes.push({
+        ...node,
+        parentNode: undefined,
+        extent: undefined,
+        draggable: false,
+        width: ARCHITECTURE_NODE_WIDTH,
+        height: ARCHITECTURE_NODE_HEIGHT,
+        style: { ...node.style, width: ARCHITECTURE_NODE_WIDTH, height: ARCHITECTURE_NODE_HEIGHT },
+        position: {
+          x: lane.x + 32 + column * cardStepX,
+          y: 86 + row * cardStepY,
+        },
+        className: `${node.className ?? ''} architecture-node-card`.trim(),
+      });
+    });
+  });
+
+  return placedNodes;
+}
+
+function enforcePresentationNodeSpacing(nodes: AwsNode[]): AwsNode[] {
+  const placed: AwsNode[] = [];
+
+  for (const node of nodes) {
+    if (node.type === 'architectureLane' || node.type === 'groupBox') {
+      placed.push(node);
+      continue;
+    }
+
+    const size = presentationNodeSize(node);
+    let position = { ...node.position };
+    let attempts = 0;
+
+    while (placed.some((candidate) => isPresentationNodeTooClose({ ...node, position }, candidate, size)) && attempts < 160) {
+      position = { x: position.x, y: position.y + 24 };
+      attempts += 1;
+    }
+
+    placed.push({ ...node, position });
+  }
+
+  return placed;
+}
+
+function isPresentationNodeTooClose(node: AwsNode, other: AwsNode, nodeSize: { width: number; height: number }): boolean {
+  if (other.type === 'architectureLane' || other.type === 'groupBox') return false;
+  const otherSize = presentationNodeSize(other);
+  return rectsTooClose(
+    { x: node.position.x, y: node.position.y, width: nodeSize.width, height: nodeSize.height },
+    { x: other.position.x, y: other.position.y, width: otherSize.width, height: otherSize.height },
+    MIN_PRESENTATION_NODE_GAP,
+  );
+}
+
+function rectsTooClose(left: { x: number; y: number; width: number; height: number }, right: { x: number; y: number; width: number; height: number }, gap: number): boolean {
+  return !(
+    left.x + left.width + gap <= right.x ||
+    right.x + right.width + gap <= left.x ||
+    left.y + left.height + gap <= right.y ||
+    right.y + right.height + gap <= left.y
+  );
+}
+
+function presentationNodeSize(node: AwsNode): { width: number; height: number } {
+  const width = Number(node.width ?? node.style?.width ?? ARCHITECTURE_NODE_WIDTH);
+  const height = Number(node.height ?? node.style?.height ?? ARCHITECTURE_NODE_HEIGHT);
+  return {
+    width: Number.isFinite(width) ? width : ARCHITECTURE_NODE_WIDTH,
+    height: Number.isFinite(height) ? height : ARCHITECTURE_NODE_HEIGHT,
+  };
+}
+
+function createArchitectureLaneNode(lane: (typeof architectureLanes)[number], height: number): AwsNode {
+  return {
+    id: `presentation-lane-${lane.id}`,
+    type: 'architectureLane',
+    position: { x: lane.x, y: 24 },
+    width: lane.width,
+    height,
+    style: { width: lane.width, height },
+    selectable: false,
+    draggable: false,
+    deletable: false,
+    data: {
+      serviceName: lane.title,
+      label: lane.title,
+      region: '',
+      arn: '',
+      status: 'unknown',
+      color: lane.color,
+      icon: 'Columns3',
+      subLabel: 'presentation lane',
+      ports: { inputs: [], outputs: [] },
+      config: {},
+      generated: true,
+    },
+  };
+}
+
+function architectureLaneForNode(node: AwsNode): ArchitectureLaneId {
+  const serviceId = node.data.serviceId ?? '';
+  if (['cloudfront', 'waf', 'route53'].includes(serviceId)) return 'edge';
+  if (['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association'].includes(serviceId)) return 'network';
+  if (['apigw', 'alb', 'lb-listener', 'lb-target-group', 'lb-target-attachment'].includes(serviceId)) return 'api';
+  if (['rds', 'docdb', 'docdb-instance', 'docdb-subnet-group', 'dynamodb', 'efs', 'ebs'].includes(serviceId)) return 'data';
+
+  const category = serviceById[serviceId]?.category;
+  if (category === 'DB' || category === 'Storage') return serviceId === 's3' ? 'edge' : 'data';
+  if (category === 'Networking') return 'network';
+  if (category === 'Security' && serviceId.includes('security-group')) return 'data';
+  return 'compute';
 }
 
 export default Canvas;

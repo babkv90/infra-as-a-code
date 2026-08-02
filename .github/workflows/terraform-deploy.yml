@@ -137,11 +137,22 @@ jobs:
 
       - name: Terraform plan
         if: inputs.action == 'apply'
-        run: terraform plan -input=false -out=tfplan
+        run: |
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
+
+      - name: Verify Terraform plan gate
+        if: inputs.action == 'apply'
+        run: |
+          test -s tfplan
+          test -s tfplan.json
+          jq -e '.format_version and .planned_values' tfplan.json >/dev/null
 
       - name: Terraform apply
         if: inputs.action == 'apply'
-        run: terraform apply -input=false -auto-approve tfplan
+        run: |
+          test -s tfplan
+          terraform apply -input=false -auto-approve tfplan
 
       # Mirrors emptyS3BucketsFromTerraformState in the local executor — Terraform can't destroy a
       # non-empty S3 bucket. Only handles current object versions; a versioned bucket with historical

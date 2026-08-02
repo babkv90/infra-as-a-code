@@ -13,8 +13,21 @@ import { create } from 'zustand';
 import { serviceById } from '../data/awsServices';
 import type { AwsEdge, AwsEdgeData, AwsNode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
 import { normalizeDiagramSnapshot } from '../utils/diagramSchema';
+import { exportTerraform } from '../utils/exportTerraform';
+import { applyEnterpriseLayout } from '../utils/importDiagram';
+import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import { canContainNode, withTopologySemantics } from '../utils/topologySemantics';
 import { validateDiagram, type ValidationIssue } from '../utils/validate';
+
+const WHITEBOARD_MODE_STORAGE_KEY = 'infraflow-whiteboard-mode';
+
+function readStoredWhiteboardMode(): boolean {
+  try {
+    return window.localStorage.getItem(WHITEBOARD_MODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 type DiagramStore = {
   nodes: AwsNode[];
@@ -39,6 +52,9 @@ type DiagramStore = {
   // those bypass pushHistory). Drives the Deploy button's gate in Toolbar.tsx.
   isValidated: boolean;
   isDark: boolean;
+  // Purely a rendering-skin flag — swaps the node/container/edge renderers between the default
+  // diagram look and the paper-style "whiteboard" look. Never read by validation, export, or CRUD.
+  whiteboardMode: boolean;
   issues: ValidationIssue[];
   history: DiagramSnapshot[];
   future: DiagramSnapshot[];
@@ -47,6 +63,8 @@ type DiagramStore = {
   setActiveView: (view: DiagramViewMode) => void;
   setDark: (isDark: boolean) => void;
   toggleDark: () => void;
+  setWhiteboardMode: (whiteboardMode: boolean) => void;
+  toggleWhiteboardMode: () => void;
   setSelection: (nodeId?: string, edgeId?: string) => void;
   setFocusNodeIds: (nodeIds: string[]) => void;
   resetDiagramFocus: () => void;
@@ -74,6 +92,7 @@ type DiagramStore = {
   redo: () => void;
   validate: () => ValidationIssue[];
   importDiagram: (snapshot: DiagramSnapshot) => void;
+  autoArrange: () => void;
   markSaved: () => void;
   checkpoint: () => void;
   attachNodeToContainingGroup: (nodeId: string) => void;
@@ -95,6 +114,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   isDirty: false,
   isValidated: false,
   isDark: false,
+  whiteboardMode: readStoredWhiteboardMode(),
   issues: [],
   history: [],
   future: [],
@@ -102,6 +122,15 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   setActiveView: (activeView) => set((state) => ({ activeView, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1 })),
   setDark: (isDark) => set({ isDark }),
   toggleDark: () => set((state) => ({ isDark: !state.isDark })),
+  setWhiteboardMode: (whiteboardMode) => {
+    try {
+      window.localStorage.setItem(WHITEBOARD_MODE_STORAGE_KEY, String(whiteboardMode));
+    } catch {
+      // Ignore storage failures (private browsing, quota) — the toggle still works for this session.
+    }
+    set({ whiteboardMode });
+  },
+  toggleWhiteboardMode: () => get().setWhiteboardMode(!get().whiteboardMode),
   setSelection: (nodeId, edgeId) => set({ selectedNodeId: nodeId, selectedEdgeId: edgeId }),
   setFocusNodeIds: (focusNodeIds) => set({ focusNodeIds }),
   resetDiagramFocus: () =>
@@ -220,12 +249,12 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       edges: state.edges.map((candidate) =>
         candidate.id === edge.id
           ? {
-              ...candidate,
-              source: connection.source ?? candidate.source,
-              sourceHandle: connection.sourceHandle ?? candidate.sourceHandle,
-              target: connection.target ?? candidate.target,
-              targetHandle: connection.targetHandle ?? candidate.targetHandle,
-            }
+            ...candidate,
+            source: connection.source ?? candidate.source,
+            sourceHandle: connection.sourceHandle ?? candidate.sourceHandle,
+            target: connection.target ?? candidate.target,
+            targetHandle: connection.targetHandle ?? candidate.targetHandle,
+          }
           : candidate,
       ),
     }));
@@ -436,7 +465,8 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     });
   },
   validate: () => {
-    const issues = validateDiagram(get().nodes, get().edges, get().activeRegion);
+    const { nodes, edges, activeRegion } = get();
+    const issues = [...validateDiagram(nodes, edges, activeRegion), ...validateGeneratedTerraform(exportTerraform(nodes, edges))];
     set((state) => ({
       issues,
       isValidated: !issues.some((issue) => issue.severity === 'error'),
@@ -454,6 +484,20 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory
     // just set — only edits made *after* this point should count as dirty.
     set((state) => ({ nodes: normalized.nodes, edges: normalized.edges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
+  },
+  autoArrange: () => {
+    const { nodes, edges } = get();
+    if (!nodes.length) return;
+    pushHistory(set, get);
+    set({
+      nodes: applyEnterpriseLayout(nodes, edges),
+      selectedNodeId: undefined,
+      selectedEdgeId: undefined,
+      inspectorNodeId: undefined,
+      inspectorEdgeId: undefined,
+      focusNodeIds: [],
+      fitViewVersion: get().fitViewVersion + 1,
+    });
   },
   markSaved: () => set({ lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isDirty: false }),
   checkpoint: () => pushHistory(set, get),

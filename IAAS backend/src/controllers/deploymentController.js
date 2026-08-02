@@ -136,6 +136,15 @@ function assertNotMerged(deployment) {
   }
 }
 
+function assertDeploymentReadyForApply(deployment) {
+  if (deployment.status === 'validating' || deployment.pendingValidation?.runId) {
+    throw new ApiError(409, 'Terraform validation is still running. Wait for it to pass before applying this deployment.');
+  }
+  if ((deployment.validationIssues ?? []).some((issue) => issue.severity === 'error') || Number(deployment.plan?.blockers ?? 0) > 0) {
+    throw new ApiError(409, 'Deployment has blocking validation errors. Fix them before applying.');
+  }
+}
+
 export const uploadLambdaZip = asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(400, 'A .zip file is required.');
   const upload = await saveLambdaZipUpload(req.file.buffer, req.file.originalname);
@@ -172,6 +181,10 @@ export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
   const deploymentId = new mongoose.Types.ObjectId();
   const executor = env.DEPLOYMENT_EXECUTOR;
   const plan = await buildDeploymentPlan(diagram, { deploymentId, remoteStateBackend: executor === 'github-actions' });
+  const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
+  if (req.validated.body.status === 'queued' && hasBlockers) {
+    throw new ApiError(409, 'Diagram has blocking validation errors. Fix them before deployment can be queued.');
+  }
   const deployment = await Deployment.create({
     _id: deploymentId,
     workspace: req.user.workspace,
@@ -179,7 +192,7 @@ export const createDeploymentFromDiagram = asyncHandler(async (req, res) => {
     requestedBy: req.user._id,
     awsAccount: awsAccount?._id,
     name: req.validated.body.name ?? `${diagram.name} deployment`,
-    status: req.validated.body.status ?? (plan.plan.blockers ? 'draft' : 'planned'),
+    status: req.validated.body.status ?? (hasBlockers ? 'draft' : 'planned'),
     executor,
     resourceCount: plan.resourceCount,
     connectionCount: plan.connectionCount,
@@ -231,6 +244,9 @@ export const createDeploymentFromCanvas = asyncHandler(async (req, res) => {
   const hasBlockers = plan.validationIssues.some((issue) => issue.severity === 'error');
   const needsAsyncValidation = canDispatchAsyncValidation && plan.cliValidationPending;
   const autoApply = Boolean(req.validated.body.autoApply);
+  if (autoApply && hasBlockers) {
+    throw new ApiError(409, 'Diagram has blocking validation errors. Fix them before deployment can start.');
+  }
   // Checked here, not deeper inside startTerraformRun: this is the only point with req.user before
   // the deferred-async-validation path (needsAsyncValidation) auto-applies later via a GitHub
   // callback that has no req at all. Skipped entirely when saving a draft (no autoApply) — nothing
@@ -300,9 +316,7 @@ export const queueDeployment = asyncHandler(async (req, res) => {
   const deployment = await Deployment.findOne({ _id: req.params.id, workspace: req.user.workspace });
   if (!deployment) throw new ApiError(404, 'Deployment not found');
   assertNotMerged(deployment);
-  if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
-    throw new ApiError(409, 'Deployment has blocking validation errors');
-  }
+  assertDeploymentReadyForApply(deployment);
   const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
   const workspace = await Workspace.findById(req.user.workspace);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });
@@ -320,9 +334,7 @@ export const applyDeployment = asyncHandler(async (req, res) => {
   if (!deployment) throw new ApiError(404, 'Deployment not found');
   assertNotMerged(deployment);
   if (!deployment.awsAccount) throw new ApiError(409, 'Deployment is not linked to an AWS account');
-  if (deployment.validationIssues.some((issue) => issue.severity === 'error')) {
-    throw new ApiError(409, 'Deployment has blocking validation errors');
-  }
+  assertDeploymentReadyForApply(deployment);
   const diagram = await Diagram.findOne({ _id: deployment.diagram, workspace: req.user.workspace });
   const workspace = await Workspace.findById(req.user.workspace);
   assertDiagramServiceAccess({ user: req.user, workspace, nodes: diagram?.nodes ?? [] });

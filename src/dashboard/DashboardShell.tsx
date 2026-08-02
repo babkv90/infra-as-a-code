@@ -3690,7 +3690,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       </div>
 
       <Panel
-        title="Application Pipelines"
+        title=""
         action={`${filteredPipelines.length} of ${pipelines.length} pipelines`}
       >
         <div className="app-pipeline-filter-bar">

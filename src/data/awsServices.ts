@@ -31,6 +31,25 @@ export const groupStyles: Record<GroupKind, { color: string; bg: string }> = {
   'Security Group': { color: '#dc2626', bg: 'rgba(220, 38, 38, 0.07)' },
 };
 
+// Style tokens for "Whiteboard Mode" — a purely visual reskin of the same GroupKind/service data
+// consumed by GroupBoxNode and AwsServiceNode. Badge icon+label shown in each container's top-left
+// pill; whiteboardIcon overrides the default Lucide glyph for that container type.
+export const whiteboardGroupBadges: Record<GroupKind, { icon: string; label: string }> = {
+  'Terraform stack': { icon: 'Boxes', label: 'stack' },
+  Region: { icon: 'Cloud', label: 'aws' },
+  Module: { icon: 'Package', label: 'module' },
+  VPC: { icon: 'Network', label: 'vpc' },
+  'Availability Zone': { icon: 'Layers', label: 'az' },
+  'Public Subnet': { icon: 'Unlock', label: 'public' },
+  'Private Subnet': { icon: 'Lock', label: 'private' },
+  'Security Group': { icon: 'Shield', label: 'sg' },
+};
+
+// Services whose whiteboard-mode icon renders as a plain black outline glyph (no fill) rather than
+// a solid colored badge — matches the simpler/utility icon convention in the reference sketch
+// (bucket outline, DNS shield, IAM hat, CloudWatch magnifier, etc).
+export const whiteboardOutlineServiceIds = new Set(['s3', 'route53', 'iam', 'cloudwatch', 'kms', 'secrets', 'cognito', 'xray']);
+
 export const awsServices: AwsService[] = [
   service('ec2', 'EC2', 'EC2', 'Compute', 'Server', '#f97316', ['SSH', 'HTTP'], ['ENI', 'Logs'], 'aws_instance', { name: '', ami: latestAmazonLinux2023Ami, instance_type: '', key_name: '', subnet_id: '', vpc_security_group_ids: '', associate_public_ip_address: '', iam_role_arn: '', iam_instance_profile: '' }, [
     ...commonFields,

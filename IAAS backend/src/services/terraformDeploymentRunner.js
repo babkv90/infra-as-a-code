@@ -102,6 +102,8 @@ export async function runTerraformDeployment(deploymentId, { isUpdate = false } 
     // apply-time failure once it reaches failDeployment.
     try {
       await runTerraformCommand(deployment, workDir, ['plan', '-input=false', '-out=tfplan'], terraformEnv);
+      await runTerraformCommand(deployment, workDir, ['show', '-json', 'tfplan'], terraformEnv);
+      await access(path.join(workDir, 'tfplan'), constants.R_OK);
     } catch (error) {
       throw new Error(`Terraform plan failed — nothing was changed in AWS. ${error.message ?? String(error)}`);
     }

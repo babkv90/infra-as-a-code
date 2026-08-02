@@ -12,6 +12,7 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
   const serviceNodes = targetNodes.filter((node) => node.type !== 'groupBox' && node.data.serviceId);
   const region = firstRegion(serviceNodes) ?? 'ap-south-1';
   const createsManagedEc2Keys = serviceNodes.some(shouldCreateManagedEc2KeyPair);
+  const createsInlineLambdaPackages = serviceNodes.some(shouldCreateInlineLambdaPackage);
   const includesUsEast1Provider = serviceNodes.some(
     (node) =>
       (node.data.serviceId === 'waf' && configString(node.data.config, 'scope') === 'CLOUDFRONT') ||
@@ -24,11 +25,12 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
     ...bindingSupportBlocks(serviceNodes, nodes),
     ...ec2InstanceProfileBlocks(serviceNodes),
     ...serviceNodes.flatMap((node) => resourceBlocksForNode(node, nodes, edges)),
+    ...connectionBlocks(serviceNodes, edges),
     resourceOutputBlock(serviceNodes),
   ]);
 
   if (selectedNodeId) {
-    return [terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider), ...resourceBlocks].join('\n\n') || '# Select an AWS service node to export Terraform.';
+    return [terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider, createsInlineLambdaPackages), ...resourceBlocks].join('\n\n') || '# Select an AWS service node to export Terraform.';
   }
 
   const edgeNotes = edges.length
@@ -37,7 +39,7 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
         .join('\n')}`
     : '';
 
-  return `${[terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider), ...resourceBlocks].join('\n\n') || '# Add nodes to generate Terraform.'}${edgeNotes}`;
+  return `${[terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider, createsInlineLambdaPackages), ...resourceBlocks].join('\n\n') || '# Add nodes to generate Terraform.'}${edgeNotes}`;
 }
 
 function sanitizeName(value: string): string {
@@ -48,7 +50,7 @@ function sanitizeMetricName(value: string): string {
   return String(value || 'infraflowMetric').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 128) || 'infraflowMetric';
 }
 
-function terraformHeader(region: string, includeTlsProvider = false, includeUsEast1Provider = false): string {
+function terraformHeader(region: string, includeTlsProvider = false, includeUsEast1Provider = false, includeArchiveProvider = false): string {
   return `terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -59,6 +61,10 @@ function terraformHeader(region: string, includeTlsProvider = false, includeUsEa
     tls = {
       source  = "hashicorp/tls"
       version = "~> 4.0"
+    }` : ''}${includeArchiveProvider ? `
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
     }` : ''}
   }
 }
@@ -187,7 +193,7 @@ function resourceBlocksForNode(node: AwsNode, allNodes: AwsNode[], edges: AwsEdg
         `resource "aws_instance" "${name}" {
   ami           = ${formatMaybeExpression(ec2AmiExpression(config))}
   instance_type = ${formatValue(configString(config, 'instance_type'))}
-${keyNameLine}${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2SecurityGroupIdsLine(node, allNodes, edges)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
+${keyNameLine}${optionalExpressionLine('subnet_id', configString(config, 'subnet_id') || connectedRef(node, allNodes, edges, 'subnet'))}${ec2SecurityGroupIdsLine(node, allNodes, edges)}${optionalLine('associate_public_ip_address', config.associate_public_ip_address)}${profileReference ? `  iam_instance_profile = ${profileReference}\n` : ''}
 
   tags = {
     Name = ${formatValue(awsName || label)}
@@ -204,14 +210,15 @@ ${keyNameLine}${optionalExpressionLine('subnet_id', config.subnet_id)}${ec2Secur
       const { roleRef, extraBlocks } = connectedRoleRef
         ? { roleRef: connectedRoleRef, extraBlocks: [] as string[] }
         : lambdaExecutionRoleFromField(config, awsName);
-      const { filenameValue, sourceCodeHash } = lambdaDeploymentPackageFromField(config);
+      const packageInfo = lambdaDeploymentPackageFromField(config);
       return [
         ...extraBlocks,
+        ...(packageInfo.extraBlocks ?? []),
         `resource "aws_lambda_function" "${name}" {
   function_name    = ${formatValue(configString(config, 'function_name') || awsName)}
   role             = ${formatMaybeExpression(roleRef)}
-  filename         = ${formatValue(filenameValue)}
-  source_code_hash = ${formatMaybeExpression(sourceCodeHash)}
+  filename         = ${packageInfo.kind === 'archive' ? `data.archive_file.${packageInfo.archiveName}.output_path` : formatValue(packageInfo.filenameValue)}
+  source_code_hash = ${packageInfo.kind === 'archive' ? `data.archive_file.${packageInfo.archiveName}.output_base64sha256` : formatMaybeExpression(packageInfo.sourceCodeHash)}
   handler          = ${formatValue(configString(config, 'handler'))}
   runtime          = ${formatValue(configString(config, 'runtime'))}
   memory_size      = ${formatNumber(config.memory_size)}
@@ -582,8 +589,11 @@ ${apiGatewayCorsConfigurationBlock()}
     }
     case 'iam': {
       const forLambda = Boolean(connectedServiceNode(node, allNodes, edges, 'lambda'));
+      const forEks = Boolean(connectedServiceNode(node, allNodes, edges, 'eks'));
       const trustPolicy = configString(config, 'assume_role_policy') || (forLambda
         ? `jsonencode({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]})`
+        : forEks
+          ? `jsonencode({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]})`
         : '');
       const blocks = [
         `resource "aws_iam_role" "${name}" {
@@ -595,6 +605,12 @@ ${apiGatewayCorsConfigurationBlock()}
         blocks.push(`resource "aws_iam_role_policy_attachment" "${name}_lambda_basic_execution" {
   role       = aws_iam_role.${name}.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}`);
+      }
+      if (forEks) {
+        blocks.push(`resource "aws_iam_role_policy_attachment" "${name}_eks_cluster" {
+  role       = aws_iam_role.${name}.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }`);
       }
       return blocks;
@@ -671,6 +687,14 @@ function connectedServiceNode(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge
   return undefined;
 }
 
+function connectedRef(node: AwsNode, allNodes: AwsNode[], edges: AwsEdge[], serviceId: string, attr = 'id'): string {
+  const other = connectedServiceNode(node, allNodes, edges, serviceId);
+  if (!other?.data.serviceId) return '';
+  const terraformType = serviceById[other.data.serviceId]?.terraformType;
+  if (!terraformType) return '';
+  return `${terraformType}.${sanitizeName(other.data.label || other.data.serviceName)}.${attr}`;
+}
+
 function resourceOutputBlock(nodes: AwsNode[]): string {
   const hasManagedEc2Keys = nodes.some(shouldCreateManagedEc2KeyPair);
   const entries = nodes
@@ -697,6 +721,46 @@ ${attrs}
 ${entries.join('\n')}
   }${hasManagedEc2Keys ? '\n  sensitive = true' : ''}
 }`;
+}
+
+function connectionBlocks(nodes: AwsNode[], edges: AwsEdge[]): string[] {
+  const nodeById = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  const blocks: string[] = [];
+
+  for (const edge of edges) {
+    const source = nodeById[edge.source];
+    const target = nodeById[edge.target];
+    if (!source || !target) continue;
+
+    const sourceName = sanitizeName(source.data.label || source.data.serviceName);
+    const targetName = sanitizeName(target.data.label || target.data.serviceName);
+    const edgeName = sanitizeName(edge.id);
+
+    if (source.data.serviceId === 'eventbridge' && target.data.serviceId === 'lambda') {
+      blocks.push(`resource "aws_cloudwatch_event_target" "${edgeName}" {
+  rule = aws_cloudwatch_event_rule.${sourceName}.name
+  arn  = aws_lambda_function.${targetName}.arn
+}`);
+      blocks.push(`resource "aws_lambda_permission" "${edgeName}" {
+  statement_id  = "AllowEventBridgeInvoke${edgeName}"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.${targetName}.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.${sourceName}.arn
+}`);
+    }
+
+    if (source.data.serviceId === 'sqs' && target.data.serviceId === 'lambda') {
+      blocks.push(`resource "aws_lambda_event_source_mapping" "${edgeName}" {
+  event_source_arn = aws_sqs_queue.${sourceName}.arn
+  function_name    = aws_lambda_function.${targetName}.arn
+  batch_size       = 10
+  enabled          = true
+}`);
+    }
+  }
+
+  return blocks;
 }
 
 function outputAttributeExpression(node: AwsNode, terraformType: string, resourceName: string, attr: string): string {
@@ -955,16 +1019,33 @@ function lambdaExecutionRoleFromField(
 // "<uploadId>.zip" before `apply` runs, so that has to be the exact filename referenced here too —
 // this keeps the browser's Terraform preview/download consistent with what a real deploy produces.
 // A manually typed filename (no upload) passes through unchanged.
-function lambdaDeploymentPackageFromField(config: Record<string, string | number>): { filenameValue: string; sourceCodeHash: string } {
+function lambdaDeploymentPackageFromField(config: Record<string, string | number>): { kind: 'file'; filenameValue: string; sourceCodeHash: string; extraBlocks?: string[] } | { kind: 'archive'; archiveName: string; extraBlocks: string[] } {
   const uploadId = configString(config, 'filename_upload_id');
+  const inlineSource = configString(config, 'inline_source');
+  if (!uploadId && inlineSource) {
+    const archiveName = sanitizeName(configString(config, 'function_name') || configString(config, 'role_arn_new_name') || 'lambda_package');
+    return {
+      kind: 'archive',
+      archiveName,
+      extraBlocks: [`data "archive_file" "${archiveName}" {
+  type        = "zip"
+  output_path = "\${path.module}/${archiveName}.zip"
+
+  source {
+    content  = ${formatValue(inlineSource)}
+    filename = ${formatValue(configString(config, 'inline_filename') || 'index.js')}
+  }
+}`],
+    };
+  }
   if (!uploadId) {
-    return { filenameValue: configString(config, 'filename'), sourceCodeHash: configString(config, 'source_code_hash') };
+    return { kind: 'file', filenameValue: configString(config, 'filename'), sourceCodeHash: configString(config, 'source_code_hash') };
   }
 
   const filenameValue = `${uploadId}.zip`;
   const explicitHash = configString(config, 'source_code_hash');
   const sourceCodeHash = explicitHash || `filebase64sha256(${formatValue(filenameValue)})`;
-  return { filenameValue, sourceCodeHash };
+  return { kind: 'file', filenameValue, sourceCodeHash };
 }
 
 function ec2AmiExpression(config: Record<string, string | number>): string {
@@ -973,6 +1054,10 @@ function ec2AmiExpression(config: Record<string, string | number>): string {
 
 function shouldCreateManagedEc2KeyPair(node: AwsNode): boolean {
   return node.data.serviceId === 'ec2' && !configString(node.data.config ?? {}, 'key_name');
+}
+
+function shouldCreateInlineLambdaPackage(node: AwsNode): boolean {
+  return node.data.serviceId === 'lambda' && !configString(node.data.config ?? {}, 'filename_upload_id') && Boolean(configString(node.data.config ?? {}, 'inline_source'));
 }
 
 function managedEc2KeyPairResourceName(resourceName: string): string {
