@@ -51,30 +51,26 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
         >
           <Icon size={whiteboardMode ? 24 : 28} strokeWidth={whiteboardMode ? 1.8 : 2.2} />
         </div>
-        {connectionSides.flatMap((side) =>
-          data.ports.inputs.map((port, index) => (
+        {data.ports.inputs.length > 0 &&
+          connectionSides.map((side) => (
             <Handle
               type="target"
               position={reactFlowPositionBySide[side]}
-              id={buildHandleId('in', side, port)}
+              id={buildHandleId('in', side, data.ports.inputs[0])}
               className={`port-handle port-handle--in port-handle--${side}`}
-              style={handleStyle(side, index, data.ports.inputs.length, 'in')}
-              key={`input-${side}-${port}`}
+              key={`input-${side}`}
             />
-          )),
-        )}
-        {connectionSides.flatMap((side) =>
-          data.ports.outputs.map((port, index) => (
+          ))}
+        {data.ports.outputs.length > 0 &&
+          connectionSides.map((side) => (
             <Handle
               type="source"
               position={reactFlowPositionBySide[side]}
-              id={buildHandleId('out', side, port)}
+              id={buildHandleId('out', side, data.ports.outputs[0])}
               className={`port-handle port-handle--out port-handle--${side}`}
-              style={handleStyle(side, index, data.ports.outputs.length, 'out')}
-              key={`output-${side}-${port}`}
+              key={`output-${side}`}
             />
-          )),
-        )}
+          ))}
       </div>
       <div className={`aws-node__label ${whiteboardMode ? 'aws-node__label--whiteboard' : ''}`}>
         <span>{data.label}</span>
@@ -121,18 +117,6 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
       )}
     </div>
   );
-}
-
-function handleStyle(side: ConnectionSide, index: number, count: number, kind: 'in' | 'out'): React.CSSProperties {
-  const offset = handleOffset(index, count);
-  const pairedOffset = kind === 'in' ? -4 : 4;
-  if (side === 'left' || side === 'right') return { top: offset + pairedOffset };
-  return { left: offset + pairedOffset };
-}
-
-function handleOffset(index: number, count: number): number {
-  const spacing = 16;
-  return 30 + (index - (count - 1) / 2) * spacing;
 }
 
 export default memo(AwsServiceNode);

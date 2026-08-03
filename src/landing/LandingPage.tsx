@@ -24,7 +24,7 @@ import {
   type LucideIcon,
   X,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import AppLogo from '../components/AppLogo';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
@@ -34,6 +34,7 @@ import {
   REGISTER_ROUTE,
   aiBullets,
   awsMetrics,
+  builderPreviewServices,
   builderServices,
   chartLabels,
   footerColumns,
@@ -114,12 +115,43 @@ const heroNetworkEdges = [
   { from: 'lambda', to: 'cloudwatch', className: 'lp-hero-network__line--telemetry' },
 ];
 
+const heroPipelineSteps = [
+  { label: 'Git sync', meta: 'Repo connected', icon: Github },
+  { label: 'CI build', meta: 'Tests + image', icon: GitBranch },
+  { label: 'IaC plan', meta: 'Terraform diff', icon: TerminalSquare },
+  { label: 'Deploy app', meta: 'Cloud rollout', icon: Rocket },
+  { label: 'Live', meta: 'Release verified', icon: Check },
+];
+
 function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [detail, setDetail] = useState<LearningDetail | null>(null);
+  const [isScrollCueHidden, setIsScrollCueHidden] = useState(false);
+  const footerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const footer = footerRef.current;
+    if (!footer) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsScrollCueHidden(entry.isIntersecting);
+      },
+      { threshold: 0.05 },
+    );
+
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="landing-page">
       <Navbar theme={theme} onToggleTheme={onToggleTheme} />
+      <a className={`lp-scroll-cue${isScrollCueHidden ? ' lp-scroll-cue--hidden' : ''}`} href="#visual-builder" aria-label="Scroll down to visual builder section">
+        <span className="lp-scroll-cue__mouse" aria-hidden="true">
+          <span />
+        </span>
+        <small>Scroll</small>
+      </a>
       <main>
         <HeroSection />
         <ProblemSection />
@@ -135,7 +167,7 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
         {/* <PricingSection /> */}
         <FinalCTA />
       </main>
-      <Footer />
+      <Footer footerRef={footerRef} />
       {detail && <LearningDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </div>
   );
@@ -143,9 +175,29 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
 
 function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isNavbarHidden, setIsNavbarHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    lastScrollYRef.current = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const isScrollingDown = currentScrollY > lastScrollYRef.current;
+      const scrollDelta = Math.abs(currentScrollY - lastScrollYRef.current);
+
+      if (scrollDelta > 6) {
+        setIsNavbarHidden(isScrollingDown && currentScrollY > 96);
+        lastScrollYRef.current = currentScrollY;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
-    <header className="lp-nav">
+    <header className={`lp-nav${isNavbarHidden && !isMobileMenuOpen ? ' lp-nav--hidden' : ''}`}>
       <a className="lp-logo" href="/">
         <AppLogo className="app-logo--nav" />
       </a>
@@ -220,10 +272,6 @@ function HeroSection() {
       <div className="lp-hero-glow lp-hero-glow--cyan" />
       <div className="lp-hero-glow lp-hero-glow--violet" />
       <div className="lp-hero-content">
-        <div className="lp-kicker">
-          <Sparkles size={16} />
-          Visual AWS infrastructure automation
-        </div>
         <h1>Design AWS infrastructure visually, deploy it for real, and ship your own app alongside it.</h1>
         <p>
           Infraflow helps teams model AWS architecture on a React Flow canvas, generate Terraform for 44 supported
@@ -249,8 +297,35 @@ function HeroSection() {
         <div className="lp-hero-network-card">
           <HeroNetworkBackground />
         </div>
+        <HeroPipelineAnimation />
       </div>
     </section>
+  );
+}
+
+function HeroPipelineAnimation() {
+  return (
+    <div className="lp-hero-pipeline" aria-label="Application deployment pipeline from Git sync to live release">
+      <div className="lp-hero-pipeline__header">
+        <span>Application deploy pipeline</span>
+        <strong>Sync Git → ship</strong>
+      </div>
+      <div className="lp-hero-pipeline__track">
+        <span className="lp-hero-pipeline__flow" aria-hidden="true" />
+        {heroPipelineSteps.map((step, index) => {
+          const Icon = step.icon;
+          return (
+            <div className="lp-hero-pipeline__step" key={step.label} style={{ animationDelay: `${index * 360}ms` }}>
+              <span className="lp-hero-pipeline__icon">
+                <Icon size={15} />
+              </span>
+              <strong>{step.label}</strong>
+              <small>{step.meta}</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -436,12 +511,13 @@ function BuilderSection() {
       <div className="lp-builder-mockup">
         <aside className="lp-builder-sidebar">
           <div className="lp-builder-title">AWS Services</div>
-          {builderServices.map((service) => (
+          {builderPreviewServices.map((service) => (
             <div className="lp-builder-service" key={service}>
               <span />
               {service}
             </div>
           ))}
+          <div className="lp-builder-service-count">+{builderServices.length - builderPreviewServices.length} more supported services</div>
         </aside>
         <div className="lp-builder-canvas">
           <DiagramMockup variant="builder" />
@@ -690,7 +766,7 @@ function FinalCTA() {
         pipeline for your own app, and operate everything from one workspace-scoped dashboard.
       </p>
       <div className="lp-hero-actions">
-        <a className="lp-secondary-button" href={DASHBOARD_ROUTE}>
+        <a className="lp-primary-button lp-final-cta-button" href={DASHBOARD_ROUTE}>
           Open Infraflow
           <ArrowRight size={17} />
         </a>
@@ -699,9 +775,9 @@ function FinalCTA() {
   );
 }
 
-function Footer() {
+function Footer({ footerRef }: { footerRef: React.RefObject<HTMLElement | null> }) {
   return (
-    <footer className="lp-footer">
+    <footer className="lp-footer" ref={footerRef}>
       <div className="lp-footer-brand">
         <a className="lp-logo" href="/">
           <AppLogo className="app-logo--footer" />
@@ -728,8 +804,8 @@ function Footer() {
             LinkedIn
           </a>
           <span aria-hidden="true"> · </span>
-          <a href="https://www.abinashkumar.com" rel="noreferrer" target="_blank">
-            abinashkumar.com
+          <a href="https://github.com/babkv90" rel="noreferrer" target="_blank">
+            GitHub
           </a>
         </span>
       </div>

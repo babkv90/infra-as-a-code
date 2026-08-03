@@ -25,3 +25,10 @@ diagramRouter.patch('/:id', authorize(roles.ARCHITECT), validateRequest(updateDi
 diagramRouter.delete('/:id', authorize(roles.ADMIN), deleteDiagram);
 diagramRouter.post('/:id/validate', validateDiagramById);
 diagramRouter.get('/:id/terraform', exportTerraformById);
+
+
+
+
+
+
+
