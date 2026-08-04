@@ -21,10 +21,19 @@ import { canContainNode, withTopologySemantics } from '../utils/topologySemantic
 import { validateDiagram, type ValidationIssue } from '../utils/validate';
 
 const WHITEBOARD_MODE_STORAGE_KEY = 'infraflow-whiteboard-mode';
+const ARCHITECTURE_VIEW_MODE_STORAGE_KEY = 'infraflow-architecture-view-mode';
 
 function readStoredWhiteboardMode(): boolean {
   try {
     return window.localStorage.getItem(WHITEBOARD_MODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function readStoredArchitectureViewMode(): boolean {
+  try {
+    return window.localStorage.getItem(ARCHITECTURE_VIEW_MODE_STORAGE_KEY) === 'true';
   } catch {
     return false;
   }
@@ -58,6 +67,11 @@ type DiagramStore = {
   // Purely a rendering-skin flag — swaps the node/container/edge renderers between the default
   // diagram look and the paper-style "whiteboard" look. Never read by validation, export, or CRUD.
   whiteboardMode: boolean;
+  // Another purely-visual skin: a dark, column-laned "architecture diagram" look (Client / Edge-CDN
+  // / Network / Load Balancing / Compute / Data / Supporting Services), driven by the same semantic
+  // layer/category data already used for the ELK auto-layout and view filtering. Mutually exclusive
+  // with whiteboardMode at the setter level — only one skin renders at a time.
+  architectureViewMode: boolean;
   issues: ValidationIssue[];
   history: DiagramSnapshot[];
   future: DiagramSnapshot[];
@@ -69,6 +83,8 @@ type DiagramStore = {
   toggleDark: () => void;
   setWhiteboardMode: (whiteboardMode: boolean) => void;
   toggleWhiteboardMode: () => void;
+  setArchitectureViewMode: (architectureViewMode: boolean) => void;
+  toggleArchitectureViewMode: () => void;
   setSelection: (nodeId?: string, edgeId?: string) => void;
   setFocusNodeIds: (nodeIds: string[]) => void;
   isolateSelectedPath: () => void;
@@ -114,14 +130,18 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   focusNodeIds: [],
   fitViewVersion: 0,
   mode: 'select',
-  activeView: 'application-flow',
-  detailMode: 'architecture',
+  // Opens showing every node and edge fully interlinked ("All Connections" + "Full Topology") so a
+  // freshly loaded or imported diagram never looks broken/disconnected by default. Users can still
+  // narrow down to a specific relationship view or detail level from the toolbar.
+  activeView: 'dependencies',
+  detailMode: 'full-topology',
   isolatedNodeId: undefined,
   activeRegion: 'ap-south-1',
   isDirty: false,
   isValidated: false,
   isDark: false,
   whiteboardMode: readStoredWhiteboardMode(),
+  architectureViewMode: readStoredArchitectureViewMode(),
   issues: [],
   history: [],
   future: [],
@@ -131,14 +151,27 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   setDark: (isDark) => set({ isDark }),
   toggleDark: () => set((state) => ({ isDark: !state.isDark })),
   setWhiteboardMode: (whiteboardMode) => {
+    const nextArchitectureViewMode = whiteboardMode ? false : get().architectureViewMode;
     try {
       window.localStorage.setItem(WHITEBOARD_MODE_STORAGE_KEY, String(whiteboardMode));
+      window.localStorage.setItem(ARCHITECTURE_VIEW_MODE_STORAGE_KEY, String(nextArchitectureViewMode));
     } catch {
       // Ignore storage failures (private browsing, quota) — the toggle still works for this session.
     }
-    set({ whiteboardMode });
+    set({ whiteboardMode, architectureViewMode: nextArchitectureViewMode });
   },
   toggleWhiteboardMode: () => get().setWhiteboardMode(!get().whiteboardMode),
+  setArchitectureViewMode: (architectureViewMode) => {
+    const nextWhiteboardMode = architectureViewMode ? false : get().whiteboardMode;
+    try {
+      window.localStorage.setItem(ARCHITECTURE_VIEW_MODE_STORAGE_KEY, String(architectureViewMode));
+      window.localStorage.setItem(WHITEBOARD_MODE_STORAGE_KEY, String(nextWhiteboardMode));
+    } catch {
+      // Ignore storage failures (private browsing, quota) — the toggle still works for this session.
+    }
+    set({ architectureViewMode, whiteboardMode: nextWhiteboardMode });
+  },
+  toggleArchitectureViewMode: () => get().setArchitectureViewMode(!get().architectureViewMode),
   setSelection: (nodeId, edgeId) => set({ selectedNodeId: nodeId, selectedEdgeId: edgeId }),
   setFocusNodeIds: (focusNodeIds) => set({ focusNodeIds }),
   isolateSelectedPath: () => {
@@ -494,7 +527,10 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   importDiagram: (snapshot) => {
     pushHistory(set, get);
     const normalized = normalizeDiagramSnapshot(snapshot);
-    const shouldAutoLayout = !hasSavedPositions(normalized.nodes);
+    // Architecture mode's whole point is the semantic column layout, so re-run it for every
+    // opened diagram there — even ones with their own saved/template positions — instead of only
+    // the position-less-import case the default view relies on.
+    const shouldAutoLayout = !hasSavedPositions(normalized.nodes) || get().architectureViewMode;
     const semanticEdges = normalizeSemanticEdges(normalized.edges, normalized.nodes);
     // Loading a diagram (a demo, a template, or the user's own saved one) isn't itself an
     // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory

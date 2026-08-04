@@ -21,7 +21,7 @@ import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdge, AwsNode } from '../types';
 import { getStoredUser } from '../auth/authClient';
 import { isServiceAllowedForUser } from '../utils/accessControl';
-import { buildHandleId, readHandlePort } from '../utils/connectionRouting';
+import { buildHandleId, getOptimalConnectionSides, readHandlePort } from '../utils/connectionRouting';
 import { buildVisibleGraph, semanticEdgeCategory } from '../utils/diagramSemantics';
 
 const nodeTypes: NodeTypes = {
@@ -64,6 +64,7 @@ function Canvas() {
     detailMode,
     isolatedNodeId,
     whiteboardMode,
+    architectureViewMode,
     focusNodeIds,
     fitViewVersion,
     onNodesChange,
@@ -513,7 +514,7 @@ function Canvas() {
 
   return (
     <main
-      className={`canvas-shell ${isNodeMoving ? 'canvas-shell--moving' : ''} ${whiteboardMode ? 'canvas-shell--whiteboard' : ''}`}
+      className={`canvas-shell ${isNodeMoving ? 'canvas-shell--moving' : ''} ${whiteboardMode ? 'canvas-shell--whiteboard' : ''} ${architectureViewMode ? 'canvas-shell--architecture' : ''}`}
       ref={wrapperRef}
       onMouseDownCapture={beginAreaSelectionGesture}
       onMouseUpCapture={finishAreaSelectionGesture}
@@ -609,15 +610,41 @@ function Canvas() {
         elementsSelectable
         proOptions={{ hideAttribution: true }}
       >
-        {!isNodeMoving && !whiteboardMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />}
+        {!isNodeMoving && !whiteboardMode && !architectureViewMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />}
+        {!isNodeMoving && architectureViewMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(52,211,153,0.28)" />}
         <Controls position="bottom-left" showInteractive={false} />
         {!isNodeMoving && <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />}
         <Panel position="top-center" className="canvas-mode-pill">
           {viewLabel(activeView)} / {detailModeLabel(detailMode)} -{' '}
           {mode === 'connect' ? 'Connect mode' : mode === 'group' ? 'Click canvas to add boundary' : mode === 'label' ? 'Click canvas to add label' : 'Select mode'}
         </Panel>
+        {architectureViewMode && <ArchitectureLegend />}
       </ReactFlow>
     </main>
+  );
+}
+
+function ArchitectureLegend() {
+  const items: Array<{ label: string; color: string; dash?: string }> = [
+    { label: 'Application Flow', color: '#cbd5e1' },
+    { label: 'Network Routing', color: '#22d3ee', dash: '10 6' },
+    { label: 'Security', color: '#f87171', dash: '2 5' },
+    { label: 'Dependency', color: '#a78bfa', dash: '8 5' },
+    { label: 'Monitoring', color: '#60a5fa', dash: '2 6' },
+  ];
+
+  return (
+    <Panel position="bottom-center" className="architecture-legend">
+      <span className="architecture-legend__title">Legend:</span>
+      {items.map((item) => (
+        <span className="architecture-legend__item" key={item.label}>
+          <svg aria-hidden="true" height="10" width="28">
+            <line stroke={item.color} strokeDasharray={item.dash} strokeWidth={2} x1="0" x2="28" y1="5" y2="5" />
+          </svg>
+          {item.label}
+        </span>
+      ))}
+    </Panel>
   );
 }
 
@@ -629,9 +656,10 @@ function withSemanticEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>,
   const category = semanticEdgeCategory(edge, Array.from(nodesById.values()));
   const sourcePort = sourceNode.data.ports.outputs[0];
   const targetPort = targetNode.data.ports.inputs[0];
-  const side = category === 'security' || category === 'monitoring' ? 'top' : category === 'deployment' || category === 'dependency' ? 'bottom' : undefined;
-  const sourceSide = side ?? 'right';
-  const targetSide = side ?? 'left';
+  // Handle sides come from actual node geometry (which side of source really faces target), not a
+  // side fixed by category — a fixed 'right'/'left' regardless of position forced edges into an
+  // unnecessary detour/zigzag even between two nodes that were already stacked or adjacent.
+  const { sourceSide, targetSide } = getOptimalConnectionSides(sourceNode, targetNode);
   const targetPeers = visibleEdges.filter((candidate) => candidate.target === edge.target && semanticEdgeCategory(candidate, Array.from(nodesById.values())) === category);
   const bundleIndex = Math.max(0, targetPeers.findIndex((candidate) => candidate.id === edge.id));
 
@@ -658,7 +686,7 @@ function viewLabel(view: string): string {
   if (view === 'security') return 'Security';
   if (view === 'monitoring') return 'Monitoring';
   if (view === 'deployment') return 'Deployment';
-  return 'Dependencies';
+  return 'All Connections';
 }
 
 function detailModeLabel(mode: string): string {

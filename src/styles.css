@@ -1632,6 +1632,115 @@ textarea {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Architecture Mode — dark, column-laned "AWS architecture diagram" skin. */
+/* Same node/edge/group data as the default theme; only className         */
+/* branching + these rules change (mirrors the Whiteboard skin above).    */
+/* ---------------------------------------------------------------------- */
+
+.canvas-shell--architecture .react-flow {
+  background-color: #0a0f1c;
+}
+
+.canvas-shell--architecture .canvas-mode-pill {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.86);
+  color: #e2e8f0;
+}
+
+.aws-node--architecture {
+  color: #e2e8f0;
+}
+
+.aws-node__tile--architecture {
+  border: none;
+  border-radius: 10px;
+  background: var(--aws-node-badge-color, #2563eb);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+
+.aws-node--architecture:hover .aws-node__tile--architecture {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+.aws-node--architecture.selected .aws-node__tile--architecture {
+  box-shadow: 0 0 0 2px #ffffff, 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+.aws-node__label--architecture {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.group-box--architecture {
+  border-width: 1.5px;
+  border-style: dashed;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.group-box--architecture.selected {
+  box-shadow: inset 0 0 0 1px #ffffff, 0 0 0 1px #ffffff;
+}
+
+.group-box__header--architecture {
+  background: rgba(11, 15, 26, 0.9);
+}
+
+.group-box--architecture-lane {
+  border-width: 0 1px 0 0;
+  border-style: solid;
+  border-radius: 0;
+  background: transparent;
+}
+
+.group-box__architecture-lane-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border-bottom: 2px solid;
+  background: rgba(11, 15, 26, 0.92);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.edge-label--architecture {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+}
+
+.architecture-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(11, 15, 26, 0.92);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.architecture-legend__title {
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.architecture-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-start;

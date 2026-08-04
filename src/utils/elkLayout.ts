@@ -50,7 +50,7 @@ export async function applyElkLayeredLayout(nodes: AwsNode[], edges: AwsEdge[]):
   const elk = await getElk();
   const result = await elk.layout(graph);
   const positions = new Map((result.children ?? []).map((child) => [child.id, { x: child.x ?? 0, y: child.y ?? 0 }]));
-  const placedServices = serviceNodes.map((node) => {
+  const rawPlacedServices = serviceNodes.map((node) => {
     const position = positions.get(node.id) ?? node.position;
     const size = measuredNodeSize(node);
     return withTopologySemantics({
@@ -63,6 +63,11 @@ export async function applyElkLayeredLayout(nodes: AwsNode[], edges: AwsEdge[]):
       style: { ...node.style, width: size.width, height: size.height },
     });
   });
+  // ELK orders nodes left-to-right by layer correctly, but its node-placement optimizer (minimizing
+  // edge length/crossings) can still spread same-layer nodes across a wide x-range rather than a
+  // tight column — snapping every node in a layer to one shared, evenly-spaced x turns that into an
+  // actual vertical lane, which is the whole point of a "semantic column" grouping.
+  const placedServices = snapNodesToLayerColumns(rawPlacedServices);
 
   return [...buildSemanticColumnGroups(placedServices), ...labelNodes, ...placedServices];
 }
@@ -72,6 +77,17 @@ let elkInstancePromise: Promise<ELK> | undefined;
 async function getElk(): Promise<ELK> {
   elkInstancePromise ??= import('elkjs/lib/elk.bundled.js').then(({ default: ELK }) => new ELK());
   return elkInstancePromise;
+}
+
+function snapNodesToLayerColumns(nodes: AwsNode[]): AwsNode[] {
+  const layers = Array.from(new Set(nodes.map((node) => semanticLayerForNode(node)))).sort((left, right) => left - right);
+  const columnX = new Map(layers.map((layer, slot) => [layer, slot * (nodeWidth + layerSpacing)]));
+
+  return nodes.map((node) => {
+    const x = columnX.get(semanticLayerForNode(node));
+    if (x === undefined) return node;
+    return { ...node, position: { ...node.position, x } };
+  });
 }
 
 export function buildSemanticColumnGroups(nodes: AwsNode[]): AwsNode[] {

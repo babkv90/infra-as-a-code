@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Building2, Check, Github, LayoutGrid, LogOut, Mail, Moon, PenTool, RefreshCw, ShieldCheck, Sun, UserCircle } from 'lucide-react';
+import { BadgeCheck, Building2, Check, Github, LayoutGrid, LogOut, Mail, Moon, Network, PenTool, RefreshCw, ShieldCheck, Sun, UserCircle } from 'lucide-react';
 import AppLogo from '../components/AppLogo';
 import GithubConsentInfo from '../components/GithubConsentInfo';
 import { PageAlert } from '../components/PageAlert';
@@ -18,6 +18,10 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
   const user = getStoredUser();
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
   const setWhiteboardMode = useDiagramStore((state) => state.setWhiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
+  const setArchitectureViewMode = useDiagramStore((state) => state.setArchitectureViewMode);
+  const hasDiagramNodes = useDiagramStore((state) => state.nodes.length > 0);
+  const autoArrangeDiagram = useDiagramStore((state) => state.autoArrange);
   const accessPlan = getAccessPlan(user);
   const accessTier = serviceAccessTierForUser(user);
   const profileInitials = (user?.name || user?.email || 'U')
@@ -172,15 +176,35 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
             </div>
           </div>
           <div className="settings-canvas-actions">
-            <button className={`dash-secondary-action ${!whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(false)} type="button">
+            <button
+              className={`dash-secondary-action ${!whiteboardMode && !architectureViewMode ? 'is-active' : ''}`}
+              onClick={() => {
+                setWhiteboardMode(false);
+                setArchitectureViewMode(false);
+              }}
+              type="button"
+            >
               <LayoutGrid size={16} />
               Diagram
-              {!whiteboardMode && <Check size={15} />}
+              {!whiteboardMode && !architectureViewMode && <Check size={15} />}
             </button>
             <button className={`dash-secondary-action ${whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(true)} type="button">
               <PenTool size={16} />
               Whiteboard
               {whiteboardMode && <Check size={15} />}
+            </button>
+            <button
+              className={`dash-secondary-action ${architectureViewMode ? 'is-active' : ''}`}
+              onClick={() => {
+                setArchitectureViewMode(true);
+                if (hasDiagramNodes) void autoArrangeDiagram();
+              }}
+              title="Dark, column-laned architecture diagram — Client / Edge-CDN / Network / Load Balancing / Compute / Data / Supporting Services"
+              type="button"
+            >
+              <Network size={16} />
+              Architecture
+              {architectureViewMode && <Check size={15} />}
             </button>
           </div>
         </article>

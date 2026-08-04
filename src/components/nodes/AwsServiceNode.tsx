@@ -24,6 +24,7 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
   const deleteSelection = useDiagramStore((state) => state.deleteSelection);
   const setSelection = useDiagramStore((state) => state.setSelection);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const relationshipBadges = useDiagramStore((state) => {
     const protectedEdges = state.edges.filter((edge) => edge.target === id || edge.source === id);
     const counts = protectedEdges.reduce(
@@ -46,7 +47,7 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
 
   return (
     <div
-      className={`aws-node ${whiteboardMode ? 'aws-node--whiteboard' : ''} ${selected ? 'selected' : ''} ${data.warning ? 'warning' : ''}`}
+      className={`aws-node ${whiteboardMode ? 'aws-node--whiteboard' : ''} ${architectureViewMode ? 'aws-node--architecture' : ''} ${selected ? 'selected' : ''} ${data.warning ? 'warning' : ''}`}
       onContextMenu={(event) => {
         event.preventDefault();
         setSelection(id, undefined);
@@ -54,15 +55,15 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
       }}
     >
       <div
-        className={`aws-node__tile ${whiteboardMode ? `aws-node__tile--whiteboard ${isWhiteboardOutline ? 'aws-node__tile--outline' : 'aws-node__tile--badge'}` : ''}`}
-        style={whiteboardMode && !isWhiteboardOutline ? ({ '--aws-node-badge-color': data.color } as React.CSSProperties) : undefined}
+        className={`aws-node__tile ${whiteboardMode ? `aws-node__tile--whiteboard ${isWhiteboardOutline ? 'aws-node__tile--outline' : 'aws-node__tile--badge'}` : ''} ${architectureViewMode ? 'aws-node__tile--architecture' : ''}`}
+        style={(whiteboardMode && !isWhiteboardOutline) || architectureViewMode ? ({ '--aws-node-badge-color': data.color } as React.CSSProperties) : undefined}
       >
         <div className={`aws-node__status aws-node__status--${data.status}`} />
         <div
           className="aws-node__icon"
-          style={{ color: whiteboardMode ? (isWhiteboardOutline ? '#111111' : '#ffffff') : data.color }}
+          style={{ color: whiteboardMode ? (isWhiteboardOutline ? '#111111' : '#ffffff') : architectureViewMode ? '#ffffff' : data.color }}
         >
-          <Icon size={whiteboardMode ? 24 : 28} strokeWidth={whiteboardMode ? 1.8 : 2.2} />
+          <Icon size={whiteboardMode || architectureViewMode ? 24 : 28} strokeWidth={whiteboardMode || architectureViewMode ? 1.8 : 2.2} />
         </div>
         {data.ports.inputs.length > 0 &&
           connectionSides.map((side) => (
@@ -85,7 +86,7 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
             />
           ))}
       </div>
-      <div className={`aws-node__label ${whiteboardMode ? 'aws-node__label--whiteboard' : ''}`}>
+      <div className={`aws-node__label ${whiteboardMode ? 'aws-node__label--whiteboard' : ''} ${architectureViewMode ? 'aws-node__label--architecture' : ''}`}>
         <span>{data.label}</span>
       </div>
       {(relationshipBadges.security > 0 || relationshipBadges.monitoring > 0 || relationshipBadges.deployment > 0) && (

@@ -3,12 +3,15 @@ import type { AwsEdge, AwsNode, DiagramDetailMode, DiagramViewMode, EdgeConnecti
 export type SemanticEdgeCategory = Exclude<EdgeConnectionType, 'data' | 'event'>;
 
 const containmentLabels = ['in vpc', 'placed in', 'inside subnet', 'instance of', 'vpc subnet', 'associate'];
-const networkServiceIds = new Set(['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association']);
+// Every id in src/data/awsServices.ts should appear in exactly one of these sets (or fall into the
+// deliberate default below) so any service from the palette lands in a sensible column/layer —
+// nothing should end up there just because it was never classified.
+const networkServiceIds = new Set(['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association', 'security-group']);
 const edgeServiceIds = new Set(['route53', 'cloudfront', 'waf']);
 const loadBalancingServiceIds = new Set(['alb', 'apigw', 'lb-listener', 'lb-target-group', 'lb-target-attachment']);
-const computeServiceIds = new Set(['ec2', 'lambda', 'ecs', 'eks']);
-const dataServiceIds = new Set(['rds', 'docdb', 'docdb-instance', 'dynamodb', 'elasticache', 'efs', 'ebs', 's3']);
-const supportingServiceIds = new Set(['iam', 'kms', 'secretsmanager', 'ssm', 'sqs', 'sns', 'eventbridge', 'cloudwatch']);
+const computeServiceIds = new Set(['ec2', 'lambda', 'ecs', 'eks', 'beanstalk']);
+const dataServiceIds = new Set(['rds', 'docdb', 'docdb-instance', 'docdb-subnet-group', 'dynamodb', 'elasticache', 'redshift', 'efs', 'ebs', 's3']);
+const supportingServiceIds = new Set(['iam', 'kms', 'secrets', 'cognito', 'sqs', 'sns', 'eventbridge', 'kinesis', 'cloudwatch', 'xray', 'ecr', 'codebuild', 'codepipeline']);
 
 export function semanticEdgeCategory(edge: AwsEdge, nodes: AwsNode[] = []): SemanticEdgeCategory {
   const explicit = edge.data?.connectionType;
@@ -33,7 +36,12 @@ export function semanticEdgeCategory(edge: AwsEdge, nodes: AwsNode[] = []): Sema
 
 export function shouldRenderEdge(edge: AwsEdge, nodes: AwsNode[], activeView: DiagramViewMode, detailMode: DiagramDetailMode): boolean {
   const category = semanticEdgeCategory(edge, nodes);
-  if (category === 'containment') return false;
+  // Containment edges (e.g. "in VPC", "placed in") are only redundant with the diagram when the
+  // relationship is already implied visually by group-box nesting. Flat templates that never use
+  // group boxes have no other way to show that relationship, so hiding these unconditionally left
+  // foundational nodes (VPC, subnets, route tables...) with no visible edges at all in every view.
+  // Full Topology is the one mode meant to hide nothing, so let it through there.
+  if (category === 'containment' && detailMode !== 'full-topology') return false;
 
   if (detailMode === 'overview' && !['data-flow', 'network-routing'].includes(category)) return false;
   if (detailMode === 'architecture' && ['deployment', 'monitoring'].includes(category)) return false;

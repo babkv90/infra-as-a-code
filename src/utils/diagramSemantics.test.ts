@@ -37,6 +37,16 @@ describe('diagram semantics', () => {
     expect(visible).not.toContain('monitoring-1');
   });
 
+  it('shows containment edges in full topology, since flat diagrams have no other way to convey them', () => {
+    const visible = edges.filter((candidate) => shouldRenderEdge(candidate, nodes, 'dependencies', 'full-topology')).map((candidate) => candidate.id);
+    expect(visible).toContain('network-1');
+  });
+
+  it('still hides containment edges outside full topology, e.g. the default application flow', () => {
+    const visible = edges.filter((candidate) => shouldRenderEdge(candidate, nodes, 'application-flow', 'full-topology')).map((candidate) => candidate.id);
+    expect(visible).not.toContain('network-1');
+  });
+
   it('isolates upstream and downstream dependency paths', () => {
     const isolated = buildIsolatedPath('app', nodes, edges);
     expect(Array.from(isolated.nodeIds).sort()).toEqual(['app', 'cdn', 'db', 'logs', 'sg', 'subnet'].sort());

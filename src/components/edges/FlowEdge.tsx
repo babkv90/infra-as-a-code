@@ -27,17 +27,39 @@ const whiteboardEdgeColors = {
   deployment: '#111111',
 };
 
+// Matches the Architecture view's own legend: solid light line for the main application flow,
+// dashed/dotted per category otherwise — always shown at full color (not just on selection), since
+// this view's whole point is reading the relationship types across the diagram at a glance.
+const architectureEdgeColors = {
+  data: '#cbd5e1',
+  event: '#f97316',
+  'data-flow': '#cbd5e1',
+  'network-routing': '#22d3ee',
+  security: '#f87171',
+  containment: '#475569',
+  dependency: '#a78bfa',
+  monitoring: '#60a5fa',
+  deployment: '#34d399',
+};
+
+function architectureDasharray(category: keyof typeof architectureEdgeColors): string | undefined {
+  if (category === 'network-routing') return '10 6';
+  if (category === 'security') return '2 5';
+  if (category === 'dependency') return '8 5';
+  if (category === 'monitoring') return '2 6';
+  return undefined;
+}
+
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number };
-
-const MIN_EDGE_RUN = 70;
 
 function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, selected, style }: EdgeProps<AwsEdgeData>) {
   const [isHovered, setIsHovered] = useState(false);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const reactFlow = useReactFlow();
   const obstacles = getObstacleRects(reactFlow.getNodes(), source, target);
-  const [edgePath, rawLabelX, rawLabelY] = getBundledOrthogonalPath({
+  const [edgePath, rawLabelX, rawLabelY] = getBundledSmoothPath({
     sourceX,
     sourceY,
     targetX,
@@ -48,14 +70,22 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
     bundleSize: data?.bundleSize,
   });
   const connectionType = data?.semanticCategory ?? data?.connectionType ?? 'data-flow';
-  const typeColor = (whiteboardMode ? whiteboardEdgeColors : edgeColors)[connectionType];
-  const color = whiteboardMode ? typeColor : selected || data?.highlighted ? typeColor : '#8b9097';
+  const typeColor = architectureViewMode ? architectureEdgeColors[connectionType] : (whiteboardMode ? whiteboardEdgeColors : edgeColors)[connectionType];
+  const color = whiteboardMode || architectureViewMode ? typeColor : selected || data?.highlighted ? typeColor : '#8b9097';
   const isGenericReference = data?.label === 'reference' && data?.protocol === 'Terraform';
   const label = data?.hiddenCount ? `${data.label} +${data.hiddenCount}` : data?.label;
   const showLabel = Boolean(label && !isGenericReference && (selected || isHovered || data?.highlighted));
-  const showFlowDots = !whiteboardMode && (selected || data?.highlighted) && (connectionType === 'data-flow' || connectionType === 'event');
+  const showFlowDots = !whiteboardMode && !architectureViewMode && (selected || data?.highlighted) && (connectionType === 'data-flow' || connectionType === 'event');
   const labelPosition = avoidLabelOverlap({ x: rawLabelX, y: rawLabelY }, obstacles, labelOffsetForEdge(id));
-  const strokeDasharray = whiteboardMode ? undefined : connectionType === 'security' ? '7 6' : connectionType === 'monitoring' || connectionType === 'dependency' || connectionType === 'deployment' ? '4 6' : undefined;
+  const strokeDasharray = architectureViewMode
+    ? architectureDasharray(connectionType)
+    : whiteboardMode
+      ? undefined
+      : connectionType === 'security'
+        ? '7 6'
+        : connectionType === 'monitoring' || connectionType === 'dependency' || connectionType === 'deployment'
+          ? '4 6'
+          : undefined;
 
   return (
     <>
@@ -67,7 +97,7 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
         style={{
           ...style,
           stroke: color,
-          strokeWidth: whiteboardMode ? 1.4 : selected || data?.highlighted ? 2.6 : 1.8,
+          strokeWidth: whiteboardMode ? 1.4 : architectureViewMode ? 2 : selected || data?.highlighted ? 2.6 : 1.8,
           strokeDasharray,
           filter: !whiteboardMode && selected ? `drop-shadow(0 0 7px ${typeColor}66)` : undefined,
         }}
@@ -77,7 +107,7 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
       {showLabel && (
         <EdgeLabelRenderer>
           <div
-            className={`edge-label edge-label--${connectionType} ${selected ? 'edge-label--selected' : ''} ${whiteboardMode ? 'edge-label--whiteboard' : ''}`}
+            className={`edge-label edge-label--${connectionType} ${selected ? 'edge-label--selected' : ''} ${whiteboardMode ? 'edge-label--whiteboard' : ''} ${architectureViewMode ? 'edge-label--architecture' : ''}`}
             style={{ transform: `translate(-50%, -50%) translate(${labelPosition.x}px, ${labelPosition.y}px)` }}
           >
             {label}
@@ -113,7 +143,11 @@ function labelOffsetForEdge(id: string): { x: number; y: number } {
   return { x: 0, y: offsets[hash % offsets.length] };
 }
 
-function getBundledOrthogonalPath({
+// Below this gap, a bezier control offset would overshoot the actual distance between the two
+// nodes and bulge into a visible loop — close nodes read far better as a direct line.
+const STRAIGHT_LINE_DISTANCE = 200;
+
+function getBundledSmoothPath({
   sourceX,
   sourceY,
   targetX,
@@ -123,29 +157,36 @@ function getBundledOrthogonalPath({
   bundleIndex = 0,
   bundleSize = 1,
 }: Pick<EdgeProps<AwsEdgeData>, 'sourceX' | 'sourceY' | 'targetX' | 'targetY' | 'sourcePosition' | 'targetPosition'> & { bundleIndex?: number; bundleSize?: number }): [string, number, number] {
+  const straightDistance = Math.hypot(targetX - sourceX, targetY - sourceY);
+  const bundleOffset = (bundleIndex - (bundleSize - 1) / 2) * 14;
+  const length = straightDistance || 1;
+  const perpX = (-(targetY - sourceY) / length) * bundleOffset;
+  const perpY = ((targetX - sourceX) / length) * bundleOffset;
+  const midX = (sourceX + targetX) / 2;
+  const midY = (sourceY + targetY) / 2;
+
+  if (straightDistance < STRAIGHT_LINE_DISTANCE) {
+    // No bundling needed: a plain straight line. Bundled (multiple edges sharing an endpoint):
+    // nudge the midpoint sideways per bundle slot so parallel edges fan out instead of overlapping.
+    if (bundleOffset === 0) {
+      return [`M ${sourceX},${sourceY} L ${targetX},${targetY}`, midX, midY];
+    }
+    return [`M ${sourceX},${sourceY} Q ${midX + perpX},${midY + perpY} ${targetX},${targetY}`, midX + perpX, midY + perpY];
+  }
+
+  // Longer edges: a single smooth cubic bezier that leaves/arrives along each node's facing side.
+  // Never a boxy right-angle detour — a stepped lead/junction path reads as broken/disconnected the
+  // moment the two nodes aren't perfectly aligned, even when every point is mathematically correct.
   const sourceVector = sideVector(String(sourcePosition));
   const targetVector = sideVector(String(targetPosition));
-  const lead = Math.min(Math.max(Math.abs(targetX - sourceX) * 0.28, MIN_EDGE_RUN), 180);
-  const bundleOffset = (bundleIndex - (bundleSize - 1) / 2) * 14;
-  const start = { x: sourceX, y: sourceY };
-  const end = { x: targetX, y: targetY };
-  const startLead = { x: sourceX + sourceVector.x * lead, y: sourceY + sourceVector.y * lead };
-  const endLead = { x: targetX + targetVector.x * lead, y: targetY + targetVector.y * lead };
-  const horizontal = Math.abs(sourceVector.x) > 0 || Math.abs(targetVector.x) > 0;
-  const junction = horizontal
-    ? { x: (startLead.x + endLead.x) / 2, y: (startLead.y + endLead.y) / 2 + bundleOffset }
-    : { x: (startLead.x + endLead.x) / 2 + bundleOffset, y: (startLead.y + endLead.y) / 2 };
-  const points = removeDuplicatePoints([
-    start,
-    startLead,
-    horizontal ? { x: junction.x, y: startLead.y } : { x: startLead.x, y: junction.y },
-    junction,
-    horizontal ? { x: junction.x, y: endLead.y } : { x: endLead.x, y: junction.y },
-    endLead,
-    end,
-  ]);
-  const label = pointAtPolylineRatio(points, 0.5);
-  return [smoothPolylinePath(points), label.x, label.y];
+  const controlDistance = Math.min(Math.max(straightDistance * 0.38, 40), 220);
+  const c1x = sourceX + sourceVector.x * controlDistance + perpX;
+  const c1y = sourceY + sourceVector.y * controlDistance + perpY;
+  const c2x = targetX + targetVector.x * controlDistance + perpX;
+  const c2y = targetY + targetVector.y * controlDistance + perpY;
+  const label = cubicPoint(0.5, { x: sourceX, y: sourceY }, { x: c1x, y: c1y }, { x: c2x, y: c2y }, { x: targetX, y: targetY });
+
+  return [`M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`, label.x, label.y];
 }
 
 function avoidLabelOverlap(base: Point, obstacles: Rect[], hashOffset: Point): Point {
@@ -164,42 +205,6 @@ function avoidLabelOverlap(base: Point, obstacles: Rect[], hashOffset: Point): P
   return { x: base.x + offset.x, y: base.y + offset.y };
 }
 
-function smoothPolylinePath(points: Point[]): string {
-  if (points.length < 2) return '';
-  const radius = 18;
-  let path = `M ${points[0].x},${points[0].y}`;
-
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const previous = points[index - 1];
-    const current = points[index];
-    const next = points[index + 1];
-    const before = pointToward(current, previous, Math.min(radius, distance(current, previous) / 2));
-    const after = pointToward(current, next, Math.min(radius, distance(current, next) / 2));
-    path += ` L ${before.x},${before.y} Q ${current.x},${current.y} ${after.x},${after.y}`;
-  }
-
-  const last = points[points.length - 1];
-  path += ` L ${last.x},${last.y}`;
-  return path;
-}
-
-function pointAtPolylineRatio(points: Point[], ratio: number): Point {
-  const targetLength = pathLength(points) * ratio;
-  let travelled = 0;
-  for (let index = 1; index < points.length; index += 1) {
-    const segmentLength = distance(points[index - 1], points[index]);
-    if (travelled + segmentLength >= targetLength) {
-      const segmentRatio = segmentLength ? (targetLength - travelled) / segmentLength : 0;
-      return {
-        x: points[index - 1].x + (points[index].x - points[index - 1].x) * segmentRatio,
-        y: points[index - 1].y + (points[index].y - points[index - 1].y) * segmentRatio,
-      };
-    }
-    travelled += segmentLength;
-  }
-  return points[Math.floor(points.length / 2)] ?? { x: 0, y: 0 };
-}
-
 function labelRect(center: Point, size: { width: number; height: number }): Rect {
   return { x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height };
 }
@@ -212,30 +217,20 @@ function expandRect(rect: Rect, padding: number): Rect {
   return { x: rect.x - padding, y: rect.y - padding, width: rect.width + padding * 2, height: rect.height + padding * 2 };
 }
 
-function removeDuplicatePoints(points: Point[]): Point[] {
-  return points.filter((point, index) => index === 0 || distance(point, points[index - 1]) > 1);
-}
-
-function pathLength(points: Point[]): number {
-  return points.slice(1).reduce((length, point, index) => length + distance(points[index], point), 0);
-}
-
-function pointToward(from: Point, to: Point, amount: number): Point {
-  const total = distance(from, to);
-  if (!total) return from;
-  return { x: from.x + ((to.x - from.x) / total) * amount, y: from.y + ((to.y - from.y) / total) * amount };
-}
-
-function distance(left: Point, right: Point): number {
-  return Math.hypot(left.x - right.x, left.y - right.y);
-}
-
 function sideVector(position: string): { x: number; y: number } {
   if (position === 'left') return { x: -1, y: 0 };
   if (position === 'right') return { x: 1, y: 0 };
   if (position === 'top') return { x: 0, y: -1 };
   if (position === 'bottom') return { x: 0, y: 1 };
   return { x: 1, y: 0 };
+}
+
+function cubicPoint(t: number, start: Point, controlA: Point, controlB: Point, end: Point): Point {
+  const inverse = 1 - t;
+  return {
+    x: inverse ** 3 * start.x + 3 * inverse ** 2 * t * controlA.x + 3 * inverse * t ** 2 * controlB.x + t ** 3 * end.x,
+    y: inverse ** 3 * start.y + 3 * inverse ** 2 * t * controlA.y + 3 * inverse * t ** 2 * controlB.y + t ** 3 * end.y,
+  };
 }
 
 export default FlowEdge;

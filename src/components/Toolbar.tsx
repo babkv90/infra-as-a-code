@@ -118,6 +118,7 @@ function Toolbar({
   ];
 
   const views: Array<{ view: DiagramViewMode; label: string }> = [
+    { view: 'dependencies', label: 'All Connections' },
     { view: 'application-flow', label: 'Application Flow' },
     { view: 'network', label: 'Network' },
     { view: 'security', label: 'Security' },

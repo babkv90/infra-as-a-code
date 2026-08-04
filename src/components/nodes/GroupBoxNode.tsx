@@ -8,6 +8,17 @@ import type { AwsNodeData, GroupKind } from '../../types';
 const badgeIconFallback = Icons.Box;
 const minGroupSize = { minWidth: 180, minHeight: 140 };
 
+// Accent color per semantic layer (Client / Edge-CDN / Network / Load Balancing / Compute / Data /
+// Supporting Services), used only for the Architecture view's lane headers — see
+// utils/diagramSemantics.ts's semanticLayerForNode/semanticLayerLabel for what assigns a node to
+// one of these seven layers in the first place.
+const architectureLaneColors = ['#94a3b8', '#a855f7', '#38bdf8', '#22d3ee', '#f97316', '#34d399', '#ec4899'];
+
+function architectureLaneColor(label: string): string {
+  const index = ['Client', 'Edge/CDN', 'Network', 'Load Balancing', 'Compute', 'Data', 'Supporting Services'].indexOf(label);
+  return architectureLaneColors[index] ?? architectureLaneColors[architectureLaneColors.length - 1];
+}
+
 // The group body itself is pointer-events:none (see .group-box CSS) so drags/clicks over its
 // interior fall through to whatever's nested inside it or the canvas pane. That's deliberate —
 // otherwise a boundary would block interaction with everything it contains — but it means the only
@@ -31,11 +42,60 @@ function GroupBoxNode({ id, data, selected }: NodeProps<AwsNodeData>) {
   const [editing, setEditing] = useState(false);
   const updateNodeData = useDiagramStore((state) => state.updateNodeData);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const checkpoint = useDiagramStore((state) => state.checkpoint);
   const kind = (data.groupKind ?? 'VPC') as GroupKind;
   const style = groupStyles[kind];
   const badge = whiteboardGroupBadges[kind];
   const BadgeIcon = ((Icons as unknown as Record<string, typeof badgeIconFallback>)[badge.icon] ?? badgeIconFallback);
+  const isSemanticLane = data.config?.generated_group === 'true';
+
+  if (architectureViewMode && isSemanticLane) {
+    const laneColor = architectureLaneColor(data.label);
+    return (
+      <div className="group-box group-box--architecture-lane" style={{ borderColor: `${laneColor}55` }}>
+        <div className="group-box__architecture-lane-header" style={{ borderColor: laneColor, color: laneColor }}>
+          {data.label}
+        </div>
+      </div>
+    );
+  }
+
+  if (architectureViewMode) {
+    return (
+      <div
+        className={`group-box group-box--architecture ${selected ? 'selected' : ''}`}
+        style={{ borderColor: style.color }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        {!selected && <BorderSelectFrame />}
+        <NodeResizer
+          isVisible={selected}
+          color={style.color}
+          onResizeStart={checkpoint}
+          handleClassName="group-box__resize-handle"
+          lineClassName="group-box__resize-line"
+          {...minGroupSize}
+        />
+        <div className="group-box__header group-box__header--architecture" style={{ borderColor: style.color, color: style.color }}>
+          {editing ? (
+            <input
+              className="group-title-input nodrag"
+              value={data.label}
+              autoFocus
+              onChange={(event) => updateNodeData(id, { label: event.target.value })}
+              onBlur={() => setEditing(false)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') setEditing(false);
+              }}
+            />
+          ) : (
+            <span>{data.label}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (whiteboardMode) {
     return (
