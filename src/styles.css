@@ -972,6 +972,14 @@ textarea {
   min-height: 0;
 }
 
+.canvas-shell .react-flow__node {
+  transition: filter 150ms ease-out;
+}
+
+.canvas-shell .react-flow__node:hover {
+  filter: drop-shadow(0 4px 10px rgba(15, 23, 42, 0.16));
+}
+
 .canvas-shell--moving .react-flow__node {
   transition: none !important;
   filter: none !important;
@@ -1396,17 +1404,33 @@ textarea {
 
 .flow-dots {
   fill: none;
-  stroke-width: 3;
+  stroke-width: 2.5;
   stroke-linecap: round;
-  stroke-dasharray: 1 16;
-  animation: dash-flow 1s linear infinite;
-  opacity: 0.18;
+  stroke-dasharray: 5 20;
+  animation: dash-flow 1.3s linear infinite;
+  opacity: 0.55;
   pointer-events: none;
+}
+
+.flow-dots--event {
+  stroke-dasharray: 4 14;
+  animation-duration: 0.85s;
+  opacity: 0.7;
 }
 
 @keyframes dash-flow {
   to {
-    stroke-dashoffset: -19;
+    stroke-dashoffset: -25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-dots {
+    animation: none;
+  }
+
+  .canvas-shell .react-flow__node {
+    transition: none;
   }
 }
 
