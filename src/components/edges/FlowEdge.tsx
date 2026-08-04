@@ -76,7 +76,7 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
 function getObstacleRects(nodes: Node[], sourceId?: string, targetId?: string): Rect[] {
   return nodes
     .filter((node) => node.id !== sourceId && node.id !== targetId)
-    .filter((node) => node.type !== 'groupBox' && node.type !== 'architectureLane')
+    .filter((node) => node.type !== 'groupBox')
     .map((node) => {
       const width = Number(node.width ?? node.style?.width ?? (node.type === 'labelNode' ? 180 : 150));
       const height = Number(node.height ?? node.style?.height ?? (node.type === 'labelNode' ? 80 : 90));
