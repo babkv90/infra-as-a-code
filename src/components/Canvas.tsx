@@ -21,7 +21,8 @@ import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdge, AwsNode } from '../types';
 import { getStoredUser } from '../auth/authClient';
 import { isServiceAllowedForUser } from '../utils/accessControl';
-import { withOptimalEdgeHandles } from '../utils/connectionRouting';
+import { buildHandleId, readHandlePort } from '../utils/connectionRouting';
+import { buildVisibleGraph, semanticEdgeCategory } from '../utils/diagramSemantics';
 
 const nodeTypes: NodeTypes = {
   awsService: AwsServiceNode,
@@ -60,6 +61,8 @@ function Canvas() {
     edges,
     mode,
     activeView,
+    detailMode,
+    isolatedNodeId,
     whiteboardMode,
     focusNodeIds,
     fitViewVersion,
@@ -170,25 +173,9 @@ function Canvas() {
 
   const graphEdges = useMemo(() => [...edges, ...bindingEdges], [bindingEdges, edges]);
 
-  const visibleEdges = useMemo(() => {
-    if (activeView === 'dependencies') return graphEdges;
-    if (activeView === 'security') {
-      return graphEdges.filter((edge) => edge.data?.connectionType === 'security' || edge.data?.protocol === 'IAM' || edge.data?.label === 'IAM');
-    }
-    return graphEdges.filter((edge) => edge.data?.label !== 'reference' && edge.data?.protocol !== 'Terraform');
-  }, [activeView, graphEdges]);
-
-  const visibleNodes = useMemo(() => {
-    if (activeView !== 'security') return nodes;
-
-    const securityNodeIds = new Set<string>();
-    visibleEdges.forEach((edge) => {
-      securityNodeIds.add(edge.source);
-      securityNodeIds.add(edge.target);
-    });
-
-    return nodes.filter((node) => node.type === 'groupBox' || node.data.serviceId === 'iam' || node.data.serviceId === 'security-group' || node.data.serviceId === 'kms' || securityNodeIds.has(node.id));
-  }, [activeView, nodes, visibleEdges]);
+  const visibleGraph = useMemo(() => buildVisibleGraph(nodes, graphEdges, activeView, detailMode, isolatedNodeId), [activeView, detailMode, graphEdges, isolatedNodeId, nodes]);
+  const visibleEdges = visibleGraph.edges;
+  const visibleNodes = visibleGraph.nodes;
 
   const routingNodeById = useMemo(() => {
     const byId = new Map(visibleNodes.map((node) => [node.id, node]));
@@ -211,7 +198,7 @@ function Canvas() {
     );
   }, [visibleNodes]);
 
-  const routedVisibleEdges = useMemo(() => visibleEdges.map((edge) => withOptimalEdgeHandles(edge, routingNodeById)), [routingNodeById, visibleEdges]);
+  const routedVisibleEdges = useMemo(() => visibleEdges.map((edge) => withSemanticEdgeHandles(edge, routingNodeById, visibleEdges)), [routingNodeById, visibleEdges]);
 
   useEffect(() => {
     if (!visibleNodes.length || !nodesInitialized) return;
@@ -242,6 +229,7 @@ function Canvas() {
       return {
         ...edge,
         className: `${edge.className ?? ''} ${inFocus ? 'focus-hit' : 'focus-dim'}`.trim(),
+        data: { ...edge.data, highlighted: inFocus },
         style: { ...edge.style, opacity: inFocus ? 1 : 0.14 },
       };
     });
@@ -625,12 +613,58 @@ function Canvas() {
         <Controls position="bottom-left" showInteractive={false} />
         {!isNodeMoving && <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />}
         <Panel position="top-center" className="canvas-mode-pill">
-          {activeView === 'topology' ? 'Topology view' : activeView === 'dependencies' ? 'Dependency view' : 'Security view'} -{' '}
+          {viewLabel(activeView)} / {detailModeLabel(detailMode)} -{' '}
           {mode === 'connect' ? 'Connect mode' : mode === 'group' ? 'Click canvas to add boundary' : mode === 'label' ? 'Click canvas to add label' : 'Select mode'}
         </Panel>
       </ReactFlow>
     </main>
   );
+}
+
+function withSemanticEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>, visibleEdges: AwsEdge[]): AwsEdge {
+  const sourceNode = nodesById.get(edge.source);
+  const targetNode = nodesById.get(edge.target);
+  if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return edge;
+
+  const category = semanticEdgeCategory(edge, Array.from(nodesById.values()));
+  const sourcePort = sourceNode.data.ports.outputs[0];
+  const targetPort = targetNode.data.ports.inputs[0];
+  const side = category === 'security' || category === 'monitoring' ? 'top' : category === 'deployment' || category === 'dependency' ? 'bottom' : undefined;
+  const sourceSide = side ?? 'right';
+  const targetSide = side ?? 'left';
+  const targetPeers = visibleEdges.filter((candidate) => candidate.target === edge.target && semanticEdgeCategory(candidate, Array.from(nodesById.values())) === category);
+  const bundleIndex = Math.max(0, targetPeers.findIndex((candidate) => candidate.id === edge.id));
+
+  return {
+    ...edge,
+    sourceHandle: sourcePort ? buildHandleId('out', sourceSide, readHandlePort(edge.sourceHandle, sourcePort)) : undefined,
+    targetHandle: targetPort ? buildHandleId('in', targetSide, readHandlePort(edge.targetHandle, targetPort)) : undefined,
+    data: {
+      label: edge.data?.label ?? '',
+      connectionType: edge.data?.connectionType ?? category,
+      protocol: edge.data?.protocol ?? '',
+      port: edge.data?.port ?? '',
+      ...edge.data,
+      semanticCategory: category,
+      bundleIndex,
+      bundleSize: targetPeers.length,
+    },
+  };
+}
+
+function viewLabel(view: string): string {
+  if (view === 'application-flow' || view === 'topology') return 'Application Flow';
+  if (view === 'network') return 'Network';
+  if (view === 'security') return 'Security';
+  if (view === 'monitoring') return 'Monitoring';
+  if (view === 'deployment') return 'Deployment';
+  return 'Dependencies';
+}
+
+function detailModeLabel(mode: string): string {
+  if (mode === 'overview') return 'Overview';
+  if (mode === 'architecture') return 'Architecture';
+  return 'Full Topology';
 }
 
 export default Canvas;

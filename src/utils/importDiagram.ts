@@ -92,7 +92,7 @@ export function normalizeTerraformFiles(files: TerraformSourceFile[]): DiagramSn
 
   applyInferredBindings(nodes, resourceAddressToNodeId, resourceBodies, secretMetadata);
   const edges = inferHclEdges(resourceAddressToNodeId, resourceBodies, nodes);
-  return { nodes: applyEnterpriseLayout(nodes, edges), edges };
+  return { nodes: nodes.map(withoutSavedPosition), edges };
 }
 
 type TerraformFileKind = 'tf' | 'hcl' | 'tfvars' | 'env' | 'json' | 'yaml' | 'other';
@@ -387,7 +387,7 @@ function fromTerraformJson(input: UnknownRecord): DiagramSnapshot {
   }
 
   const edges = inferImportedEdges(nodes);
-  return { nodes: applyEnterpriseLayout(nodes, edges), edges };
+  return { nodes: nodes.map(withoutSavedPosition), edges };
 }
 
 function fromAwsResourceJson(input: unknown): AwsNode[] {
@@ -408,7 +408,7 @@ function fromAwsResourceJson(input: unknown): AwsNode[] {
 
   return records.map(({ serviceId, record }, index) => {
     const config = configFromAwsRecord(serviceId, record);
-    return createServiceNode({
+    return withoutSavedPosition(createServiceNode({
       serviceId,
       label: labelFromAwsRecord(serviceId, record),
       config,
@@ -416,8 +416,19 @@ function fromAwsResourceJson(input: unknown): AwsNode[] {
       region: stringValue(record.region ?? record.Region ?? config.region),
       status: statusFromAwsRecord(record),
       index,
-    });
+    }));
   });
+}
+
+function withoutSavedPosition(node: AwsNode): AwsNode {
+  return {
+    ...node,
+    position: { x: 0, y: 0 },
+    data: {
+      ...node.data,
+      visual: undefined,
+    },
+  };
 }
 
 function extractAwsCliRecords(input: UnknownRecord): Array<{ serviceId: string; record: UnknownRecord }> {
@@ -577,6 +588,7 @@ function normalizeSourceKind(value: string): NodeBindingSourceKind {
 
 function normalizeExistingEdge(edge: UnknownRecord, index: number): AwsEdge {
   const data = isRecord(edge.data) ? edge.data : {};
+  const connectionType = normalizeConnectionType(stringValue(data.connectionType));
 
   return {
     ...edge,
@@ -586,15 +598,20 @@ function normalizeExistingEdge(edge: UnknownRecord, index: number): AwsEdge {
     target: stringValue(edge.target),
     animated: Boolean(edge.animated),
     markerEnd: edge.markerEnd ?? { type: MarkerType.ArrowClosed },
-      data: {
-        label: stringValue(data.label) || 'data',
-        connectionType: ['event', 'security', 'monitoring'].includes(stringValue(data.connectionType)) ? (stringValue(data.connectionType) as EdgeConnectionType) : 'data',
-        protocol: stringValue(data.protocol) || 'HTTPS',
-        port: stringValue(data.port) || '443',
-        hiddenCount: numberValue(data.hiddenCount, 0) || undefined,
-        references: Array.isArray(data.references) ? data.references.map(String) : undefined,
-      },
+    data: {
+      label: stringValue(data.label) || 'data',
+      connectionType,
+      protocol: stringValue(data.protocol) || 'HTTPS',
+      port: stringValue(data.port) || '443',
+      hiddenCount: numberValue(data.hiddenCount, 0) || undefined,
+      references: Array.isArray(data.references) ? data.references.map(String) : undefined,
+    },
   } as AwsEdge;
+}
+
+function normalizeConnectionType(value: string): EdgeConnectionType {
+  if (['data-flow', 'network-routing', 'security', 'containment', 'dependency', 'monitoring', 'deployment', 'data', 'event'].includes(value)) return value as EdgeConnectionType;
+  return 'data-flow';
 }
 
 function normalizeTerraformConfig(config: UnknownRecord, references: Map<string, string | number>): Record<string, string | number> {
@@ -1241,19 +1258,19 @@ function edgeDataForTerraformReference(source?: AwsNode, target?: AwsNode): AwsE
   const targetId = target?.data.serviceId;
 
   if (source?.data.serviceId === 'iam') return { label: 'IAM', connectionType: 'security', protocol: 'IAM', port: '' };
-  if (source?.data.serviceId === 'eventbridge' || target?.data.serviceId === 'lambda') return { label: 'event', connectionType: 'event', protocol: 'async', port: '' };
+  if (source?.data.serviceId === 'eventbridge' || target?.data.serviceId === 'lambda') return { label: 'event', connectionType: 'data-flow', protocol: 'async', port: '' };
   if (sourceId === 'security-group' || targetId === 'security-group') return { label: 'security', connectionType: 'security', protocol: 'SG', port: 'rules' };
-  if (sourceId === 'vpc' && targetId === 'subnet') return { label: 'VPC subnet', connectionType: 'data', protocol: 'VPC', port: '' };
+  if (sourceId === 'vpc' && targetId === 'subnet') return { label: 'VPC subnet', connectionType: 'containment', protocol: 'VPC', port: '' };
   if (sourceId === 'vpc' || targetId === 'vpc' || sourceId === 'subnet' || targetId === 'subnet' || sourceId === 'igw' || targetId === 'igw') {
-    return { label: 'network', connectionType: 'data', protocol: 'VPC', port: '' };
+    return { label: 'network', connectionType: 'network-routing', protocol: 'VPC', port: '' };
   }
   if (sourceId === 'alb' || targetId === 'alb' || sourceId === 'lb-listener' || targetId === 'lb-listener' || sourceId === 'lb-target-group' || targetId === 'lb-target-group') {
-    return { label: 'traffic', connectionType: 'data', protocol: 'HTTP', port: '80' };
+    return { label: 'traffic', connectionType: 'data-flow', protocol: 'HTTP', port: '80' };
   }
   if (sourceId === 'docdb' || targetId === 'docdb' || sourceId === 'docdb-instance' || targetId === 'docdb-instance') {
-    return { label: 'database', connectionType: 'data', protocol: 'MongoDB', port: '27017' };
+    return { label: 'database', connectionType: 'data-flow', protocol: 'MongoDB', port: '27017' };
   }
-  return { label: 'reference', connectionType: 'data', protocol: 'Terraform', port: '' };
+  return { label: 'reference', connectionType: 'dependency', protocol: 'Terraform', port: '' };
 }
 
 function buildTerraformReferenceMap(input: UnknownRecord): Map<string, string | number> {

@@ -6,6 +6,7 @@ import { whiteboardOutlineServiceIds } from '../../data/awsServices';
 import { useDiagramStore } from '../../store/diagramStore';
 import type { AwsNodeData } from '../../types';
 import { buildHandleId, type ConnectionSide } from '../../utils/connectionRouting';
+import { semanticEdgeCategory } from '../../utils/diagramSemantics';
 
 const iconFallback = Icons.Cloud;
 const connectionSides: ConnectionSide[] = ['left', 'right', 'top', 'bottom'];
@@ -23,6 +24,18 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
   const deleteSelection = useDiagramStore((state) => state.deleteSelection);
   const setSelection = useDiagramStore((state) => state.setSelection);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const relationshipBadges = useDiagramStore((state) => {
+    const protectedEdges = state.edges.filter((edge) => edge.target === id || edge.source === id);
+    const counts = protectedEdges.reduce(
+      (accumulator, edge) => {
+        const category = semanticEdgeCategory(edge, state.nodes);
+        if (category === 'security' || category === 'monitoring' || category === 'deployment') accumulator[category] += 1;
+        return accumulator;
+      },
+      { security: 0, monitoring: 0, deployment: 0 },
+    );
+    return counts;
+  });
 
   const Icon = ((Icons as unknown as Record<string, typeof iconFallback>)[data.icon] ?? iconFallback);
   const isWhiteboardOutline = whiteboardMode && (data.serviceId ? whiteboardOutlineServiceIds.has(data.serviceId) : false);
@@ -75,6 +88,13 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
       <div className={`aws-node__label ${whiteboardMode ? 'aws-node__label--whiteboard' : ''}`}>
         <span>{data.label}</span>
       </div>
+      {(relationshipBadges.security > 0 || relationshipBadges.monitoring > 0 || relationshipBadges.deployment > 0) && (
+        <div className="aws-node__relationship-badges" aria-label="Secondary relationships">
+          {relationshipBadges.security > 0 && <span className="aws-node__relationship-badge aws-node__relationship-badge--security">sec {relationshipBadges.security}</span>}
+          {relationshipBadges.monitoring > 0 && <span className="aws-node__relationship-badge aws-node__relationship-badge--monitoring">mon {relationshipBadges.monitoring}</span>}
+          {relationshipBadges.deployment > 0 && <span className="aws-node__relationship-badge aws-node__relationship-badge--deployment">dep {relationshipBadges.deployment}</span>}
+        </div>
+      )}
 
       {data.warning && <div className="node-warning">{data.warning}</div>}
 

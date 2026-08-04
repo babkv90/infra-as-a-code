@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useDiagramStore } from '../store/diagramStore';
+import { buildVisibleGraph } from '../utils/diagramSemantics';
 import { validateDiagram } from '../utils/validate';
 
 function StatusBar() {
   const nodes = useDiagramStore((state) => state.nodes);
   const edges = useDiagramStore((state) => state.edges);
   const activeView = useDiagramStore((state) => state.activeView);
+  const detailMode = useDiagramStore((state) => state.detailMode);
   const activeRegion = useDiagramStore((state) => state.activeRegion);
   const lastSavedAt = useDiagramStore((state) => state.lastSavedAt);
   const [isIssuesOpen, setIsIssuesOpen] = useState(false);
@@ -19,10 +21,8 @@ function StatusBar() {
   const health = errors.length ? 'red' : warnings.length ? 'yellow' : 'green';
 
   const visibleEdgeCount = useMemo(() => {
-    if (activeView === 'dependencies') return edges.length;
-    if (activeView === 'security') return edges.filter((edge) => edge.data?.connectionType === 'security' || edge.data?.protocol === 'IAM' || edge.data?.label === 'IAM').length;
-    return edges.filter((edge) => edge.data?.label !== 'reference' && edge.data?.protocol !== 'Terraform').length;
-  }, [activeView, edges]);
+    return buildVisibleGraph(nodes, edges, activeView, detailMode).edges.length;
+  }, [activeView, detailMode, edges, nodes]);
 
   const hiddenEdgeCount = Math.max(0, edges.length - visibleEdgeCount);
 

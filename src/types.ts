@@ -41,9 +41,20 @@ export type GroupKind = 'Terraform stack' | 'Region' | 'Module' | 'VPC' | 'Avail
 
 export type ToolMode = 'select' | 'connect' | 'group' | 'label';
 
-export type DiagramViewMode = 'topology' | 'dependencies' | 'security';
+export type DiagramViewMode = 'application-flow' | 'network' | 'security' | 'monitoring' | 'deployment' | 'topology' | 'dependencies';
 
-export type EdgeConnectionType = 'data' | 'event' | 'security' | 'monitoring';
+export type DiagramDetailMode = 'overview' | 'architecture' | 'full-topology';
+
+export type EdgeConnectionType =
+  | 'data-flow'
+  | 'network-routing'
+  | 'security'
+  | 'containment'
+  | 'dependency'
+  | 'monitoring'
+  | 'deployment'
+  | 'data'
+  | 'event';
 
 export type InfrastructureRelationshipType =
   | 'contains'
@@ -122,6 +133,10 @@ export type AwsEdgeData = {
   port: string;
   hiddenCount?: number;
   references?: string[];
+  semanticCategory?: Exclude<EdgeConnectionType, 'data' | 'event'>;
+  highlighted?: boolean;
+  bundleIndex?: number;
+  bundleSize?: number;
 };
 
 export type AwsNode = Node<AwsNodeData>;

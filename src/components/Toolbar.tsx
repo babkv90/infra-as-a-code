@@ -39,7 +39,7 @@ import { normalizeImportedDiagram } from '../utils/importDiagram';
 import { sendTerraformPayload } from '../utils/terraformPayloadApi';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import { validateDiagram } from '../utils/validate';
-import type { AwsNode, DiagramViewMode, GroupKind, ToolMode } from '../types';
+import type { AwsNode, DiagramDetailMode, DiagramViewMode, GroupKind, ToolMode } from '../types';
 import type { ThemeMode } from '../theme';
 
 function Toolbar({
@@ -76,6 +76,7 @@ function Toolbar({
     selectedEdgeId,
     mode,
     activeView,
+    detailMode,
     activeRegion,
     isDark,
     isValidated,
@@ -83,7 +84,10 @@ function Toolbar({
     future,
     setMode,
     setActiveView,
+    setDetailMode,
     addGroupNode,
+    isolateSelectedPath,
+    resetDiagramFocus,
     undo,
     redo,
     deleteSelection,
@@ -114,9 +118,17 @@ function Toolbar({
   ];
 
   const views: Array<{ view: DiagramViewMode; label: string }> = [
-    { view: 'topology', label: 'Topology' },
-    { view: 'dependencies', label: 'Dependencies' },
+    { view: 'application-flow', label: 'Application Flow' },
+    { view: 'network', label: 'Network' },
     { view: 'security', label: 'Security' },
+    { view: 'monitoring', label: 'Monitoring' },
+    { view: 'deployment', label: 'Deployment' },
+  ];
+
+  const detailModes: Array<{ mode: DiagramDetailMode; label: string }> = [
+    { mode: 'overview', label: 'Overview' },
+    { mode: 'architecture', label: 'Architecture' },
+    { mode: 'full-topology', label: 'Full Topology' },
   ];
 
   function download(name: string, content: string, type: string) {
@@ -179,11 +191,12 @@ function Toolbar({
     const canvasShell = document.querySelector('.canvas-shell');
     canvasShell?.classList.add('canvas-shell--layout-transition');
     window.setTimeout(() => {
-      autoArrange();
+      void autoArrange().finally(() => {
       window.setTimeout(() => {
         canvasShell?.classList.remove('canvas-shell--layout-transition');
         setIsArranging(false);
       }, 420);
+      });
     }, 0);
   }
 
@@ -262,13 +275,26 @@ function Toolbar({
         <select
           aria-label="Diagram view"
           className="toolbar-select toolbar-select--view"
-          title="Diagram view"
+          title="Relationship filter"
           value={activeView}
           onChange={(event) => setActiveView(event.target.value as DiagramViewMode)}
         >
           {views.map((view) => (
             <option key={view.view} value={view.view}>
               {view.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Diagram detail"
+          className="toolbar-select toolbar-select--view"
+          title="Diagram detail mode"
+          value={detailMode}
+          onChange={(event) => setDetailMode(event.target.value as DiagramDetailMode)}
+        >
+          {detailModes.map((mode) => (
+            <option key={mode.mode} value={mode.mode}>
+              {mode.label}
             </option>
           ))}
         </select>
@@ -282,6 +308,14 @@ function Toolbar({
             <button disabled={isArranging || !nodes.length} onClick={autoLayout} type="button">
               <LayoutGrid size={15} />
               {isArranging ? 'Arranging...' : 'Auto arrange'}
+            </button>
+            <button disabled={!selectedNodeId} onClick={isolateSelectedPath} type="button">
+              <Focus size={15} />
+              Isolate Path
+            </button>
+            <button onClick={resetDiagramFocus} type="button">
+              <Focus size={15} />
+              Reset View
             </button>
             <button onClick={exportHcl} type="button">
               <TerminalSquare size={15} />

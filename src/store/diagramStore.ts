@@ -11,10 +11,11 @@ import {
 } from 'reactflow';
 import { create } from 'zustand';
 import { serviceById } from '../data/awsServices';
-import type { AwsEdge, AwsEdgeData, AwsNode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
+import type { AwsEdge, AwsEdgeData, AwsNode, DiagramDetailMode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
 import { normalizeDiagramSnapshot } from '../utils/diagramSchema';
 import { exportTerraform } from '../utils/exportTerraform';
-import { applyEnterpriseLayout } from '../utils/importDiagram';
+import { hasSavedPositions } from '../utils/diagramSemantics';
+import { applyElkLayeredLayout, normalizeSemanticEdges } from '../utils/elkLayout';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import { canContainNode, withTopologySemantics } from '../utils/topologySemantics';
 import { validateDiagram, type ValidationIssue } from '../utils/validate';
@@ -40,6 +41,8 @@ type DiagramStore = {
   fitViewVersion: number;
   mode: ToolMode;
   activeView: DiagramViewMode;
+  detailMode: DiagramDetailMode;
+  isolatedNodeId?: string;
   activeRegion: string;
   lastSavedAt?: string;
   // True whenever the diagram has changed since it was last loaded/saved — there's no persist
@@ -61,12 +64,14 @@ type DiagramStore = {
   clipboard?: DiagramSnapshot;
   setMode: (mode: ToolMode) => void;
   setActiveView: (view: DiagramViewMode) => void;
+  setDetailMode: (mode: DiagramDetailMode) => void;
   setDark: (isDark: boolean) => void;
   toggleDark: () => void;
   setWhiteboardMode: (whiteboardMode: boolean) => void;
   toggleWhiteboardMode: () => void;
   setSelection: (nodeId?: string, edgeId?: string) => void;
   setFocusNodeIds: (nodeIds: string[]) => void;
+  isolateSelectedPath: () => void;
   resetDiagramFocus: () => void;
   openInspector: (nodeId?: string, edgeId?: string) => void;
   closeInspector: () => void;
@@ -92,7 +97,7 @@ type DiagramStore = {
   redo: () => void;
   validate: () => ValidationIssue[];
   importDiagram: (snapshot: DiagramSnapshot) => void;
-  autoArrange: () => void;
+  autoArrange: () => Promise<void>;
   markSaved: () => void;
   checkpoint: () => void;
   attachNodeToContainingGroup: (nodeId: string) => void;
@@ -109,7 +114,9 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   focusNodeIds: [],
   fitViewVersion: 0,
   mode: 'select',
-  activeView: 'topology',
+  activeView: 'application-flow',
+  detailMode: 'architecture',
+  isolatedNodeId: undefined,
   activeRegion: 'ap-south-1',
   isDirty: false,
   isValidated: false,
@@ -119,7 +126,8 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   history: [],
   future: [],
   setMode: (mode) => set({ mode }),
-  setActiveView: (activeView) => set((state) => ({ activeView, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1 })),
+  setActiveView: (activeView) => set((state) => ({ activeView, selectedEdgeId: undefined, inspectorEdgeId: undefined, fitViewVersion: state.fitViewVersion + 1 })),
+  setDetailMode: (detailMode) => set((state) => ({ detailMode, isolatedNodeId: undefined, selectedEdgeId: undefined, inspectorEdgeId: undefined, fitViewVersion: state.fitViewVersion + 1 })),
   setDark: (isDark) => set({ isDark }),
   toggleDark: () => set((state) => ({ isDark: !state.isDark })),
   setWhiteboardMode: (whiteboardMode) => {
@@ -133,9 +141,15 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   toggleWhiteboardMode: () => get().setWhiteboardMode(!get().whiteboardMode),
   setSelection: (nodeId, edgeId) => set({ selectedNodeId: nodeId, selectedEdgeId: edgeId }),
   setFocusNodeIds: (focusNodeIds) => set({ focusNodeIds }),
+  isolateSelectedPath: () => {
+    const selectedNodeId = get().selectedNodeId ?? get().nodes.find((node) => node.selected)?.id;
+    if (!selectedNodeId) return;
+    set((state) => ({ isolatedNodeId: selectedNodeId, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1 }));
+  },
   resetDiagramFocus: () =>
     set((state) => ({
       focusNodeIds: [],
+      isolatedNodeId: undefined,
       selectedNodeId: undefined,
       selectedEdgeId: undefined,
       inspectorNodeId: undefined,
@@ -235,7 +249,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
           ...connection,
           id: `edge-${Date.now()}`,
           type: 'flowEdge',
-          animated: data.connectionType === 'event',
+          animated: false,
           markerEnd: { type: MarkerType.ArrowClosed },
           data,
         },
@@ -353,7 +367,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         edge.id === edgeId
           ? {
               ...edge,
-              animated: patch.connectionType ? patch.connectionType === 'event' : edge.animated,
+              animated: false,
               data: { ...edge.data, ...patch } as AwsEdgeData,
             }
           : edge,
@@ -480,22 +494,38 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   importDiagram: (snapshot) => {
     pushHistory(set, get);
     const normalized = normalizeDiagramSnapshot(snapshot);
+    const shouldAutoLayout = !hasSavedPositions(normalized.nodes);
+    const semanticEdges = normalizeSemanticEdges(normalized.edges, normalized.nodes);
     // Loading a diagram (a demo, a template, or the user's own saved one) isn't itself an
     // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory
     // just set — only edits made *after* this point should count as dirty.
-    set((state) => ({ nodes: normalized.nodes, edges: normalized.edges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
+    set((state) => ({ nodes: normalized.nodes, edges: semanticEdges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], isolatedNodeId: undefined, fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
+    if (shouldAutoLayout) {
+      void applyElkLayeredLayout(normalized.nodes, semanticEdges).then((laidOutNodes) => {
+        set((state) => ({
+          nodes: laidOutNodes,
+          edges: normalizeSemanticEdges(state.edges, laidOutNodes),
+          fitViewVersion: state.fitViewVersion + 1,
+          isDirty: false,
+        }));
+      });
+    }
   },
-  autoArrange: () => {
+  autoArrange: async () => {
     const { nodes, edges } = get();
     if (!nodes.length) return;
     pushHistory(set, get);
+    const semanticEdges = normalizeSemanticEdges(edges, nodes);
+    const laidOutNodes = await applyElkLayeredLayout(nodes, semanticEdges);
     set({
-      nodes: applyEnterpriseLayout(nodes, edges),
+      nodes: laidOutNodes,
+      edges: normalizeSemanticEdges(semanticEdges, laidOutNodes),
       selectedNodeId: undefined,
       selectedEdgeId: undefined,
       inspectorNodeId: undefined,
       inspectorEdgeId: undefined,
       focusNodeIds: [],
+      isolatedNodeId: undefined,
       fitViewVersion: get().fitViewVersion + 1,
     });
   },
@@ -571,12 +601,12 @@ function createNode(serviceId: string, position: XYPosition, id?: string): AwsNo
 
 function inferEdgeData(sourceHandle?: string | null): AwsEdgeData {
   const label = sourceHandle?.toLowerCase().includes('event') ? 'event' : 'data';
-  const connectionType: EdgeConnectionType = label === 'event' ? 'event' : 'data';
+  const connectionType: EdgeConnectionType = 'data-flow';
   return {
     label,
     connectionType,
-    protocol: connectionType === 'event' ? 'async' : 'HTTPS',
-    port: connectionType === 'event' ? '' : '443',
+    protocol: label === 'event' ? 'async' : 'HTTPS',
+    port: label === 'event' ? '' : '443',
   };
 }
 
