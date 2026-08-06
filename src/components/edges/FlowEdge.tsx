@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { BaseEdge, EdgeLabelRenderer, useReactFlow, type EdgeProps, type Node } from 'reactflow';
+import { memo, useState } from 'react';
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from 'reactflow';
 import { useDiagramStore } from '../../store/diagramStore';
 import type { AwsEdgeData } from '../../types';
+import { useEdgeGeometry } from '../canvasGraphContext';
+import type { ObstacleRect } from '../../utils/graphIndex';
 
 const edgeColors = {
   data: '#2563eb',
@@ -57,8 +59,7 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
   const [isHovered, setIsHovered] = useState(false);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
   const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
-  const reactFlow = useReactFlow();
-  const obstacles = getObstacleRects(reactFlow.getNodes(), source, target);
+  const geometry = useEdgeGeometry();
   const [edgePath, rawLabelX, rawLabelY] = getBundledSmoothPath({
     sourceX,
     sourceY,
@@ -72,11 +73,24 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
   const connectionType = data?.semanticCategory ?? data?.connectionType ?? 'data-flow';
   const typeColor = architectureViewMode ? architectureEdgeColors[connectionType] : (whiteboardMode ? whiteboardEdgeColors : edgeColors)[connectionType];
   const color = whiteboardMode || architectureViewMode ? typeColor : selected || data?.highlighted ? typeColor : '#8b9097';
-  const isGenericReference = data?.label === 'reference' && data?.protocol === 'Terraform';
+  // Imported diagrams carry a lot of auto-generated "reference"/Terraform edges whose label says
+  // nothing; those stay mute. A reference a user deliberately drew is different — the label is the
+  // only thing distinguishing it from a modelled relationship, so it must show.
+  const isDeclaredRelationship = Boolean(data?.relationshipKind);
+  const isGenericReference = !isDeclaredRelationship && data?.label === 'reference' && data?.protocol === 'Terraform';
   const label = data?.hiddenCount ? `${data.label} +${data.hiddenCount}` : data?.label;
   const showLabel = Boolean(label && !isGenericReference && (selected || isHovered || data?.highlighted));
   const showFlowDots = !whiteboardMode && !architectureViewMode && (selected || data?.highlighted) && (connectionType === 'data-flow' || connectionType === 'event');
-  const labelPosition = avoidLabelOverlap({ x: rawLabelX, y: rawLabelY }, obstacles, labelOffsetForEdge(id));
+  // Only the handful of edges actually showing a label pay for collision avoidance. This used to run
+  // for every edge on every render — including the ones whose label was hidden — and each run
+  // rebuilt an obstacle rect for every node in the graph.
+  const labelPosition = showLabel
+    ? avoidLabelOverlap(
+        { x: rawLabelX, y: rawLabelY },
+        geometry.getObstacles().filter((rect) => rect.id !== source && rect.id !== target),
+        labelOffsetForEdge(id),
+      )
+    : { x: rawLabelX, y: rawLabelY };
   const strokeDasharray = architectureViewMode
     ? architectureDasharray(connectionType)
     : whiteboardMode
@@ -116,22 +130,6 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
       )}
     </>
   );
-}
-
-function getObstacleRects(nodes: Node[], sourceId?: string, targetId?: string): Rect[] {
-  return nodes
-    .filter((node) => node.id !== sourceId && node.id !== targetId)
-    .filter((node) => node.type !== 'groupBox')
-    .map((node) => {
-      const width = Number(node.width ?? node.style?.width ?? (node.type === 'labelNode' ? 180 : 150));
-      const height = Number(node.height ?? node.style?.height ?? (node.type === 'labelNode' ? 80 : 90));
-      return {
-        x: node.positionAbsolute?.x ?? node.position.x,
-        y: node.positionAbsolute?.y ?? node.position.y,
-        width: Number.isFinite(width) ? width : 150,
-        height: Number.isFinite(height) ? height : 90,
-      };
-    });
 }
 
 function labelOffsetForEdge(id: string): { x: number; y: number } {
@@ -189,7 +187,7 @@ function getBundledSmoothPath({
   return [`M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`, label.x, label.y];
 }
 
-function avoidLabelOverlap(base: Point, obstacles: Rect[], hashOffset: Point): Point {
+function avoidLabelOverlap(base: Point, obstacles: ObstacleRect[], hashOffset: Point): Point {
   const candidates = [
     hashOffset,
     { x: hashOffset.x, y: hashOffset.y - 44 },
@@ -233,4 +231,4 @@ function cubicPoint(t: number, start: Point, controlA: Point, controlB: Point, e
   };
 }
 
-export default FlowEdge;
+export default memo(FlowEdge);

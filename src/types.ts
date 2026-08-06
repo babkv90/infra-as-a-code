@@ -45,6 +45,9 @@ export type DiagramViewMode = 'application-flow' | 'network' | 'security' | 'mon
 
 export type DiagramDetailMode = 'overview' | 'architecture' | 'full-topology';
 
+/** How the diagram is drawn, as opposed to which relationships it shows. */
+export type RenderLensId = 'diagram' | 'whiteboard';
+
 export type EdgeConnectionType =
   | 'data-flow'
   | 'network-routing'
@@ -126,6 +129,8 @@ export type AwsNodeData = {
   infrastructure?: NodeInfrastructureState;
 };
 
+export type ConnectionRelationshipKind = 'resolves' | 'composes' | 'reference';
+
 export type AwsEdgeData = {
   label: string;
   connectionType: EdgeConnectionType;
@@ -137,6 +142,15 @@ export type AwsEdgeData = {
   highlighted?: boolean;
   bundleIndex?: number;
   bundleSize?: number;
+  // Written when the connection is drawn, rather than inferred from label/protocol strings
+  // afterwards. Absent on diagrams saved before typed connections existed — treat as unknown and
+  // fall back to semanticEdgeCategory, never as "no relationship".
+  sourceService?: string;
+  targetService?: string;
+  /** Field on the target this connection populates, e.g. `vpc_id`. */
+  resolvesField?: string;
+  relationshipKind?: ConnectionRelationshipKind;
+  relationshipSummary?: string;
 };
 
 export type AwsNode = Node<AwsNodeData>;

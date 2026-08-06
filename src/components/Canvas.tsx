@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize, Minus, Plus, X } from 'lucide-react';
 import ReactFlow, {
+  type Connection,
   Background,
   BackgroundVariant,
   ConnectionLineType,
-  Controls,
   MarkerType,
   MiniMap,
   Panel,
   SelectionMode,
   useNodesInitialized,
   useReactFlow,
+  useViewport,
   type NodeTypes,
   type EdgeTypes,
 } from 'reactflow';
@@ -17,12 +19,17 @@ import FlowEdge from './edges/FlowEdge';
 import AwsServiceNode from './nodes/AwsServiceNode';
 import GroupBoxNode from './nodes/GroupBoxNode';
 import LabelNode from './nodes/LabelNode';
+import { EdgeGeometryContext, RelationshipBadgeContext } from './canvasGraphContext';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdge, AwsNode } from '../types';
 import { getStoredUser } from '../auth/authClient';
 import { isServiceAllowedForUser } from '../utils/accessControl';
 import { buildHandleId, getOptimalConnectionSides, readHandlePort } from '../utils/connectionRouting';
-import { buildVisibleGraph, semanticEdgeCategory } from '../utils/diagramSemantics';
+import { buildEdgeCategoryMap, buildVisibleGraph, type SemanticEdgeCategory } from '../utils/diagramSemantics';
+import { evaluateConnection } from '../utils/connectionRules';
+import { buildObstacleRects, buildRelationshipBadgeCounts } from '../utils/graphIndex';
+import { measuredNodeSize } from '../utils/nodeMetrics';
+import { canContainNode } from '../utils/topologySemantics';
 
 const nodeTypes: NodeTypes = {
   awsService: AwsServiceNode,
@@ -34,61 +41,87 @@ const edgeTypes: EdgeTypes = {
   flowEdge: FlowEdge,
 };
 
+type EdgeBundleSlot = { index: number; size: number };
+
+type ConnectTargetStatus = 'typed' | 'reversed' | 'reference';
+
+type ConnectOrigin = { nodeId: string; serviceId?: string; label: string };
+
+type BoundaryCandidate = { id: string; x: number; y: number; width: number; height: number; area: number; accepts: boolean; kind: string };
+
+type BoundaryDropTarget = { groupId: string; accepted: boolean; message: string };
+
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]'));
 }
 
-function isInteractiveSurfaceOpen(inspectorNodeId?: string, inspectorEdgeId?: string): boolean {
-  return Boolean(
-    inspectorNodeId ||
-      inspectorEdgeId ||
-      document.querySelector('.modal-backdrop, .diagram-delete-dialog-backdrop, .context-menu'),
-  );
+/**
+ * Only genuinely modal surfaces should swallow Delete. The docked inspector used to count here,
+ * which was fine while it opened on double-click — now that a single click opens it, treating it as
+ * modal would mean Delete never reached the canvas again. Typing inside it is already handled by
+ * isTextInputTarget.
+ */
+function isModalSurfaceOpen(): boolean {
+  return Boolean(document.querySelector('.modal-backdrop, .diagram-delete-dialog-backdrop, .context-menu, .bx-palette-backdrop'));
 }
 
 function Canvas() {
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
-  const selectionFitTimeoutRef = useRef<number | null>(null);
-  const suppressSelectionFocusUntilRef = useRef(0);
   const lastViewportFitVersionRef = useRef<number | null>(null);
   const reactFlow = useReactFlow();
   const nodesInitialized = useNodesInitialized();
-  const [isNodeMoving, setIsNodeMoving] = useState(false);
-  const {
-    nodes,
-    edges,
-    mode,
-    activeView,
-    detailMode,
-    isolatedNodeId,
-    whiteboardMode,
-    architectureViewMode,
-    focusNodeIds,
-    fitViewVersion,
-    onNodesChange,
-    onEdgesChange,
-    onConnect,
-    onEdgeUpdate,
-    setSelection,
-    setFocusNodeIds,
-    inspectorNodeId,
-    inspectorEdgeId,
-    openInspector,
-    closeInspector,
-    addServiceNode,
-    addGroupNode,
-    addLabelNode,
-    deleteSelection,
-    copySelection,
-    pasteClipboard,
-    selectAll,
-    undo,
-    redo,
-    checkpoint,
-    attachNodeToContainingGroup,
-  } = useDiagramStore();
+  const { zoom } = useViewport();
+  const [connectOrigin, setConnectOrigin] = useState<ConnectOrigin | null>(null);
+  const [connectHoverNodeId, setConnectHoverNodeId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<BoundaryDropTarget | null>(null);
+  // Boundary rects are snapshotted at drag start — boundaries don't move while another node is being
+  // dragged — so the per-frame cost is a point-in-rect test over a handful of them, with no
+  // allocation and no re-render unless the verdict actually changes.
+  const boundarySnapshotRef = useRef<BoundaryCandidate[]>([]);
+  const dropTargetRef = useRef<BoundaryDropTarget | null>(null);
+
+  // Individual selectors rather than a whole-store destructure: the previous `useDiagramStore()`
+  // call subscribed Canvas to every field in the store, so it re-rendered (and re-derived the whole
+  // visible graph) on any state change at all.
+  const nodes = useDiagramStore((state) => state.nodes);
+  const edges = useDiagramStore((state) => state.edges);
+  const mode = useDiagramStore((state) => state.mode);
+  const activeView = useDiagramStore((state) => state.activeView);
+  const detailMode = useDiagramStore((state) => state.detailMode);
+  const isolatedNodeId = useDiagramStore((state) => state.isolatedNodeId);
+  const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
+  const focusNodeIds = useDiagramStore((state) => state.focusNodeIds);
+  const fitViewVersion = useDiagramStore((state) => state.fitViewVersion);
+  const onNodesChange = useDiagramStore((state) => state.onNodesChange);
+  const onEdgesChange = useDiagramStore((state) => state.onEdgesChange);
+  const onConnect = useDiagramStore((state) => state.onConnect);
+  const onEdgeUpdate = useDiagramStore((state) => state.onEdgeUpdate);
+  const setSelection = useDiagramStore((state) => state.setSelection);
+  const setFocusNodeIds = useDiagramStore((state) => state.setFocusNodeIds);
+  const openInspector = useDiagramStore((state) => state.openInspector);
+  const closeInspector = useDiagramStore((state) => state.closeInspector);
+  const addServiceNode = useDiagramStore((state) => state.addServiceNode);
+  const addGroupNode = useDiagramStore((state) => state.addGroupNode);
+  const addLabelNode = useDiagramStore((state) => state.addLabelNode);
+  const deleteSelection = useDiagramStore((state) => state.deleteSelection);
+  const copySelection = useDiagramStore((state) => state.copySelection);
+  const pasteClipboard = useDiagramStore((state) => state.pasteClipboard);
+  const selectAll = useDiagramStore((state) => state.selectAll);
+  const undo = useDiagramStore((state) => state.undo);
+  const redo = useDiagramStore((state) => state.redo);
+  const checkpoint = useDiagramStore((state) => state.checkpoint);
+  const attachNodeToContainingGroup = useDiagramStore((state) => state.attachNodeToContainingGroup);
+  const lastConnection = useDiagramStore((state) => state.lastConnection);
+  const dismissLastConnection = useDiagramStore((state) => state.dismissLastConnection);
+
+  // The receipt is a confirmation, not a log — it clears itself.
+  useEffect(() => {
+    if (!lastConnection) return;
+    const timer = window.setTimeout(dismissLastConnection, 6000);
+    return () => window.clearTimeout(timer);
+  }, [dismissLastConnection, lastConnection]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -122,7 +155,7 @@ function Canvas() {
         event.preventDefault();
         selectAll();
       } else if (event.key === 'Delete') {
-        if (isInteractiveSurfaceOpen(inspectorNodeId, inspectorEdgeId)) return;
+        if (isModalSurfaceOpen()) return;
         event.preventDefault();
         deleteSelection();
       } else if (event.key === 'Backspace' && wrapperRef.current?.contains(document.activeElement)) {
@@ -132,13 +165,7 @@ function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [copySelection, deleteSelection, inspectorEdgeId, inspectorNodeId, pasteClipboard, redo, selectAll, undo]);
-
-  useEffect(() => {
-    return () => {
-      if (selectionFitTimeoutRef.current) window.clearTimeout(selectionFitTimeoutRef.current);
-    };
-  }, []);
+  }, [copySelection, deleteSelection, pasteClipboard, redo, selectAll, undo]);
 
   const minimapColor = useCallback((node: { type?: string; data?: { color?: string } }) => {
     if (node.type === 'groupBox') return '#94a3b8';
@@ -147,6 +174,11 @@ function Canvas() {
   }, []);
 
   const defaultEdgeOptions = useMemo(() => ({ type: 'flowEdge', markerEnd: { type: MarkerType.ArrowClosed } }), []);
+
+  // Edge categorisation and relationship badges depend on which services are on the canvas, never on
+  // where they sit. Keying the memos below on this signature instead of `nodes` keeps their results
+  // referentially stable while a node is being dragged.
+  const serviceSignature = useMemo(() => nodes.map((node) => `${node.id}:${node.data.serviceId ?? ''}`).join('|'), [nodes]);
 
   const bindingEdges = useMemo<AwsEdge[]>(
     () =>
@@ -174,7 +206,17 @@ function Canvas() {
 
   const graphEdges = useMemo(() => [...edges, ...bindingEdges], [bindingEdges, edges]);
 
-  const visibleGraph = useMemo(() => buildVisibleGraph(nodes, graphEdges, activeView, detailMode, isolatedNodeId), [activeView, detailMode, graphEdges, isolatedNodeId, nodes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`, on purpose (see above).
+  const relationshipBadges = useMemo(() => buildRelationshipBadgeCounts(nodes, graphEdges), [serviceSignature, graphEdges]);
+
+  // Stable identity, so consuming this costs no re-renders. Obstacle rects are only pulled by the
+  // one edge currently showing a label, and are read at that moment rather than precomputed.
+  const edgeGeometry = useMemo(() => ({ getObstacles: () => buildObstacleRects(reactFlow.getNodes()) }), [reactFlow]);
+
+  const visibleGraph = useMemo(
+    () => buildVisibleGraph(nodes, graphEdges, activeView, detailMode, isolatedNodeId),
+    [activeView, detailMode, graphEdges, isolatedNodeId, nodes],
+  );
   const visibleEdges = visibleGraph.edges;
   const visibleNodes = visibleGraph.nodes;
 
@@ -199,32 +241,112 @@ function Canvas() {
     );
   }, [visibleNodes]);
 
-  const routedVisibleEdges = useMemo(() => visibleEdges.map((edge) => withSemanticEdgeHandles(edge, routingNodeById, visibleEdges)), [routingNodeById, visibleEdges]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`, on purpose.
+  const edgeCategories = useMemo(() => buildEdgeCategoryMap(visibleEdges, nodes), [visibleEdges, serviceSignature]);
+
+  // Bundle slots let parallel edges into the same target fan out instead of stacking. Computed once
+  // per graph here; it used to be re-derived inside every edge, re-categorising every peer edge each
+  // time, which made the whole pass roughly O(E squared * N).
+  const edgeBundles = useMemo(() => {
+    const slotsByKey = new Map<string, string[]>();
+    for (const edge of visibleEdges) {
+      const key = `${edge.target}|${edgeCategories.get(edge.id) ?? 'data-flow'}`;
+      const slot = slotsByKey.get(key);
+      if (slot) slot.push(edge.id);
+      else slotsByKey.set(key, [edge.id]);
+    }
+
+    const bundles = new Map<string, EdgeBundleSlot>();
+    for (const edgeIds of slotsByKey.values()) {
+      edgeIds.forEach((edgeId, index) => bundles.set(edgeId, { index, size: edgeIds.length }));
+    }
+    return bundles;
+  }, [edgeCategories, visibleEdges]);
+
+  const routedVisibleEdges = useMemo(
+    () =>
+      visibleEdges.map((edge) =>
+        withSemanticEdgeHandles(edge, routingNodeById, edgeCategories.get(edge.id) ?? 'data-flow', edgeBundles.get(edge.id)),
+      ),
+    [edgeBundles, edgeCategories, routingNodeById, visibleEdges],
+  );
 
   useEffect(() => {
     if (!visibleNodes.length || !nodesInitialized) return;
     if (lastViewportFitVersionRef.current === fitViewVersion) return;
     lastViewportFitVersionRef.current = fitViewVersion;
     if (visibleNodes.length > 24) return;
-    const fitWholeDiagram = () => reactFlow.fitView({ padding: 0.12, duration: 360, maxZoom: 1.1 });
-    requestAnimationFrame(fitWholeDiagram);
-    const settledFit = window.setTimeout(fitWholeDiagram, 180);
-    return () => window.clearTimeout(settledFit);
+    // One fit, not two. The old settled-fit timeout fired a second animation 180ms into the first.
+    const frame = requestAnimationFrame(() => reactFlow.fitView({ padding: 0.12, duration: 360, maxZoom: 1.1 }));
+    return () => cancelAnimationFrame(frame);
   }, [fitViewVersion, nodesInitialized, reactFlow, visibleNodes.length]);
 
-  const visibleNodeById = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node])), [visibleNodes]);
   const focusedNodeSet = useMemo(() => new Set(focusNodeIds), [focusNodeIds]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`.
+  const serviceIdByNodeId = useMemo(() => new Map(nodes.map((node) => [node.id, node.data.serviceId])), [serviceSignature]);
+
+  // A connection is only offered where the model says something real happens. Drawing a modelled
+  // relationship backwards is rejected rather than silently accepted — under the old direction-blind
+  // generator lookup, a reversed arrow produced identical Terraform, which is exactly why users read
+  // connections as decoration.
+  const isValidConnection = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target || connection.source === connection.target) return false;
+      const verdict = evaluateConnection(serviceIdByNodeId.get(connection.source), serviceIdByNodeId.get(connection.target));
+      return verdict.status === 'typed' || verdict.status === 'reference';
+    },
+    [serviceIdByNodeId],
+  );
+
+  const connectTargets = useMemo(() => {
+    if (!connectOrigin) return null;
+    const statuses = new Map<string, ConnectTargetStatus>();
+    for (const node of visibleNodes) {
+      if (node.type !== 'awsService' || node.id === connectOrigin.nodeId) continue;
+      const verdict = evaluateConnection(connectOrigin.serviceId, node.data.serviceId);
+      if (verdict.status === 'blocked') continue;
+      statuses.set(node.id, verdict.status);
+    }
+    return statuses;
+  }, [connectOrigin, visibleNodes]);
+
+  const connectHint = useMemo(() => {
+    if (!connectOrigin) return undefined;
+    const hoverNode = connectHoverNodeId ? visibleNodes.find((node) => node.id === connectHoverNodeId) : undefined;
+
+    if (hoverNode && hoverNode.id !== connectOrigin.nodeId) {
+      const targetLabel = hoverNode.data.label || hoverNode.data.serviceName;
+      const verdict = evaluateConnection(connectOrigin.serviceId, hoverNode.data.serviceId);
+      if (verdict.status === 'typed') return `${connectOrigin.label} → ${targetLabel} · ${verdict.rule.summary}`;
+      if (verdict.status === 'reversed') return `Draw this the other way — ${targetLabel} → ${connectOrigin.label} ${verdict.rule.summary}`;
+      return `${connectOrigin.label} → ${targetLabel} · dependency reference only`;
+    }
+
+    const typedCount = connectTargets ? Array.from(connectTargets.values()).filter((status) => status === 'typed').length : 0;
+    return typedCount
+      ? `Connecting from ${connectOrigin.label} · ${typedCount} modelled target${typedCount === 1 ? '' : 's'} highlighted`
+      : `Connecting from ${connectOrigin.label} · no modelled targets on this canvas`;
+  }, [connectHoverNodeId, connectOrigin, connectTargets, visibleNodes]);
+
   const presentationNodes = useMemo(() => {
-    if (!focusedNodeSet.size || isNodeMoving) return visibleNodes;
-    return visibleNodes.map((node) => ({
-      ...node,
-      className: `${node.className ?? ''} ${focusedNodeSet.has(node.id) ? 'focus-hit' : 'focus-dim'}`.trim(),
-    }));
-  }, [focusedNodeSet, isNodeMoving, visibleNodes]);
+    if (!focusedNodeSet.size && !connectTargets && !dropTarget) return visibleNodes;
+    return visibleNodes.map((node) => {
+      const classes = [node.className ?? ''];
+      if (focusedNodeSet.size) classes.push(focusedNodeSet.has(node.id) ? 'focus-hit' : 'focus-dim');
+      if (connectTargets) {
+        if (node.id === connectOrigin?.nodeId) classes.push('connect-origin');
+        else classes.push(`connect-${connectTargets.get(node.id) ?? 'none'}`);
+      }
+      if (dropTarget && node.id === dropTarget.groupId) {
+        classes.push(dropTarget.accepted ? 'boundary-accept' : 'boundary-reject');
+      }
+      return { ...node, className: classes.filter(Boolean).join(' ') };
+    });
+  }, [connectOrigin, connectTargets, dropTarget, focusedNodeSet, visibleNodes]);
 
   const presentationEdges = useMemo(() => {
-    if (!focusedNodeSet.size || isNodeMoving) return routedVisibleEdges;
+    if (!focusedNodeSet.size) return routedVisibleEdges;
     return routedVisibleEdges.map((edge) => {
       const inFocus = focusedNodeSet.has(edge.source) || focusedNodeSet.has(edge.target);
       return {
@@ -234,394 +356,221 @@ function Canvas() {
         style: { ...edge.style, opacity: inFocus ? 1 : 0.14 },
       };
     });
-  }, [focusedNodeSet, isNodeMoving, routedVisibleEdges]);
-
-  const getNodeBounds = useCallback(
-    (nodeId: string) => {
-      const node = visibleNodeById.get(nodeId);
-      if (!node) return undefined;
-      const parent = node.parentNode ? visibleNodeById.get(node.parentNode) : undefined;
-      const x = node.position.x + (parent?.position.x ?? 0);
-      const y = node.position.y + (parent?.position.y ?? 0);
-      const width = Number(node.width ?? node.style?.width ?? (node.type === 'groupBox' ? 520 : 160));
-      const height = Number(node.height ?? node.style?.height ?? (node.type === 'groupBox' ? 340 : 112));
-      return { x, y, width, height, area: width * height };
-    },
-    [visibleNodeById],
-  );
-
-  const getContainedServiceNodeIds = useCallback(
-    (groupId: string) => {
-      const groupBounds = getNodeBounds(groupId);
-      if (!groupBounds) return [];
-
-      return visibleNodes
-        .filter((node) => node.type !== 'groupBox')
-        .filter((node) => {
-          const bounds = getNodeBounds(node.id);
-          if (!bounds) return false;
-          const centerX = bounds.x + bounds.width / 2;
-          const centerY = bounds.y + bounds.height / 2;
-          return centerX >= groupBounds.x && centerX <= groupBounds.x + groupBounds.width && centerY >= groupBounds.y && centerY <= groupBounds.y + groupBounds.height;
-        })
-        .map((node) => node.id);
-    },
-    [getNodeBounds, visibleNodes],
-  );
-
-  const getSmallestContainingGroup = useCallback(
-    (nodeId: string) => {
-      const bounds = getNodeBounds(nodeId);
-      if (!bounds) return undefined;
-      const centerX = bounds.x + bounds.width / 2;
-      const centerY = bounds.y + bounds.height / 2;
-
-      return visibleNodes
-        .filter((node) => node.type === 'groupBox')
-        .map((node) => ({ node, bounds: getNodeBounds(node.id) }))
-        .filter((item): item is { node: typeof visibleNodes[number]; bounds: { x: number; y: number; width: number; height: number; area: number } } => Boolean(item.bounds))
-        .filter(({ node, bounds: groupBounds }) => node.id !== nodeId && centerX >= groupBounds.x && centerX <= groupBounds.x + groupBounds.width && centerY >= groupBounds.y && centerY <= groupBounds.y + groupBounds.height)
-        .sort((a, b) => a.bounds.area - b.bounds.area)[0]?.node;
-    },
-    [getNodeBounds, visibleNodes],
-  );
-
-  const getNearbyServiceNodeIds = useCallback(
-    (nodeId: string, maxCount = 8) => {
-      const bounds = getNodeBounds(nodeId);
-      if (!bounds) return [nodeId];
-      const centerX = bounds.x + bounds.width / 2;
-      const centerY = bounds.y + bounds.height / 2;
-
-      return visibleNodes
-        .filter((node) => node.type !== 'groupBox' && node.type !== 'labelNode')
-        .map((node) => {
-          const nodeBounds = getNodeBounds(node.id);
-          if (!nodeBounds) return undefined;
-          const nodeCenterX = nodeBounds.x + nodeBounds.width / 2;
-          const nodeCenterY = nodeBounds.y + nodeBounds.height / 2;
-          const distance = Math.hypot(nodeCenterX - centerX, nodeCenterY - centerY);
-          return { id: node.id, distance };
-        })
-        .filter((item): item is { id: string; distance: number } => Boolean(item))
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, maxCount)
-        .map((item) => item.id);
-    },
-    [getNodeBounds, visibleNodes],
-  );
-
-  const fitNodeIds = useCallback(
-    (nodeIds: string[], options: { padding?: number; maxZoom?: number; duration?: number } = {}) => {
-      const fitIds = Array.from(new Set(nodeIds)).filter((id) => visibleNodeById.has(id));
-      if (!fitIds.length) return;
-      setFocusNodeIds(fitIds);
-      requestAnimationFrame(() => {
-        reactFlow.fitView({
-          nodes: fitIds.map((id) => ({ id })),
-          padding: options.padding ?? (fitIds.length === 1 ? 0.44 : 0.22),
-          duration: options.duration ?? 420,
-          maxZoom: options.maxZoom ?? (fitIds.length === 1 ? 1.72 : 1.44),
-        });
-      });
-    },
-    [reactFlow, setFocusNodeIds, visibleNodeById],
-  );
-
-  const focusNodeArea = useCallback(
-    (nodeId: string) => {
-      const clickedNode = visibleNodes.find((node) => node.id === nodeId);
-      if (!clickedNode) return;
-
-      if (clickedNode.type === 'groupBox') {
-        const childIds = getContainedServiceNodeIds(nodeId);
-        fitNodeIds(childIds.length ? childIds : [nodeId], { padding: childIds.length ? 0.18 : 0.22, maxZoom: childIds.length ? 1.24 : 1.18 });
-        return;
-      }
-
-      const directlyConnectedIds = new Set([nodeId]);
-      edges.forEach((edge) => {
-        if (edge.source === nodeId) directlyConnectedIds.add(edge.target);
-        if (edge.target === nodeId) directlyConnectedIds.add(edge.source);
-      });
-
-      if (focusedNodeSet.has(nodeId)) {
-        const scopedIds = Array.from(directlyConnectedIds).filter((id) => focusedNodeSet.has(id) || id === nodeId);
-        fitNodeIds(scopedIds.length > 1 ? scopedIds : [nodeId], { padding: scopedIds.length > 1 ? 0.32 : 0.44, maxZoom: scopedIds.length > 1 ? 1.64 : 1.82 });
-        return;
-      }
-
-      const containingGroup = getSmallestContainingGroup(nodeId);
-      const groupChildIds = containingGroup ? getContainedServiceNodeIds(containingGroup.id) : [];
-      if (groupChildIds.length > 1) {
-        fitNodeIds(groupChildIds, { padding: 0.18, maxZoom: 1.28 });
-        return;
-      }
-
-      const connectedIds = Array.from(directlyConnectedIds).filter((id) => visibleNodeById.has(id));
-      const nearbyIds = getNearbyServiceNodeIds(nodeId);
-      fitNodeIds(connectedIds.length > 1 ? connectedIds : nearbyIds, { padding: 0.28, maxZoom: 1.42 });
-    },
-    [edges, fitNodeIds, focusedNodeSet, getContainedServiceNodeIds, getNearbyServiceNodeIds, getSmallestContainingGroup, visibleNodeById, visibleNodes],
-  );
-
-  const focusEdgeArea = useCallback(
-    (sourceId: string, targetId: string) => {
-      const ids = new Set([sourceId, targetId]);
-      fitNodeIds(Array.from(ids), { padding: 0.38, maxZoom: 1.56 });
-    },
-    [fitNodeIds],
-  );
-
-  const focusSelectedArea = useCallback((nodeIds: string[], edgeIds: string[] = []) => {
-    const selectedNodeIds = nodeIds;
-    const selectedEdgeIds = edgeIds;
-    if (!selectedNodeIds.length && !selectedEdgeIds.length) return;
-
-    const selectedServiceNodeIds = selectedNodeIds.filter((id) => visibleNodeById.get(id)?.type !== 'groupBox');
-    const selectedGroupChildNodeIds = selectedServiceNodeIds.length
-      ? []
-      : selectedNodeIds.flatMap((id) => {
-          const group = visibleNodeById.get(id);
-          if (!group || group.type !== 'groupBox') return [];
-          const groupWidth = Number(group.width ?? group.style?.width ?? 0);
-          const groupHeight = Number(group.height ?? group.style?.height ?? 0);
-          const groupX = group.position.x;
-          const groupY = group.position.y;
-
-          return visibleNodes
-            .filter((node) => node.type !== 'groupBox')
-            .filter((node) => {
-              const parent = node.parentNode ? visibleNodeById.get(node.parentNode) : undefined;
-              const x = node.position.x + (parent?.position.x ?? 0);
-              const y = node.position.y + (parent?.position.y ?? 0);
-              const width = Number(node.width ?? 160);
-              const height = Number(node.height ?? 112);
-              const centerX = x + width / 2;
-              const centerY = y + height / 2;
-              return centerX >= groupX && centerX <= groupX + groupWidth && centerY >= groupY && centerY <= groupY + groupHeight;
-            })
-            .map((node) => node.id);
-        });
-    const ids = new Set(selectedServiceNodeIds.length ? selectedServiceNodeIds : selectedGroupChildNodeIds.length ? selectedGroupChildNodeIds : selectedNodeIds);
-    edgeIds.forEach((edgeId) => {
-      const edge = visibleEdges.find((candidate) => candidate.id === edgeId);
-      if (edge) {
-        ids.add(edge.source);
-        ids.add(edge.target);
-      }
-    });
-
-    const fitNodeIds = Array.from(ids).filter((id) => visibleNodeById.has(id));
-    if (!fitNodeIds.length) return;
-
-    setFocusNodeIds(fitNodeIds);
-    closeInspector();
-    setSelection(fitNodeIds[0], undefined);
-    requestAnimationFrame(() => {
-      reactFlow.fitView({
-        nodes: fitNodeIds.map((id) => ({ id })),
-        padding: fitNodeIds.length === 1 ? 0.46 : 0.24,
-        duration: 460,
-        maxZoom: fitNodeIds.length === 1 ? 1.6 : 1.42,
-      });
-    });
-  }, [closeInspector, reactFlow, setSelection, visibleEdges, visibleNodeById, visibleNodes]);
-
-  const getNodeIdsInSelectionRect = useCallback(
-    (start: { x: number; y: number }, end: { x: number; y: number }) => {
-      const left = Math.min(start.x, end.x);
-      const right = Math.max(start.x, end.x);
-      const top = Math.min(start.y, end.y);
-      const bottom = Math.max(start.y, end.y);
-      if (right - left < 8 || bottom - top < 8) return [];
-
-      const serviceNodeIds: string[] = [];
-      const groupNodeIds: string[] = [];
-      wrapperRef.current?.querySelectorAll<HTMLElement>('.react-flow__node[data-id]').forEach((element) => {
-        const id = element.dataset.id;
-        if (!id) return;
-        const node = visibleNodeById.get(id);
-        if (!node) return;
-
-        const rect = element.getBoundingClientRect();
-        const intersects = rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
-        if (!intersects) return;
-        if (node.type === 'groupBox') groupNodeIds.push(id);
-        else serviceNodeIds.push(id);
-      });
-
-      return serviceNodeIds.length ? serviceNodeIds : groupNodeIds;
-    },
-    [visibleNodeById],
-  );
-
-  const focusSelectionGesture = useCallback(
-    (event: React.MouseEvent) => {
-      const start = selectionStartRef.current;
-      selectionStartRef.current = null;
-      if (!start) return;
-
-      const rectNodeIds = start ? getNodeIdsInSelectionRect(start, { x: event.clientX, y: event.clientY }) : [];
-      if (rectNodeIds.length) {
-        focusSelectedArea(rectNodeIds);
-      }
-    },
-    [focusSelectedArea, getNodeIdsInSelectionRect],
-  );
-
-  const beginAreaSelectionGesture = useCallback(
-    (event: React.MouseEvent | React.PointerEvent) => {
-      if (mode !== 'select' || event.button !== 0) return;
-      const target = event.target as HTMLElement;
-      if (target.closest('.react-flow__node-awsService, .group-box__header, .edge-label, button, input, select, textarea, a')) return;
-
-      if (!event.shiftKey) {
-        selectionStartRef.current = null;
-        suppressSelectionFocusUntilRef.current = Date.now() + 450;
-        if (selectionFitTimeoutRef.current) {
-          window.clearTimeout(selectionFitTimeoutRef.current);
-          selectionFitTimeoutRef.current = null;
-        }
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      selectionStartRef.current = { x: event.clientX, y: event.clientY };
-    },
-    [mode],
-  );
-
-  const finishAreaSelectionGesture = useCallback(
-    (event: React.MouseEvent | React.PointerEvent) => {
-      if (mode !== 'select') return;
-      const start = selectionStartRef.current;
-      if (!start) return;
-      event.preventDefault();
-      event.stopPropagation();
-      selectionStartRef.current = null;
-      const rectNodeIds = getNodeIdsInSelectionRect(start, { x: event.clientX, y: event.clientY });
-      if (!rectNodeIds.length) return;
-      if (selectionFitTimeoutRef.current) {
-        window.clearTimeout(selectionFitTimeoutRef.current);
-        selectionFitTimeoutRef.current = null;
-      }
-      window.setTimeout(() => focusSelectedArea(rectNodeIds), 0);
-    },
-    [focusSelectedArea, getNodeIdsInSelectionRect, mode],
-  );
+  }, [focusedNodeSet, routedVisibleEdges]);
 
   return (
     <main
-      className={`canvas-shell ${isNodeMoving ? 'canvas-shell--moving' : ''} ${whiteboardMode ? 'canvas-shell--whiteboard' : ''} ${architectureViewMode ? 'canvas-shell--architecture' : ''}`}
+      className={`canvas-shell ${whiteboardMode ? 'canvas-shell--whiteboard' : ''} ${architectureViewMode ? 'canvas-shell--architecture' : ''} ${connectOrigin ? 'canvas-shell--connecting' : ''}`}
       ref={wrapperRef}
-      onMouseDownCapture={beginAreaSelectionGesture}
-      onMouseUpCapture={finishAreaSelectionGesture}
-      onPointerDownCapture={beginAreaSelectionGesture}
-      onPointerUpCapture={finishAreaSelectionGesture}
       onDrop={onDrop}
       onDragOver={(event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
       }}
     >
-      <ReactFlow
-        nodes={presentationNodes}
-        edges={presentationEdges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        defaultEdgeOptions={defaultEdgeOptions}
-        onlyRenderVisibleElements
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onEdgeUpdate={onEdgeUpdate}
-        onNodeClick={(_, node) => {
-          closeInspector();
-          setSelection(node.id, undefined);
-          focusNodeArea(node.id);
-        }}
-        onNodeDoubleClick={(event, node) => {
-          event.preventDefault();
-          event.stopPropagation();
-          suppressSelectionFocusUntilRef.current = Date.now() + 450;
-          if (selectionFitTimeoutRef.current) {
-            window.clearTimeout(selectionFitTimeoutRef.current);
-      selectionFitTimeoutRef.current = null;
-      }
-      if (node.type === 'awsService') openInspector(node.id, undefined);
-        }}
-        onEdgeClick={(_, edge) => {
-          closeInspector();
-          setSelection(undefined, edge.id);
-          focusEdgeArea(edge.source, edge.target);
-        }}
-        onEdgeDoubleClick={(event, edge) => {
-          event.preventDefault();
-          event.stopPropagation();
-          suppressSelectionFocusUntilRef.current = Date.now() + 450;
-          if (selectionFitTimeoutRef.current) {
-            window.clearTimeout(selectionFitTimeoutRef.current);
-            selectionFitTimeoutRef.current = null;
-          }
-          openInspector(undefined, edge.id);
-        }}
-        onSelectionStart={(event) => {
-          selectionStartRef.current = mode === 'select' && event.shiftKey ? { x: event.clientX, y: event.clientY } : null;
-        }}
-        onSelectionEnd={focusSelectionGesture}
-        onPaneClick={(event) => {
-          const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          if (mode === 'group') addGroupNode('VPC', position);
-          if (mode === 'label') addLabelNode(position);
-          if (mode === 'select') {
-            closeInspector();
-            setSelection(undefined, undefined);
-          }
-        }}
-        onNodeDragStart={() => {
-          setIsNodeMoving(true);
-          closeInspector();
-          checkpoint();
-        }}
-        onNodeDragStop={(_, node) => {
-          setIsNodeMoving(false);
-          attachNodeToContainingGroup(node.id);
-        }}
-        snapToGrid
-        snapGrid={[24, 24]}
-        defaultViewport={{ x: 0, y: 0, zoom: 1.25 }}
-        minZoom={0.08}
-        maxZoom={2.2}
-        connectionLineType={ConnectionLineType.SmoothStep}
-        panOnScroll
-        panOnDrag={[0, 1, 2]}
-        panActivationKeyCode="Space"
-        selectionOnDrag={false}
-        selectionMode={SelectionMode.Partial}
-        multiSelectionKeyCode="Shift"
-        deleteKeyCode={null}
-        nodesConnectable={mode !== 'label'}
-        edgesUpdatable
-        edgeUpdaterRadius={16}
-        elevateNodesOnSelect={false}
-        elevateEdgesOnSelect={false}
-        elementsSelectable
-        proOptions={{ hideAttribution: true }}
-      >
-        {!isNodeMoving && !whiteboardMode && !architectureViewMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />}
-        {!isNodeMoving && architectureViewMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(52,211,153,0.28)" />}
-        <Controls position="bottom-left" showInteractive={false} />
-        {!isNodeMoving && <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />}
-        <Panel position="top-center" className="canvas-mode-pill">
-          {viewLabel(activeView)} / {detailModeLabel(detailMode)} -{' '}
-          {mode === 'connect' ? 'Connect mode' : mode === 'group' ? 'Click canvas to add boundary' : mode === 'label' ? 'Click canvas to add label' : 'Select mode'}
-        </Panel>
-        {architectureViewMode && <ArchitectureLegend />}
-      </ReactFlow>
+      <RelationshipBadgeContext.Provider value={relationshipBadges}>
+        <EdgeGeometryContext.Provider value={edgeGeometry}>
+          <ReactFlow
+            nodes={presentationNodes}
+            edges={presentationEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
+            onlyRenderVisibleElements
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onEdgeUpdate={onEdgeUpdate}
+            isValidConnection={isValidConnection}
+            onConnectStart={(_, { nodeId }) => {
+              const node = nodeId ? visibleNodes.find((candidate) => candidate.id === nodeId) : undefined;
+              if (!node) return;
+              setConnectOrigin({ nodeId: node.id, serviceId: node.data.serviceId, label: node.data.label || node.data.serviceName });
+            }}
+            onConnectEnd={() => {
+              setConnectOrigin(null);
+              setConnectHoverNodeId(null);
+            }}
+            onNodeMouseEnter={(_, node) => {
+              if (connectOrigin) setConnectHoverNodeId(node.id);
+            }}
+            onNodeMouseLeave={() => {
+              if (connectOrigin) setConnectHoverNodeId(null);
+            }}
+            // Selection is local: it never moves the camera. Framing is an explicit command
+            // ("Fit view", "Zoom to selection", "Isolate path") on the toolbar.
+            // Focus dimming used to clear itself because every click re-focused something. Now that
+            // clicks leave the camera alone, an ordinary click is also what dismisses a dim left over
+            // from Isolate path, paste, or select-all.
+            onNodeClick={(_, node) => {
+              setFocusNodeIds([]);
+              // Single click opens the form. The inspector is a docked column now, so opening it
+              // costs nothing on screen — there is no reason to make the user double-click.
+              openInspector(node.id, undefined);
+            }}
+            onNodeDoubleClick={(event, node) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (node.type === 'awsService') openInspector(node.id, undefined);
+            }}
+            onEdgeClick={(_, edge) => {
+              setFocusNodeIds([]);
+              openInspector(undefined, edge.id);
+            }}
+            onEdgeDoubleClick={(event, edge) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openInspector(undefined, edge.id);
+            }}
+            onPaneClick={(event) => {
+              const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              if (mode === 'group') addGroupNode('VPC', position);
+              if (mode === 'label') addLabelNode(position);
+              if (mode === 'select') {
+                closeInspector();
+                setFocusNodeIds([]);
+                setSelection(undefined, undefined);
+              }
+            }}
+            onNodeDragStart={(_, node) => {
+              // The inspector no longer overlaps the canvas, so a drag has no reason to close it.
+              // Dragging with a dim still applied would rebuild every node's className each tick.
+              if (focusNodeIds.length) setFocusNodeIds([]);
+              boundarySnapshotRef.current = node.type === 'groupBox' ? [] : snapshotBoundaries(nodes, node as AwsNode);
+              checkpoint();
+            }}
+            onNodeDrag={(_, node) => {
+              if (!boundarySnapshotRef.current.length) return;
+              const next = resolveDropTarget(boundarySnapshotRef.current, node as AwsNode);
+              const current = dropTargetRef.current;
+              // Only re-render when the verdict changes, not on every pointer tick.
+              if (current?.groupId === next?.groupId && current?.accepted === next?.accepted) return;
+              dropTargetRef.current = next;
+              setDropTarget(next);
+            }}
+            onNodeDragStop={(_, node) => {
+              boundarySnapshotRef.current = [];
+              dropTargetRef.current = null;
+              setDropTarget(null);
+              attachNodeToContainingGroup(node.id);
+            }}
+            snapToGrid
+            snapGrid={[24, 24]}
+            defaultViewport={{ x: 0, y: 0, zoom: 1.25 }}
+            minZoom={0.08}
+            maxZoom={2.2}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            panOnScroll
+            panOnDrag={[0, 1, 2]}
+            panActivationKeyCode="Space"
+            // Shift-drag falls back to React Flow's own rubber-band multi-select. A custom DOM
+            // hit-test gesture used to intercept it, and its only effect was re-framing the viewport
+            // on whatever the rectangle touched. Left-drag stays panning (see panOnDrag), so
+            // selectionOnDrag must remain off — the key is what arms the selection box.
+            selectionOnDrag={false}
+            selectionKeyCode="Shift"
+            selectionMode={SelectionMode.Partial}
+            multiSelectionKeyCode="Shift"
+            deleteKeyCode={null}
+            nodesConnectable={mode !== 'label'}
+            edgesUpdatable
+            edgeUpdaterRadius={16}
+            elevateNodesOnSelect={false}
+            elevateEdgesOnSelect={false}
+            elementsSelectable
+            proOptions={{ hideAttribution: true }}
+          >
+            {!whiteboardMode && !architectureViewMode && (
+              <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(100,116,139,0.65)" />
+            )}
+            {architectureViewMode && <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(52,211,153,0.28)" />}
+            {/* Zoom lives in the canvas corner, where the hand already is, rather than in the
+                toolbar two rows away. */}
+            <Panel position="bottom-left" className="canvas-zoom-cluster">
+              <button onClick={() => reactFlow.zoomOut()} title="Zoom out" aria-label="Zoom out" type="button">
+                <Minus size={15} />
+              </button>
+              <span className="canvas-zoom-cluster__readout">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => reactFlow.zoomIn()} title="Zoom in" aria-label="Zoom in" type="button">
+                <Plus size={15} />
+              </button>
+              <button onClick={() => reactFlow.fitView({ padding: 0.18, duration: 260 })} title="Fit view" aria-label="Fit view" type="button">
+                <Maximize size={14} />
+              </button>
+            </Panel>
+            <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />
+            <Panel
+              position="top-center"
+              className={`canvas-mode-pill ${connectHint ? 'canvas-mode-pill--connecting' : ''} ${dropTarget ? (dropTarget.accepted ? 'canvas-mode-pill--accept' : 'canvas-mode-pill--reject') : ''}`}
+            >
+              {dropTarget?.message ?? connectHint ?? canvasStateLabel(mode, activeView, detailMode)}
+            </Panel>
+
+            {/* Frame 3 of the connection interaction: state what the line will actually write. */}
+            {lastConnection && (
+              <Panel position="bottom-center" className={`connection-receipt connection-receipt--${lastConnection.kind}`}>
+                <span className="connection-receipt__kind">
+                  {lastConnection.kind === 'reference' ? 'Reference' : 'Connected'}
+                </span>
+                {lastConnection.expression ? (
+                  <code className="connection-receipt__expression">{lastConnection.expression}</code>
+                ) : (
+                  <span className="connection-receipt__summary">{lastConnection.summary}</span>
+                )}
+                <span className="connection-receipt__note">
+                  {lastConnection.expression ? 'written on apply' : 'ordering only — no value passed'}
+                </span>
+                <button onClick={dismissLastConnection} aria-label="Dismiss" type="button">
+                  <X size={13} />
+                </button>
+              </Panel>
+            )}
+            {architectureViewMode && <ArchitectureLegend />}
+          </ReactFlow>
+        </EdgeGeometryContext.Provider>
+      </RelationshipBadgeContext.Provider>
     </main>
   );
+}
+
+function snapshotBoundaries(nodes: AwsNode[], dragged: AwsNode): BoundaryCandidate[] {
+  return nodes
+    .filter((node) => node.type === 'groupBox')
+    .map((node) => {
+      const { width, height } = measuredNodeSize(node);
+      return {
+        id: node.id,
+        x: node.position.x,
+        y: node.position.y,
+        width,
+        height,
+        area: width * height,
+        accepts: canContainNode(node, dragged),
+        kind: node.data.groupKind ?? 'boundary',
+      };
+    })
+    .sort((left, right) => left.area - right.area);
+}
+
+function resolveDropTarget(candidates: BoundaryCandidate[], dragged: AwsNode): BoundaryDropTarget | null {
+  const { width, height } = measuredNodeSize(dragged);
+  const centerX = dragged.position.x + width / 2;
+  const centerY = dragged.position.y + height / 2;
+
+  // Candidates are pre-sorted smallest-first, so the first hit is the innermost boundary.
+  const hit = candidates.find(
+    (candidate) =>
+      centerX >= candidate.x && centerX <= candidate.x + candidate.width && centerY >= candidate.y && centerY <= candidate.y + candidate.height,
+  );
+  if (!hit) return null;
+
+  return {
+    groupId: hit.id,
+    accepted: hit.accepts,
+    message: hit.accepts
+      ? `Drop to place in ${hit.kind}`
+      : `A ${hit.kind} can't contain ${dragged.data.serviceName}`,
+  };
 }
 
 function ArchitectureLegend() {
@@ -648,20 +597,22 @@ function ArchitectureLegend() {
   );
 }
 
-function withSemanticEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>, visibleEdges: AwsEdge[]): AwsEdge {
+function withSemanticEdgeHandles(
+  edge: AwsEdge,
+  nodesById: Map<string, AwsNode>,
+  category: SemanticEdgeCategory,
+  bundle: EdgeBundleSlot | undefined,
+): AwsEdge {
   const sourceNode = nodesById.get(edge.source);
   const targetNode = nodesById.get(edge.target);
   if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return edge;
 
-  const category = semanticEdgeCategory(edge, Array.from(nodesById.values()));
   const sourcePort = sourceNode.data.ports.outputs[0];
   const targetPort = targetNode.data.ports.inputs[0];
   // Handle sides come from actual node geometry (which side of source really faces target), not a
   // side fixed by category — a fixed 'right'/'left' regardless of position forced edges into an
   // unnecessary detour/zigzag even between two nodes that were already stacked or adjacent.
   const { sourceSide, targetSide } = getOptimalConnectionSides(sourceNode, targetNode);
-  const targetPeers = visibleEdges.filter((candidate) => candidate.target === edge.target && semanticEdgeCategory(candidate, Array.from(nodesById.values())) === category);
-  const bundleIndex = Math.max(0, targetPeers.findIndex((candidate) => candidate.id === edge.id));
 
   return {
     ...edge,
@@ -674,25 +625,34 @@ function withSemanticEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>,
       port: edge.data?.port ?? '',
       ...edge.data,
       semanticCategory: category,
-      bundleIndex,
-      bundleSize: targetPeers.length,
+      bundleIndex: bundle?.index ?? 0,
+      bundleSize: bundle?.size ?? 1,
     },
   };
 }
 
+/**
+ * What the canvas is doing, in words a user recognises. This used to concatenate three internal enum
+ * values — "All Connections / Full Topology - Select mode" — which described the implementation
+ * rather than telling anyone what to do next.
+ */
+function canvasStateLabel(mode: string, view: string, detail: string): string {
+  if (mode === 'connect') return 'Drag from one resource to another to connect them';
+  if (mode === 'group') return 'Click the canvas to place a boundary';
+  if (mode === 'label') return 'Click the canvas to place a note';
+
+  const lens = viewLabel(view);
+  const depth = detail === 'overview' ? 'key resources only' : detail === 'architecture' ? 'architecture detail' : 'every resource';
+  return `Showing ${lens.toLowerCase()} · ${depth}`;
+}
+
 function viewLabel(view: string): string {
-  if (view === 'application-flow' || view === 'topology') return 'Application Flow';
+  if (view === 'application-flow' || view === 'topology') return 'Application flow';
   if (view === 'network') return 'Network';
   if (view === 'security') return 'Security';
   if (view === 'monitoring') return 'Monitoring';
   if (view === 'deployment') return 'Deployment';
-  return 'All Connections';
-}
-
-function detailModeLabel(mode: string): string {
-  if (mode === 'overview') return 'Overview';
-  if (mode === 'architecture') return 'Architecture';
-  return 'Full Topology';
+  return 'All connections';
 }
 
 export default Canvas;

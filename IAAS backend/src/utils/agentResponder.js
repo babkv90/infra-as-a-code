@@ -2,7 +2,7 @@ import { env } from '../config/env.js';
 
 const RAG_TIMEOUT_MS = 45_000;
 
-export async function answerCloudQuestion(question) {
+export async function answerCloudQuestion(question, history = []) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RAG_TIMEOUT_MS);
 
@@ -15,6 +15,7 @@ export async function answerCloudQuestion(question) {
       body: JSON.stringify({
         question,
         top_k: 5,
+        history,
       }),
       signal: controller.signal,
     });

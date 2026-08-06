@@ -1,10 +1,11 @@
 import { AlertTriangle, Copy, Download, FileCode2, FolderOpen, KeyRound, Link2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import type React from 'react';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { listAccountIamRoles, listAwsAccounts, type AwsAccountRecord, type IamRoleSummary } from '../dashboard/awsApi';
 import { awsServices, serviceById } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
-import type { AwsEdgeData, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
+import type { AwsEdge, AwsEdgeData, AwsNode, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
+import { connectionRule } from '../utils/connectionRules';
 import { uploadLambdaZip } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';
 import { downloadJsonFile, getResourceRequirementReport, isValidArn, looksLikeTerraformExpression } from '../utils/resourceRequirements';
@@ -12,7 +13,6 @@ import { downloadJsonFile, getResourceRequirementReport, isValidArn, looksLikeTe
 const connectionTypes: EdgeConnectionType[] = ['data', 'event', 'security', 'monitoring'];
 const bindingTargetKinds: NodeBindingTargetKind[] = ['env', 'property', 'iam', 'connection'];
 const bindingSourceKinds: NodeBindingSourceKind[] = ['secret', 'ssm', 'variable', 'local', 'resourceAttr', 'output'];
-type PopupPosition = { left: number; top: number; side: 'left' | 'right'; arrowTop: number };
 
 function PropertiesPanel() {
   const [terraform, setTerraform] = useState('');
@@ -26,7 +26,6 @@ function PropertiesPanel() {
   const [isLoadingIamRoles, setIsLoadingIamRoles] = useState(false);
   const [iamRolePickerError, setIamRolePickerError] = useState('');
   const [customIamRoleArn, setCustomIamRoleArn] = useState('');
-  const [popupPosition, setPopupPosition] = useState<PopupPosition>();
   const [bindingTargetPath, setBindingTargetPath] = useState('DB_PASSWORD');
   const [bindingTargetKind, setBindingTargetKind] = useState<NodeBindingTargetKind>('env');
   const [bindingSourceKind, setBindingSourceKind] = useState<NodeBindingSourceKind>('secret');
@@ -35,7 +34,8 @@ function PropertiesPanel() {
   const [bindingRequired, setBindingRequired] = useState(true);
   const [bindingSensitive, setBindingSensitive] = useState(true);
   const panelRef = useRef<HTMLElement>(null);
-  const { nodes, edges, inspectorNodeId, inspectorEdgeId, closeInspector, updateNodeData, updateNodeConfig, addNodeBinding, updateNodeBinding, deleteNodeBinding, updateEdgeData } = useDiagramStore();
+  const { nodes, edges, inspectorNodeId, inspectorEdgeId, closeInspector, openInspector, updateNodeData, updateNodeConfig, addNodeBinding, updateNodeBinding, deleteNodeBinding, updateEdgeData } = useDiagramStore();
+  const [activeTab, setActiveTab] = useState<'config' | 'relationships'>('config');
   const selectedNode = nodes.find((node) => node.id === inspectorNodeId);
   const selectedEdge = edges.find((edge) => edge.id === inspectorEdgeId);
   const service = selectedNode?.data.serviceId ? serviceById[selectedNode.data.serviceId] : undefined;
@@ -163,79 +163,21 @@ function PropertiesPanel() {
     setIamRolePicker(null);
   }
 
-  useLayoutEffect(() => {
-    if (!selectedNode && !selectedEdge) return undefined;
-
-    let frame = 0;
-
-    function updatePosition() {
-      const panel = panelRef.current;
-      const workspace = panel?.closest('.workspace');
-      if (!(panel instanceof HTMLElement) || !(workspace instanceof HTMLElement)) return;
-
-      const workspaceRect = workspace.getBoundingClientRect();
-      const panelRect = panel.getBoundingClientRect();
-      const nodeElement = selectedNode ? document.querySelector<HTMLElement>(`.react-flow__node[data-id="${selectedNode.id}"]`) : undefined;
-      const target = nodeElement?.querySelector<HTMLElement>('.aws-node__tile') ?? nodeElement;
-      const targetRect = target?.getBoundingClientRect();
-      const margin = 12;
-      const gap = 14;
-
-      const targetCenterY = targetRect ? targetRect.top - workspaceRect.top + targetRect.height / 2 : workspaceRect.height / 2;
-      let side: PopupPosition['side'] = 'right';
-      let left = targetRect ? targetRect.right - workspaceRect.left + gap : workspaceRect.width / 2 - panelRect.width / 2;
-      let top = targetCenterY - 34;
-      const maxLeft = Math.max(margin, workspaceRect.width - panelRect.width - margin);
-      const maxTop = Math.max(margin, workspaceRect.height - panelRect.height - margin);
-
-      if (targetRect && left > maxLeft) {
-        side = 'left';
-        left = targetRect.left - workspaceRect.left - panelRect.width - gap;
-      }
-
-      top = Math.min(Math.max(top, margin), maxTop);
-
-      setPopupPosition({
-        left: Math.min(Math.max(left, margin), maxLeft),
-        top,
-        side,
-        arrowTop: Math.min(Math.max(targetCenterY - top, 22), panelRect.height - 22),
-      });
-    }
-
-    function schedulePositionUpdate() {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(updatePosition);
-    }
-
-    schedulePositionUpdate();
-    window.addEventListener('resize', schedulePositionUpdate);
-    window.addEventListener('scroll', schedulePositionUpdate, true);
-    window.addEventListener('wheel', schedulePositionUpdate, true);
-    window.addEventListener('pointerup', schedulePositionUpdate, true);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', schedulePositionUpdate);
-      window.removeEventListener('scroll', schedulePositionUpdate, true);
-      window.removeEventListener('wheel', schedulePositionUpdate, true);
-      window.removeEventListener('pointerup', schedulePositionUpdate, true);
-    };
-  }, [selectedEdge, selectedNode, nodes]);
-
+  // The inspector is a docked column, not a popup anchored to the selected node. The old anchoring
+  // pass re-measured the panel against the DOM on every wheel, scroll and pointerup — and re-bound
+  // those listeners whenever `nodes` changed, which is every tick of a drag.
+  //
+  // DashboardShell only mounts this component once something is selected — the grid column itself
+  // collapses to width 0 otherwise — so by the time this renders, selectedNode or selectedEdge is
+  // guaranteed. This early return stays as the type-narrowing guard for the JSX below.
   if (!selectedNode && !selectedEdge) {
     return null;
   }
 
-  const popupStyle: React.CSSProperties = popupPosition
-    ? ({ left: popupPosition.left, top: popupPosition.top, '--properties-arrow-top': `${popupPosition.arrowTop}px` } as React.CSSProperties)
-    : { visibility: 'hidden' };
-
   return (
     <aside
-      className={`properties-panel properties-panel--${popupPosition?.side ?? 'right'}`}
+      className="properties-panel properties-panel--docked"
       ref={panelRef}
-      style={popupStyle}
       aria-label={selectedNode ? `${selectedNode.data.serviceName} configuration` : 'Connection configuration'}
     >
       {selectedNode && (
@@ -253,6 +195,28 @@ function PropertiesPanel() {
             </div>
           </div>
 
+          <div className="bx-tabs" role="tablist">
+            <button role="tab" aria-selected={activeTab === 'config'} onClick={() => setActiveTab('config')} type="button">
+              Config
+            </button>
+            <button role="tab" aria-selected={activeTab === 'relationships'} onClick={() => setActiveTab('relationships')} type="button">
+              Relationships{connections.inbound.length + connections.outbound.length > 0 ? ` (${connections.inbound.length + connections.outbound.length})` : ''}
+            </button>
+          </div>
+
+          {activeTab === 'relationships' && (
+            <RelationshipsTab
+              node={selectedNode}
+              nodes={nodes}
+              inbound={connections.inbound}
+              outbound={connections.outbound}
+              onOpenNode={(nodeId) => openInspector(nodeId, undefined)}
+              onOpenEdge={(edgeId) => openInspector(undefined, edgeId)}
+            />
+          )}
+
+          {activeTab === 'config' && (
+          <>
           <Field label="Name">
             <input value={selectedNode.data.label} onChange={(event) => updateNodeData(selectedNode.id, { label: event.target.value })} />
           </Field>
@@ -487,6 +451,8 @@ function PropertiesPanel() {
               Security review
             </button>
           </div>
+          </>
+          )}
         </>
       )}
 
@@ -628,6 +594,90 @@ function FilePathField({
         <small className="file-path-field__status file-path-field__status--ok">Uploaded — will be deployed as this Lambda's code.</small>
       )}
       {uploadError && <small className="file-path-field__status file-path-field__status--error">{uploadError}</small>}
+    </div>
+  );
+}
+
+/**
+ * What this resource resolves from, and what it provides to. The answer to "what is this line for",
+ * which the canvas alone could never give: an edge shows that two things are related, not how.
+ *
+ * Typed edges carry their own relationship data (written when they were drawn). Edges from diagrams
+ * saved before that fall back to the rule table, so older diagrams still read correctly.
+ */
+function RelationshipsTab({
+  node,
+  nodes,
+  inbound,
+  outbound,
+  onOpenNode,
+  onOpenEdge,
+}: {
+  node: AwsNode;
+  nodes: AwsNode[];
+  inbound: AwsEdge[];
+  outbound: AwsEdge[];
+  onOpenNode: (nodeId: string) => void;
+  onOpenEdge: (edgeId: string) => void;
+}) {
+  function describe(edge: AwsEdge, peer: AwsNode | undefined, direction: 'in' | 'out') {
+    const sourceService = direction === 'in' ? peer?.data.serviceId : node.data.serviceId;
+    const targetService = direction === 'in' ? node.data.serviceId : peer?.data.serviceId;
+    const rule = connectionRule(sourceService, targetService);
+    const field = edge.data?.resolvesField ?? rule?.field;
+    const kind = edge.data?.relationshipKind ?? (rule ? rule.kind : 'reference');
+
+    if (field) return { kind, detail: `${field} = ${sourceService ?? 'source'}.id` };
+    if (kind === 'composes') return { kind, detail: edge.data?.relationshipSummary ?? rule?.summary ?? 'composes extra resources' };
+    return { kind, detail: 'Dependency ordering only — no value is passed.' };
+  }
+
+  function renderGroup(title: string, items: AwsEdge[], direction: 'in' | 'out') {
+    if (!items.length) {
+      return (
+        <div className="bx-relations__group">
+          <span className="bx-relations__title">{title}</span>
+          <p className="bx-relations__empty">
+            {direction === 'in' ? 'Nothing feeds this resource yet.' : 'This resource does not feed anything yet.'}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bx-relations__group">
+        <span className="bx-relations__title">
+          {title} ({items.length})
+        </span>
+        {items.map((edge) => {
+          const peerId = direction === 'in' ? edge.source : edge.target;
+          const peer = nodes.find((candidate) => candidate.id === peerId);
+          const { kind, detail } = describe(edge, peer, direction);
+          return (
+            <button
+              className={`bx-relation bx-relation--${kind}`}
+              key={edge.id}
+              type="button"
+              onClick={() => onOpenEdge(edge.id)}
+              onDoubleClick={() => peer && onOpenNode(peer.id)}
+              title="Open this connection. Double-click to open the resource at the other end."
+            >
+              <span className="bx-relation__peer">
+                {peer?.data.label || peer?.data.serviceName || 'Missing resource'}
+                <span className="bx-relation__kind">{kind === 'resolves' ? 'resolves' : kind === 'composes' ? 'composes' : 'reference'}</span>
+              </span>
+              <span className="bx-relation__detail">{detail}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bx-relations">
+      {renderGroup('Resolved from', inbound, 'in')}
+      {renderGroup('Provided to', outbound, 'out')}
     </div>
   );
 }

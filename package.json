@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run src/utils/diagramSemantics.test.ts src/utils/elkLayout.test.ts"
+    "test": "vitest run src/utils/diagramSemantics.test.ts src/utils/elkLayout.test.ts src/utils/connectionRules.test.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

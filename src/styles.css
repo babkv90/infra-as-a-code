@@ -455,39 +455,14 @@ textarea {
   color: #e2e8f0;
 }
 
-.toolbar {
-  position: relative;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: var(--dash-gap-md);
-  padding: 6px 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.34);
-  background: rgba(248, 250, 252, 0.92);
-  backdrop-filter: blur(18px);
-}
 
 .dark .toolbar {
   background: rgba(15, 23, 42, 0.92);
   border-color: rgba(71, 85, 105, 0.72);
 }
 
-.toolbar__section {
-  display: flex;
-  align-items: center;
-  gap: var(--dash-gap-sm);
-  padding-right: 8px;
-  border-right: 1px solid rgba(148, 163, 184, 0.34);
-}
 
-.toolbar__section:last-child {
-  border-right: 0;
-  padding-right: 0;
-}
 
-.toolbar__section--grow {
-  flex: 1;
-}
 
 .view-switcher {
   display: inline-flex;
@@ -647,47 +622,12 @@ textarea {
   color: inherit;
 }
 
-.toolbar-select {
-  height: var(--dash-control-height);
-  padding: 0 8px;
-}
 
-.toolbar-select--view {
-  min-width: 106px;
-}
 
-.toolbar-tools-menu {
-  position: relative;
-}
 
-.toolbar-tools-menu > summary {
-  list-style: none;
-  cursor: pointer;
-}
 
-.toolbar-tools-menu > summary::-webkit-details-marker {
-  display: none;
-}
 
-.toolbar-tools-menu__content {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  display: grid;
-  gap: 4px;
-  min-width: 190px;
-  padding: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
-}
 
-.toolbar-tools-menu--align-right .toolbar-tools-menu__content {
-  right: 0;
-  left: auto;
-}
 
 .dark .toolbar-tools-menu__content {
   background: rgba(15, 23, 42, 0.98);
@@ -695,57 +635,12 @@ textarea {
   box-shadow: 0 18px 40px rgba(2, 6, 23, 0.5);
 }
 
-.toolbar-tools-menu__content button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
 
-.toolbar-tools-menu__content button:hover {
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
-}
 
-.toolbar-tools-menu__content button:disabled {
-  color: #94a3b8;
-  cursor: not-allowed;
-  opacity: 0.72;
-}
 
-.toolbar-tools-menu__content button:disabled:hover {
-  background: transparent;
-  color: #94a3b8;
-}
 
-.toolbar-tools-menu__content button.is-active {
-  background: rgba(37, 99, 235, 0.08);
-  color: #2563eb;
-}
 
-.toolbar-tools-menu__label {
-  padding: 4px 8px 2px;
-  color: #94a3b8;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
-.toolbar-tools-menu__check {
-  margin-left: auto;
-}
 
 .dark .toolbar-tools-menu__content button:hover {
   background: rgba(14, 165, 233, 0.14);
@@ -757,22 +652,8 @@ textarea {
   color: #67e8f9;
 }
 
-.zoom-readout {
-  width: 48px;
-  text-align: center;
-  font-size: 12px;
-  color: #64748b;
-}
 
-.workspace {
-  display: grid;
-  grid-template-columns: 222px minmax(0, 1fr) 262px;
-  min-height: 0;
-}
 
-.workspace--sidebar-collapsed {
-  grid-template-columns: 42px minmax(0, 1fr) 262px;
-}
 
 .sidebar,
 .properties-panel {
@@ -972,38 +853,27 @@ textarea {
   min-height: 0;
 }
 
-.canvas-shell .react-flow__node {
-  transition: filter 150ms ease-out;
-}
-
-.canvas-shell .react-flow__node:hover {
-  filter: drop-shadow(0 4px 10px rgba(15, 23, 42, 0.16));
-}
-
-.canvas-shell--moving .react-flow__node {
-  transition: none !important;
-  filter: none !important;
-  will-change: transform;
+/* Canvas motion budget. One scale, used everywhere on the canvas — nothing here animates unless the
+   user asked for it, and only transform/opacity are ever animated (a `filter` or `box-shadow`
+   transition forces a repaint of the node subtree on every frame). */
+.canvas-shell {
+  --canvas-motion-hover: 90ms;
+  --canvas-motion-state: 120ms;
+  --canvas-motion-camera: 260ms;
+  --canvas-motion-layout: 300ms;
+  --canvas-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .canvas-shell--layout-transition .react-flow__node {
-  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--canvas-motion-layout) var(--canvas-ease);
 }
 
-.canvas-shell--moving .aws-node__tile,
-.canvas-shell--moving .label-node,
-.canvas-shell--moving .group-box.selected {
-  box-shadow: none !important;
-  transition: none !important;
-}
-
-.canvas-shell--moving .edge-label,
-.canvas-shell--moving .flow-dots {
-  display: none;
-}
-
-.canvas-shell--moving .react-flow__edge path {
-  transition: none !important;
+@media (prefers-reduced-motion: reduce) {
+  .canvas-shell,
+  .canvas-shell * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
 }
 
 .react-flow {
@@ -1046,24 +916,21 @@ textarea {
   pointer-events: all;
 }
 
+/* Opacity only. The `saturate()` filter this used to carry promoted every node in the diagram to its
+   own compositing layer for the duration of the fade. */
 .react-flow__node.focus-dim {
   opacity: 0.22;
-  filter: saturate(0.55);
-  transition: opacity 160ms ease, filter 160ms ease;
+  transition: opacity var(--canvas-motion-state, 120ms) ease-out;
 }
 
 .react-flow__node.focus-hit {
   opacity: 1;
-  filter: none;
-  transition: opacity 160ms ease, filter 160ms ease;
+  transition: opacity var(--canvas-motion-state, 120ms) ease-out;
 }
 
-.react-flow__edge.focus-dim {
-  transition: opacity 160ms ease;
-}
-
+.react-flow__edge.focus-dim,
 .react-flow__edge.focus-hit {
-  transition: opacity 160ms ease;
+  transition: opacity var(--canvas-motion-state, 120ms) ease-out;
 }
 
 .aws-node {
@@ -1090,12 +957,11 @@ textarea {
   border-radius: 7px;
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  transition: border-color var(--canvas-motion-hover, 90ms) ease-out;
 }
 
 .aws-node:hover .aws-node__tile {
   border-color: #7c8794;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 
 .aws-node.selected .aws-node__tile {
@@ -1228,6 +1094,56 @@ textarea {
 
 .port-handle--bottom {
   bottom: -6px;
+}
+
+/* Connection ports stay out of the way until they are relevant. Every node carries handles on all
+   four sides so edges can leave by whichever side actually faces the target, but showing eight dots
+   on every node at rest made each one look identically connectable to everything. */
+.port-handle {
+  opacity: 0;
+  transition: opacity var(--canvas-motion-hover, 90ms) ease-out;
+}
+
+.aws-node:hover .port-handle,
+.aws-node.selected .port-handle,
+.canvas-shell--connecting .port-handle {
+  opacity: 1;
+}
+
+/* While a connection is being dragged, the canvas states what each node would mean as a target. */
+.canvas-shell--connecting .react-flow__node.connect-reference {
+  opacity: 0.55;
+}
+
+.canvas-shell--connecting .react-flow__node.connect-reversed,
+.canvas-shell--connecting .react-flow__node.connect-none {
+  opacity: 0.22;
+}
+
+.canvas-shell--connecting .connect-typed .aws-node__tile {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+}
+
+.canvas-shell--connecting .connect-reversed .aws-node__tile {
+  border-color: #f59e0b;
+  border-style: dashed;
+}
+
+.canvas-shell--connecting .connect-origin .aws-node__tile {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.canvas-mode-pill--connecting {
+  border-color: rgba(37, 99, 235, 0.5);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.dark .canvas-mode-pill--connecting {
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #93c5fd;
 }
 
 .status-pill {
@@ -3494,10 +3410,6 @@ textarea {
   opacity: 0.7;
 }
 
-.toolbar-validate-button--ok {
-  border-color: rgba(34, 197, 94, 0.36);
-  color: #16a34a;
-}
 
 .deployment-access-denied__message {
   color: #94a3b8;
@@ -3600,17 +3512,8 @@ textarea {
 }
 
 @media (max-width: 1100px) {
-  .workspace {
-    grid-template-columns: 236px minmax(0, 1fr) 286px;
-  }
 
-  .workspace--sidebar-collapsed {
-    grid-template-columns: 52px minmax(0, 1fr) 286px;
-  }
 
-  .toolbar__section--grow {
-    display: none;
-  }
 }
 
 .landing-page {
@@ -9133,133 +9036,6 @@ button.dash-kpi-card {
   min-height: 0;
 }
 
-.dash-page--agent-coming-soon {
-  position: relative;
-  min-height: 100%;
-  isolation: isolate;
-}
-
-.dash-agent-preview {
-  opacity: 0.8;
-  filter: blur(2.5px);
-  pointer-events: none;
-  user-select: none;
-}
-
-.dash-agent-coming-soon-card {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
-  display: grid;
-  justify-items: center;
-  gap: 16px;
-  width: min(680px, calc(100% - 32px));
-  padding: clamp(24px, 4vw, 40px);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  text-align: center;
-  transform: translate(-50%, -50%);
-  backdrop-filter: none;
-}
-
-.dash-agent-orb {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 92px;
-  height: 92px;
-  border: 0;
-  border-radius: 28px;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(124, 58, 237, 0.2));
-  color: #67e8f9;
-  box-shadow: 0 0 32px rgba(34, 211, 238, 0.22);
-  animation: dash-agent-orb-pulse 2.6s ease-in-out infinite;
-}
-
-.dash-agent-orb svg:last-child {
-  position: absolute;
-  right: 14px;
-  bottom: 12px;
-  color: #c4b5fd;
-  animation: dash-agent-chip-scan 1.8s ease-in-out infinite;
-}
-
-.dash-agent-coming-soon-card h2 {
-  max-width: 560px;
-  margin: 0;
-  color: #f8fafc;
-  font-size: clamp(24px, 3vw, 38px);
-  line-height: 1.05;
-}
-
-.dash-agent-coming-soon-card p {
-  max-width: 620px;
-  margin: 0;
-  color: #cbd5e1;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.dash-agent-coming-soon-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  width: 100%;
-  margin-top: 4px;
-}
-
-.dash-agent-coming-soon-grid span {
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.58);
-  color: #bae6fd;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-@media (max-width: 620px) {
-  .dash-agent-coming-soon-card {
-    position: relative;
-    top: auto;
-    left: auto;
-    margin: 24px auto 0;
-    transform: none;
-  }
-
-  .dash-agent-coming-soon-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@keyframes dash-agent-orb-pulse {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 0 24px rgba(34, 211, 238, 0.2);
-  }
-
-  50% {
-    transform: translateY(-4px) scale(1.03);
-    box-shadow: 0 0 44px rgba(34, 211, 238, 0.34);
-  }
-}
-
-@keyframes dash-agent-chip-scan {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: translateY(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
-}
 
 .dash-page--agent .dash-panel {
   display: grid;
@@ -20005,49 +19781,6 @@ button.dash-kpi-card {
 }
 
 .app-theme-light .dash-agent-question-suggestions button {
-  border-color: var(--border-subtle);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-}
-
-.app-theme-light .dash-agent-coming-soon-card,
-.app-theme-pearl .dash-agent-coming-soon-card {
-  background: transparent;
-  box-shadow: none;
-}
-
-.app-theme-light .dash-agent-orb {
-  background: linear-gradient(135deg, rgba(var(--accent-primary-rgb), 0.14), rgba(14, 165, 233, 0.1));
-  color: #0369a1;
-  box-shadow: 0 0 32px rgba(var(--accent-primary-rgb), 0.18);
-}
-
-.app-theme-light .dash-agent-orb svg:last-child {
-  color: #0f766e;
-}
-
-.app-theme-pearl .dash-agent-orb {
-  background: linear-gradient(135deg, rgba(8, 145, 178, 0.14), rgba(190, 92, 30, 0.1));
-  color: #075985;
-  box-shadow: 0 0 32px rgba(8, 145, 178, 0.16);
-}
-
-.app-theme-pearl .dash-agent-orb svg:last-child {
-  color: #9a3412;
-}
-
-.app-theme-light .dash-agent-coming-soon-card h2,
-.app-theme-pearl .dash-agent-coming-soon-card h2 {
-  color: var(--text-primary);
-}
-
-.app-theme-light .dash-agent-coming-soon-card p,
-.app-theme-pearl .dash-agent-coming-soon-card p {
-  color: var(--text-secondary);
-}
-
-.app-theme-light .dash-agent-coming-soon-grid span,
-.app-theme-pearl .dash-agent-coming-soon-grid span {
   border-color: var(--border-subtle);
   background: var(--bg-surface);
   color: var(--text-primary);

@@ -42,7 +42,9 @@ export function exportTerraform(nodes: AwsNode[], edges: AwsEdge[], selectedNode
   return `${[terraformHeader(region, createsManagedEc2Keys, includesUsEast1Provider, createsInlineLambdaPackages), ...resourceBlocks].join('\n\n') || '# Add nodes to generate Terraform.'}${edgeNotes}`;
 }
 
-function sanitizeName(value: string): string {
+// Exported so the builder can show the exact Terraform address a connection will write, using the
+// same name normalisation the generator itself applies.
+export function sanitizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'resource';
 }
 

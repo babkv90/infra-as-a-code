@@ -1,13 +1,16 @@
 import { MarkerType } from 'reactflow';
 import type { ELK, ElkNode } from 'elkjs/lib/elk-api';
 import type { AwsEdge, AwsNode } from '../types';
-import { semanticEdgeCategory, semanticLayerForNode, semanticLayerLabel } from './diagramSemantics';
+import { buildEdgeCategoryMap, semanticLayerForNode, semanticLayerLabel } from './diagramSemantics';
+import { SERVICE_NODE_HEIGHT, SERVICE_NODE_WIDTH, measuredNodeSize as measureNode } from './nodeMetrics';
 import { withTopologySemantics } from './topologySemantics';
 
-const nodeWidth = 142;
-const nodeHeight = 92;
-const layerSpacing = 120;
-const verticalSpacing = 60;
+const nodeWidth = SERVICE_NODE_WIDTH;
+const nodeHeight = SERVICE_NODE_HEIGHT;
+// Spacing is relative to the node box: the resource card is wider and taller than the old tile, so
+// fixed gaps that looked generous around a 142x92 node read as cramped around a 218x124 one.
+const layerSpacing = 150;
+const verticalSpacing = 68;
 const groupPadding = 42;
 
 export async function applyElkLayeredLayout(nodes: AwsNode[], edges: AwsEdge[]): Promise<AwsNode[]> {
@@ -15,7 +18,8 @@ export async function applyElkLayeredLayout(nodes: AwsNode[], edges: AwsEdge[]):
   const labelNodes = nodes.filter((node) => node.type === 'labelNode');
   if (!serviceNodes.length) return nodes;
 
-  const layoutEdges = edges.filter((edge) => semanticEdgeCategory(edge, nodes) !== 'containment');
+  const categories = buildEdgeCategoryMap(edges, nodes);
+  const layoutEdges = edges.filter((edge) => categories.get(edge.id) !== 'containment');
   const graph: ElkNode = {
     id: 'root',
     layoutOptions: {
@@ -133,6 +137,7 @@ export function buildSemanticColumnGroups(nodes: AwsNode[]): AwsNode[] {
 }
 
 export function normalizeSemanticEdges(edges: AwsEdge[], nodes: AwsNode[]): AwsEdge[] {
+  const categories = buildEdgeCategoryMap(edges, nodes);
   return edges.map((edge) => ({
     ...edge,
     type: 'flowEdge',
@@ -143,19 +148,13 @@ export function normalizeSemanticEdges(edges: AwsEdge[], nodes: AwsNode[]): AwsE
       protocol: edge.data?.protocol ?? '',
       port: edge.data?.port ?? '',
       ...edge.data,
-      connectionType: semanticEdgeCategory(edge, nodes),
+      connectionType: categories.get(edge.id)!,
     },
   }));
 }
 
 function measuredNodeSize(node: AwsNode): { width: number; height: number } {
-  const visual = node.data.visual;
-  const width = Number(node.width ?? node.style?.width ?? visual?.width ?? nodeWidth);
-  const height = Number(node.height ?? node.style?.height ?? visual?.height ?? nodeHeight);
-  return {
-    width: Number.isFinite(width) ? width : nodeWidth,
-    height: Number.isFinite(height) ? height : nodeHeight,
-  };
+  return measureNode(node);
 }
 
 function boundsForNodes(nodes: AwsNode[], padding: number): { x: number; y: number; width: number; height: number } {

@@ -910,18 +910,37 @@ function OverviewPage({
     if (!insights) return undefined;
     void refreshBillingRealtimeMetrics();
     void refreshLambdaRealtimeMetrics();
+    // A backgrounded tab can't be looked at, so there's no reason to keep paying for (or even just
+    // requesting) fresh numbers for it — Cost Explorer bills every one of these calls. Catching up
+    // immediately on refocus keeps it feeling live rather than stale.
     const interval = window.setInterval(() => {
+      if (document.hidden) return;
       void refreshBillingRealtimeMetrics();
     }, 300000);
-    return () => window.clearInterval(interval);
+    function handleVisibilityChange() {
+      if (!document.hidden) void refreshBillingRealtimeMetrics();
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [insights?.syncedAt]);
 
   useEffect(() => {
     if (!insights) return undefined;
     const interval = window.setInterval(() => {
+      if (document.hidden) return;
       void refreshLambdaRealtimeMetrics();
     }, 60000);
-    return () => window.clearInterval(interval);
+    function handleVisibilityChange() {
+      if (!document.hidden) void refreshLambdaRealtimeMetrics();
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [insights?.syncedAt]);
 
   return (
@@ -1429,6 +1448,10 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const flow = useReactFlow();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(false);
+  // Drives whether the inspector column is reserved at all. Selected here (rather than left to
+  // PropertiesPanel alone) because collapsing the grid column has to happen at the same level as the
+  // column definition itself.
+  const hasInspectorSelection = useDiagramStore((state) => Boolean(state.inspectorNodeId || state.inspectorEdgeId));
   const [isDeploymentPageOpen, setIsDeploymentPageOpen] = useState(false);
   const [updateDeploymentId, setUpdateDeploymentId] = useState<string>();
   const [mergeSourceDeploymentId, setMergeSourceDeploymentId] = useState<string>();
@@ -1858,7 +1881,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
             it's true: some plan/role-based restriction is in effect. */}
         {!hasCredits(user) && <p>Access tier: {accessTier}. Locked services cannot be dragged or deployed for this account.</p>}
       </section>
-      <div ref={builderShellRef} className={`dashboard-builder-shell ${isFullscreen ? 'dashboard-builder-shell--fullscreen' : ''}`}>
+      <div ref={builderShellRef} className={`builder-shell dashboard-builder-shell ${isFullscreen ? 'dashboard-builder-shell--fullscreen' : ''}`}>
         {isFullscreen && (
           <div className="dashboard-builder-fullscreen-bar">
             <strong>Visual Builder</strong>
@@ -1878,10 +1901,12 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
           isSavingDiagram={isSavingDiagram}
           saveDiagramTitle={canWriteDiagrams ? 'Save diagram to backend' : 'Architect, admin, or owner role required to save diagrams'}
         />
-        <div className={`workspace ${isServicePanelCollapsed ? 'workspace--sidebar-collapsed' : ''}`}>
+        <div
+          className={`builder-body ${isServicePanelCollapsed ? 'builder-body--palette-collapsed' : ''} ${hasInspectorSelection ? '' : 'builder-body--inspector-hidden'}`}
+        >
           <Sidebar isCollapsed={isServicePanelCollapsed} onToggleCollapsed={() => setIsServicePanelCollapsed((value) => !value)} user={user} />
           <Canvas />
-          <PropertiesPanel />
+          {hasInspectorSelection && <PropertiesPanel />}
         </div>
         <StatusBar />
       </div>

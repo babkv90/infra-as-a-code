@@ -14,6 +14,7 @@ import {
   Rocket,
   Save,
   ScanLine,
+  ScanSearch,
   SearchCheck,
   SquareDashedMousePointer,
   Tags,
@@ -25,21 +26,23 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
-import { useReactFlow, useViewport } from 'reactflow';
+import { useReactFlow } from 'reactflow';
+import CommandPalette, { type PaletteCommand } from './CommandPalette';
 import { PageAlert } from './PageAlert';
 import { getStoredUser } from '../auth/authClient';
 import { groupKinds } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
 import { validateServiceAccess } from '../utils/accessControl';
 import { exportTerraform } from '../utils/exportTerraform';
+import { diagramStructureKey } from '../utils/graphIndex';
 import { normalizeImportedDiagram } from '../utils/importDiagram';
 import { sendTerraformPayload } from '../utils/terraformPayloadApi';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
 import { validateDiagram } from '../utils/validate';
-import type { AwsNode, DiagramDetailMode, DiagramViewMode, GroupKind, ToolMode } from '../types';
+import type { AwsNode, DiagramDetailMode, DiagramViewMode, GroupKind, RenderLensId, ToolMode } from '../types';
 import type { ThemeMode } from '../theme';
 
 function Toolbar({
@@ -67,46 +70,65 @@ function Toolbar({
   const [boundaryKind, setBoundaryKind] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [isArranging, setIsArranging] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const flow = useReactFlow();
-  const viewport = useViewport();
-  const {
-    nodes,
-    edges,
-    selectedNodeId,
-    selectedEdgeId,
-    mode,
-    activeView,
-    detailMode,
-    activeRegion,
-    isDark,
-    isValidated,
-    history,
-    future,
-    setMode,
-    setActiveView,
-    setDetailMode,
-    addGroupNode,
-    isolateSelectedPath,
-    resetDiagramFocus,
-    undo,
-    redo,
-    deleteSelection,
-    validate,
-    importDiagram,
-    autoArrange,
-    markSaved,
-  } = useDiagramStore();
+  const nodes = useDiagramStore((state) => state.nodes);
+  const edges = useDiagramStore((state) => state.edges);
+  const selectedNodeId = useDiagramStore((state) => state.selectedNodeId);
+  const selectedEdgeId = useDiagramStore((state) => state.selectedEdgeId);
+  const mode = useDiagramStore((state) => state.mode);
+  const activeView = useDiagramStore((state) => state.activeView);
+  const detailMode = useDiagramStore((state) => state.detailMode);
+  const activeRegion = useDiagramStore((state) => state.activeRegion);
+  const isDark = useDiagramStore((state) => state.isDark);
+  const isValidated = useDiagramStore((state) => state.isValidated);
+  const history = useDiagramStore((state) => state.history);
+  const future = useDiagramStore((state) => state.future);
+  const setMode = useDiagramStore((state) => state.setMode);
+  const setActiveView = useDiagramStore((state) => state.setActiveView);
+  const setDetailMode = useDiagramStore((state) => state.setDetailMode);
+  const addGroupNode = useDiagramStore((state) => state.addGroupNode);
+  const isolateSelectedPath = useDiagramStore((state) => state.isolateSelectedPath);
+  const resetDiagramFocus = useDiagramStore((state) => state.resetDiagramFocus);
+  const undo = useDiagramStore((state) => state.undo);
+  const redo = useDiagramStore((state) => state.redo);
+  const deleteSelection = useDiagramStore((state) => state.deleteSelection);
+  const validate = useDiagramStore((state) => state.validate);
+  const importDiagram = useDiagramStore((state) => state.importDiagram);
+  const autoArrange = useDiagramStore((state) => state.autoArrange);
+  const markSaved = useDiagramStore((state) => state.markSaved);
+  const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
+  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
+  const setWhiteboardMode = useDiagramStore((state) => state.setWhiteboardMode);
+  const setArchitectureViewMode = useDiagramStore((state) => state.setArchitectureViewMode);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const selectedCount = nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length;
   const hasSelection = selectedCount > 0 || Boolean(selectedNodeId) || Boolean(selectedEdgeId);
   const effectiveIsDark = theme ? theme === 'dark' : isDark;
   const user = useMemo(() => getStoredUser(), []);
-  const liveTerraform = useMemo(() => exportTerraform(nodes, edges), [nodes, edges]);
+  // Terraform generation and validation read configuration, never geometry — but `nodes` gets a new
+  // identity on every pointer tick of a drag. Keyed on the structure alone, so dragging a node no
+  // longer re-runs a full HCL export plus the whole validation suite on every frame.
+  const structureKey = useMemo(() => diagramStructureKey(nodes, edges), [nodes, edges]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on structureKey by design.
+  const liveTerraform = useMemo(() => exportTerraform(nodes, edges), [structureKey]);
   // Computed live rather than read from the store's `issues` field, which only updates when
   // validate() has actually been called — the Deploy gate needs to be correct even if the user never
   // clicked "Validate" first.
   const liveIssues = useMemo(
     () => [...validateDiagram(nodes, edges, activeRegion), ...validateGeneratedTerraform(liveTerraform), ...validateServiceAccess(nodes, user)],
-    [activeRegion, liveTerraform, nodes, edges, user],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on structureKey by design.
+    [activeRegion, liveTerraform, structureKey, user],
   );
   const blockingErrorCount = liveIssues.filter((issue) => issue.severity === 'error').length;
 
@@ -124,6 +146,13 @@ function Toolbar({
     { view: 'security', label: 'Security' },
     { view: 'monitoring', label: 'Monitoring' },
     { view: 'deployment', label: 'Deployment' },
+  ];
+
+  // How the diagram is drawn, as opposed to which relationships it shows. These were previously
+  // buried in a settings page as two independent booleans.
+  const renderLenses: Array<{ id: RenderLensId; label: string; hint: string }> = [
+    { id: 'diagram', label: 'Diagram', hint: 'Resource cards with configuration and readiness' },
+    { id: 'whiteboard', label: 'Whiteboard', hint: 'Paper-style sketch for discussion' },
   ];
 
   const detailModes: Array<{ mode: DiagramDetailMode; label: string }> = [
@@ -184,6 +213,27 @@ function Toolbar({
     reader.readAsText(file);
   }
 
+  // Clicking a node used to re-frame the whole canvas automatically. Framing is now something the
+  // user asks for, and this is where they ask for it.
+  function zoomToSelection() {
+    const selectedNodeIds = new Set(nodes.filter((node) => node.selected).map((node) => node.id));
+    if (selectedNodeId) selectedNodeIds.add(selectedNodeId);
+    for (const edge of edges) {
+      if (!edge.selected && edge.id !== selectedEdgeId) continue;
+      selectedNodeIds.add(edge.source);
+      selectedNodeIds.add(edge.target);
+    }
+
+    const targets = Array.from(selectedNodeIds).filter((id) => nodes.some((node) => node.id === id));
+    if (!targets.length) return;
+    flow.fitView({
+      nodes: targets.map((id) => ({ id })),
+      padding: targets.length === 1 ? 0.44 : 0.24,
+      duration: 260,
+      maxZoom: targets.length === 1 ? 1.6 : 1.42,
+    });
+  }
+
   function autoLayout() {
     if (isArranging) return;
     setIsArranging(true);
@@ -216,22 +266,78 @@ function Toolbar({
     }
   }
 
+
+  const paletteCommands = useMemo<PaletteCommand[]>(
+    () => [
+      { id: 'validate', label: 'Validate diagram', hint: 'Check before deploy', run: () => void handleValidate() },
+      { id: 'auto-arrange', label: 'Auto arrange', hint: 'Re-layout the canvas', run: autoLayout },
+      { id: 'fit', label: 'Fit view', hint: 'Frame everything', run: () => flow.fitView({ padding: 0.18, duration: 260 }) },
+      { id: 'zoom-selection', label: 'Zoom to selection', run: zoomToSelection },
+      { id: 'isolate', label: 'Isolate path', hint: 'Upstream and downstream', run: isolateSelectedPath },
+      { id: 'reset-focus', label: 'Reset view', run: resetDiagramFocus },
+      { id: 'terraform', label: 'Export Terraform', run: exportHcl },
+      { id: 'export-json', label: 'Export JSON', run: exportJson },
+      { id: 'deploy', label: 'Open deployment', hint: 'Needs a validated diagram', run: () => onOpenDeployment?.() },
+      // Render lenses live here rather than in the lens bar, which the wireframe reserves for
+      // relationship filters. They were previously reachable only from a settings page.
+      ...renderLenses.map((lens) => ({
+        id: `lens-${lens.id}`,
+        label: `Draw as: ${lens.label}`,
+        hint: lens.hint,
+        run: () => applyRenderLens(lens.id),
+      })),
+    ],
+    // Deliberately closes over current values; commands read them at the moment they run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flow, isolateSelectedPath, onOpenDeployment, resetDiagramFocus],
+  );
+
+  const renderLens: RenderLensId = whiteboardMode ? 'whiteboard' : 'diagram';
+
+  // Always sets both flags, never just the one being turned on. The architecture skin is no longer
+  // offered here, so if anything else leaves it enabled, picking Diagram still returns you to the
+  // resource cards rather than stranding you in a lens with no control.
+  function applyRenderLens(lens: RenderLensId) {
+    setWhiteboardMode(lens === 'whiteboard');
+    setArchitectureViewMode(false);
+  }
+
   return (
     <>
-    {alertMessage && <PageAlert message={alertMessage} tone="error" onDismiss={() => setAlertMessage('')} />}
-    <header className="toolbar">
-      <div className="toolbar__section">
+      {alertMessage && <PageAlert message={alertMessage} tone="error" onDismiss={() => setAlertMessage('')} />}
+      <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} commands={paletteCommands} />
+
+      {/* Row 1 — command bar: find, build, undo, then the deploy gate. */}
+      <header className="builder-bar">
+        <button className="bx-omni" onClick={() => setIsPaletteOpen(true)} type="button">
+          <SearchCheck size={14} />
+          Search or add a resource
+          <kbd className="bx-omni__hint">{isMacPlatform() ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+
+        <span className="builder-bar__divider" />
+
         {tools.map((tool) => {
           const Icon = tool.icon;
           return (
-            <button key={tool.mode} className={`icon-button ${mode === tool.mode ? 'active' : ''}`} title={tool.label} onClick={() => setMode(tool.mode)}>
-              <Icon size={18} />
+            <button
+              key={tool.mode}
+              className={`bx-button bx-button--icon ${mode === tool.mode ? 'bx-button--active' : ''}`}
+              title={tool.label}
+              aria-label={tool.label}
+              aria-pressed={mode === tool.mode}
+              onClick={() => setMode(tool.mode)}
+              type="button"
+            >
+              <Icon size={16} />
             </button>
           );
         })}
+
         <select
           className="toolbar-select"
-          title="Boundary type"
+          aria-label="Add a boundary"
+          title="Add a boundary"
           value={boundaryKind}
           onChange={(event) => {
             const nextKind = event.target.value as GroupKind;
@@ -248,84 +354,38 @@ function Toolbar({
             </option>
           ))}
         </select>
-      </div>
-      <div className="toolbar__section">
-        <button className="icon-button" title="Undo" disabled={!history.length} onClick={undo}>
-          <Undo2 size={18} />
+
+        <span className="builder-bar__divider" />
+
+        <button className="bx-button bx-button--icon" title="Undo" aria-label="Undo" disabled={!history.length} onClick={undo} type="button">
+          <Undo2 size={16} />
         </button>
-        <button className="icon-button" title="Redo" disabled={!future.length} onClick={redo}>
-          <Redo2 size={18} />
+        <button className="bx-button bx-button--icon" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo} type="button">
+          <Redo2 size={16} />
         </button>
-        <button className="icon-button danger-button" title="Delete selected" aria-label="Delete selected services" disabled={!hasSelection} onClick={deleteSelection}>
-          <Trash2 size={18} />
-        </button>
-      </div>
-      <div className="toolbar__section">
-        <button className="icon-button" title="Zoom out" onClick={() => flow.zoomOut()}>
-          <ZoomOut size={18} />
-        </button>
-        <span className="zoom-readout">{Math.round(viewport.zoom * 100)}%</span>
-        <button className="icon-button" title="Zoom in" onClick={() => flow.zoomIn()}>
-          <ZoomIn size={18} />
-        </button>
-        <button className="icon-button" title="Fit view — frame the whole diagram (separate from Auto-layout, which also repositions nodes)" onClick={() => flow.fitView({ padding: 0.18, duration: 320 })}>
-          <Focus size={18} />
-        </button>
-      </div>
-      <div className="toolbar__section toolbar__section--grow">
-        <select
-          aria-label="Diagram view"
-          className="toolbar-select toolbar-select--view"
-          title="Relationship filter"
-          value={activeView}
-          onChange={(event) => setActiveView(event.target.value as DiagramViewMode)}
-        >
-          {views.map((view) => (
-            <option key={view.view} value={view.view}>
-              {view.label}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Diagram detail"
-          className="toolbar-select toolbar-select--view"
-          title="Diagram detail mode"
-          value={detailMode}
-          onChange={(event) => setDetailMode(event.target.value as DiagramDetailMode)}
-        >
-          {detailModes.map((mode) => (
-            <option key={mode.mode} value={mode.mode}>
-              {mode.label}
-            </option>
-          ))}
-        </select>
-        <details className="toolbar-tools-menu">
-          <summary className="text-button toolbar-tools-menu__summary">
-            <Wand2 size={16} />
-            Diagram Tools
-            <ChevronDown size={14} />
-          </summary>
-          <div className="toolbar-tools-menu__content">
-            <button disabled={isArranging || !nodes.length} onClick={autoLayout} type="button">
-              <LayoutGrid size={15} />
-              {isArranging ? 'Arranging...' : 'Auto arrange'}
-            </button>
-            <button disabled={!selectedNodeId} onClick={isolateSelectedPath} type="button">
-              <Focus size={15} />
-              Isolate Path
-            </button>
-            <button onClick={resetDiagramFocus} type="button">
-              <Focus size={15} />
-              Reset View
-            </button>
-            <button onClick={exportHcl} type="button">
-              <TerminalSquare size={15} />
-              Generate Terraform
-            </button>
-          </div>
-        </details>
         <button
-          className={`text-button toolbar-validate-button ${isValidated ? 'toolbar-validate-button--ok' : ''}`}
+          className="bx-button bx-button--icon bx-button--danger"
+          title="Delete selected"
+          aria-label="Delete selected"
+          disabled={!hasSelection}
+          onClick={deleteSelection}
+          type="button"
+        >
+          <Trash2 size={16} />
+        </button>
+
+        <span className="builder-bar__spacer" />
+
+        {blockingErrorCount > 0 ? (
+          <span className="bx-count bx-count--error" title="These must be fixed before Deploy unlocks.">
+            {blockingErrorCount} blocking
+          </span>
+        ) : (
+          <span className="bx-count bx-count--ok">No blocking issues</span>
+        )}
+
+        <button
+          className={`bx-button ${isValidated ? 'bx-button--active' : ''}`}
           onClick={() => void handleValidate()}
           title={isValidated ? 'Diagram validated — re-run any time.' : 'Validate the diagram — required before Deploy unlocks.'}
           type="button"
@@ -333,8 +393,9 @@ function Toolbar({
           {isValidated ? <CheckCircle2 size={15} /> : <SearchCheck size={15} />}
           {isValidated ? 'Validated' : 'Validate'}
         </button>
+
         <button
-          className="text-button deploy-toolbar-button"
+          className="bx-button bx-button--primary"
           disabled={!isValidated || blockingErrorCount > 0}
           title={
             blockingErrorCount > 0
@@ -347,23 +408,19 @@ function Toolbar({
             validate();
             onOpenDeployment?.();
           }}
+          type="button"
         >
-          <Rocket size={16} />
+          <Rocket size={15} />
           Deploy
         </button>
-        {onToggleFullscreen && (
-          <button className="text-button" onClick={onToggleFullscreen}>
-            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
-          </button>
-        )}
-      </div>
-      <div className="toolbar__section">
+
+        <span className="builder-bar__divider" />
+
         <details className="toolbar-tools-menu toolbar-tools-menu--align-right">
-          <summary className="text-button toolbar-tools-menu__summary">
-            <Download size={16} />
+          <summary className="bx-button toolbar-tools-menu__summary">
+            <Download size={15} />
             Export
-            <ChevronDown size={14} />
+            <ChevronDown size={13} />
           </summary>
           <div className="toolbar-tools-menu__content">
             <button onClick={() => fileRef.current?.click()} type="button">
@@ -388,20 +445,104 @@ function Toolbar({
             </button>
           </div>
         </details>
+
         <button
-          className="text-button save-toolbar-button"
+          className="bx-button"
           title={saveDiagramTitle ?? saveDiagramLabel}
           disabled={!onSaveDiagram || !canSaveDiagram || isSavingDiagram}
           onClick={onSaveDiagram}
+          type="button"
         >
-          <Save size={16} />
+          <Save size={15} />
           {isSavingDiagram ? 'Saving...' : saveDiagramLabel}
         </button>
+
+        {onToggleFullscreen && (
+          <button
+            className="bx-button bx-button--icon"
+            title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+            aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+            onClick={onToggleFullscreen}
+            type="button"
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
+
         <input ref={fileRef} hidden type="file" accept="application/json" onChange={(event) => importJson(event.target.files?.[0])} />
+      </header>
+
+      {/* Row 2 — lens bar: how the diagram is drawn, and which relationships it shows. The render
+          lenses used to be reachable only from a settings page, which is why nobody found them. */}
+      <div className="builder-bar builder-bar--lens">
+        <span className="builder-bar__label">Lens</span>
+        {views.map((view) => (
+          <button
+            key={view.view}
+            className={`bx-chip ${activeView === view.view ? 'bx-chip--active' : ''}`}
+            aria-pressed={activeView === view.view}
+            onClick={() => setActiveView(view.view)}
+            type="button"
+          >
+            {view.label}
+          </button>
+        ))}
+
+        <span className="builder-bar__divider" />
+
+        <select
+          aria-label="Detail level"
+          className="toolbar-select toolbar-select--view"
+          title="How much of the diagram to draw"
+          value={detailMode}
+          onChange={(event) => setDetailMode(event.target.value as DiagramDetailMode)}
+        >
+          {detailModes.map((item) => (
+            <option key={item.mode} value={item.mode}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+
+        <span className="builder-bar__divider" />
+
+        {/* The render lens has to stay visible. It persists in localStorage, so a Whiteboard or
+            Architecture setting from an earlier session survives a reload — and while it was only
+            reachable from the command palette, there was no way to see which lens was active or get
+            back to the resource cards. */}
+        <span className="builder-bar__label">Draw</span>
+        <span className="bx-segmented" role="group" aria-label="Render lens">
+          {renderLenses.map((lens) => (
+            <button
+              key={lens.id}
+              className={`bx-segmented__option ${renderLens === lens.id ? 'bx-segmented__option--active' : ''}`}
+              aria-pressed={renderLens === lens.id}
+              title={lens.hint}
+              onClick={() => applyRenderLens(lens.id)}
+              type="button"
+            >
+              {lens.label}
+            </button>
+          ))}
+        </span>
+
+        <span className="builder-bar__spacer" />
+
+        <button className="bx-button" title="Frame the whole diagram" onClick={() => flow.fitView({ padding: 0.18, duration: 260 })} type="button">
+          Fit
+        </button>
+        <button className="bx-button" disabled={isArranging || !nodes.length} onClick={autoLayout} type="button">
+          <LayoutGrid size={15} />
+          {isArranging ? 'Arranging...' : 'Auto arrange'}
+        </button>
       </div>
-    </header>
     </>
   );
+}
+
+function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 
 function boundaryLabel(kind: GroupKind): string {

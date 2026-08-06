@@ -11,10 +11,12 @@ type NodeLike = Pick<AwsNode, 'position' | 'width' | 'height' | 'style' | 'type'
   data?: Partial<AwsNode['data']>;
 };
 
-const defaultServiceWidth = 142;
-const defaultServiceHeight = 92;
-const defaultGroupWidth = 520;
-const defaultGroupHeight = 340;
+import { GROUP_NODE_HEIGHT, GROUP_NODE_WIDTH, SERVICE_NODE_HEIGHT, SERVICE_NODE_WIDTH } from './nodeMetrics';
+
+const defaultServiceWidth = SERVICE_NODE_WIDTH;
+const defaultServiceHeight = SERVICE_NODE_HEIGHT;
+const defaultGroupWidth = GROUP_NODE_WIDTH;
+const defaultGroupHeight = GROUP_NODE_HEIGHT;
 
 export function getOptimalConnectionSides(sourceNode: NodeLike, targetNode: NodeLike): ConnectionSides {
   const sourceBounds = getNodeBounds(sourceNode);

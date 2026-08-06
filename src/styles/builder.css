@@ -1,0 +1,1351 @@
+/* ============================================================================
+   Visual builder — the proposed design, applied.
+
+   Loaded after styles.css. Everything inside `.builder-shell` is owned here; the
+   legacy builder skin that used to govern this region (a dark navy shell with a
+   20px radius, a single cramped toolbar, floating inspector) is neutralised at
+   the top of this file rather than left to fight the new rules.
+
+   Palette, type scale and motion match the published proposal.
+   ============================================================================ */
+
+.builder-shell {
+  /* ---- layout ---- */
+  --builder-palette-width: 178px;
+  --builder-inspector-width: 262px;
+  --builder-hairline: 1px;
+
+  /* ---- neutrals: cool-biased toward the accent, never a flat mid-grey ---- */
+  --bx-ground: #f6f8f8;
+  --bx-surface: #ffffff;
+  --bx-surface-sunken: #eef2f3;
+  --bx-rule: #d3dcdf;
+  --bx-rule-soft: #e6ecee;
+  --bx-ink: #0f1a20;
+  --bx-ink-2: #3c4c55;
+  --bx-ink-3: #6b7d87;
+
+  /* ---- semantic: separate from any brand accent ---- */
+  --bx-accent: #0b6e75;
+  --bx-accent-soft: #e2f0f0;
+  --bx-signal: #b03e10;
+  --bx-signal-soft: #fbeae1;
+  --bx-ok: #17683f;
+  --bx-ok-soft: #e2f0e8;
+  --bx-warn: #8a5a05;
+  --bx-warn-soft: #fbf0da;
+
+  /* ---- type: mono for labels, identifiers and numbers; sans for prose ---- */
+  --bx-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --bx-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  /* ---- motion budget: one scale, nothing else animates ---- */
+  --bx-hover: 90ms;
+  --bx-state: 120ms;
+  --bx-camera: 260ms;
+  --bx-layout: 300ms;
+  --bx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--builder-hairline);
+  min-height: 0;
+  font-family: var(--bx-sans);
+  color: var(--bx-ink);
+}
+
+/* ---------------------------------------------------------------------------
+   Retire the legacy builder skin. These override styles.css rules that would
+   otherwise repaint the new surfaces. Specificity is matched deliberately.
+   --------------------------------------------------------------------------- */
+
+.builder-shell.dashboard-builder-shell {
+  border: 1px solid var(--bx-rule);
+  border-radius: 10px;
+  background: var(--bx-rule-soft);
+  overflow: hidden;
+}
+
+.app-theme-dark .builder-shell.dashboard-builder-shell,
+.builder-shell.dashboard-builder-shell--fullscreen {
+  border-radius: 10px;
+}
+
+.builder-shell.dashboard-builder-shell--fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+
+.builder-shell .sidebar,
+.builder-shell .properties-panel,
+.app-theme-dark .builder-shell .sidebar,
+.app-theme-dark .builder-shell .properties-panel {
+  border-color: var(--bx-rule);
+  background: var(--bx-surface);
+  color: var(--bx-ink);
+}
+
+.builder-shell .status-bar,
+.app-theme-dark .builder-shell .status-bar {
+  border-color: var(--bx-rule);
+  background: var(--bx-surface);
+}
+
+.app-theme-dark .builder-shell .toolbar-select,
+.app-theme-dark .builder-shell .sidebar__search,
+.app-theme-dark .builder-shell .field input,
+.app-theme-dark .builder-shell .field select,
+.app-theme-dark .builder-shell .field textarea,
+.app-theme-dark .builder-shell .rename-input,
+.builder-shell .toolbar-select,
+.builder-shell .sidebar__search {
+  border-color: var(--bx-rule);
+  background: var(--bx-surface);
+  color: var(--bx-ink);
+}
+
+.app-theme-dark .builder-shell .service-item,
+.builder-shell .service-item {
+  border-color: var(--bx-rule-soft);
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+}
+
+/* ---------------------------------------------------------------------------
+   Dark theme. The second theme gets the same care as the first — the accent is
+   lifted rather than inverted so it still reads on a dark ground.
+   --------------------------------------------------------------------------- */
+
+.app-theme-dark .builder-shell,
+.dark .builder-shell {
+  --bx-ground: #0a1116;
+  --bx-surface: #0f181e;
+  --bx-surface-sunken: #131f26;
+  --bx-rule: #24343c;
+  --bx-rule-soft: #1a272e;
+  --bx-ink: #e7eef0;
+  --bx-ink-2: #a9bcc4;
+  --bx-ink-3: #71858e;
+  --bx-accent: #4fb3ba;
+  --bx-accent-soft: #122f32;
+  --bx-signal: #e8814f;
+  --bx-signal-soft: #341a10;
+  --bx-ok: #5cba86;
+  --bx-ok-soft: #10281c;
+  --bx-warn: #d5a23f;
+  --bx-warn-soft: #2c2210;
+}
+
+.builder-shell > .builder-bar,
+.builder-shell > .builder-status,
+.builder-shell > .dashboard-builder-fullscreen-bar {
+  flex: 0 0 auto;
+}
+
+.builder-shell .dashboard-builder-fullscreen-bar {
+  padding: 0 14px;
+  border-bottom: 1px solid var(--bx-rule);
+  background: var(--bx-surface);
+  color: var(--bx-ink);
+}
+
+.builder-shell .dashboard-builder-fullscreen-exit {
+  border-color: var(--bx-rule);
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   W1 — rows 1 and 2: command bar, lens bar
+   ============================================================================ */
+
+.builder-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--bx-surface);
+  color: var(--bx-ink);
+}
+
+.builder-bar--lens {
+  padding: 6px 12px;
+  background: var(--bx-surface-sunken);
+}
+
+.builder-bar__spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.builder-bar__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 5px;
+  background: var(--bx-rule);
+}
+
+.builder-bar__label {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bx-ink-3);
+  white-space: nowrap;
+}
+
+/* ---- controls ---- */
+
+.builder-shell .bx-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 6px;
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  font-family: var(--bx-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--bx-hover) ease-out, color var(--bx-hover) ease-out;
+}
+
+.builder-shell .bx-button:hover:not(:disabled) {
+  border-color: var(--bx-ink-3);
+  color: var(--bx-ink);
+}
+
+.builder-shell .bx-button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.builder-shell .bx-button:focus-visible,
+.builder-shell .bx-chip:focus-visible,
+.builder-shell .bx-omni:focus-visible {
+  outline: 2px solid var(--bx-accent);
+  outline-offset: 1px;
+}
+
+.builder-shell .bx-button--icon {
+  padding: 6px;
+}
+
+.builder-shell .bx-button--active {
+  border-color: var(--bx-accent);
+  background: var(--bx-accent-soft);
+  color: var(--bx-accent);
+}
+
+.builder-shell .bx-button--primary {
+  border-color: var(--bx-accent);
+  background: var(--bx-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.builder-shell .bx-button--primary:hover:not(:disabled) {
+  border-color: var(--bx-accent);
+  color: #fff;
+}
+
+.builder-shell .bx-button--danger:hover:not(:disabled) {
+  border-color: var(--bx-signal);
+  color: var(--bx-signal);
+}
+
+/* Lens chips — the relationship filter, visible rather than hidden in a select. */
+.builder-shell .bx-chip {
+  padding: 4px 11px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 999px;
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  font-family: var(--bx-sans);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--bx-hover) ease-out, color var(--bx-hover) ease-out;
+}
+
+.builder-shell .bx-chip:hover {
+  border-color: var(--bx-ink-3);
+  color: var(--bx-ink);
+}
+
+.builder-shell .bx-chip--active {
+  border-color: var(--bx-accent);
+  background: var(--bx-accent-soft);
+  color: var(--bx-accent);
+  font-weight: 600;
+}
+
+/* Segmented control — one visible group, so the active render lens is always readable at a glance
+   rather than being a hidden toggle. */
+.builder-shell .bx-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 7px;
+  background: var(--bx-surface-sunken);
+}
+
+.builder-shell .bx-segmented__option {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--bx-ink-3);
+  font-family: var(--bx-sans);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--bx-hover) ease-out;
+}
+
+.builder-shell .bx-segmented__option:hover {
+  color: var(--bx-ink);
+}
+
+.builder-shell .bx-segmented__option:focus-visible {
+  outline: 2px solid var(--bx-accent);
+  outline-offset: -1px;
+}
+
+.builder-shell .bx-segmented__option--active {
+  background: var(--bx-surface);
+  border: 1px solid var(--bx-rule);
+  color: var(--bx-accent);
+  font-weight: 600;
+  padding: 3px 9px;
+}
+
+.builder-shell .bx-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.builder-shell .bx-count--error {
+  border-color: var(--bx-signal);
+  background: var(--bx-signal-soft);
+  color: var(--bx-signal);
+}
+
+.builder-shell .bx-count--ok {
+  border-color: var(--bx-ok);
+  background: var(--bx-ok-soft);
+  color: var(--bx-ok);
+}
+
+/* Command palette trigger — the keyboard path, advertised in the bar itself. */
+.builder-shell .bx-omni {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 236px;
+  padding: 6px 10px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 6px;
+  background: var(--bx-surface-sunken);
+  color: var(--bx-ink-3);
+  font-family: var(--bx-sans);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color var(--bx-hover) ease-out;
+}
+
+.builder-shell .bx-omni:hover {
+  border-color: var(--bx-accent);
+}
+
+.builder-shell .bx-omni__hint {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 4px;
+  background: var(--bx-surface);
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--bx-ink-3);
+}
+
+.builder-shell .toolbar-select {
+  padding: 5px 8px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 6px;
+  font-family: var(--bx-sans);
+  font-size: 12.5px;
+  color: var(--bx-ink-2);
+}
+
+.builder-shell .toolbar-tools-menu__summary {
+  list-style: none;
+}
+
+.builder-shell .toolbar-tools-menu__summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ============================================================================
+   W1 — row 3: palette / canvas / inspector
+   ============================================================================ */
+
+.builder-body {
+  display: grid;
+  grid-template-columns: var(--builder-palette-width) minmax(0, 1fr) var(--builder-inspector-width);
+  gap: var(--builder-hairline);
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bx-rule);
+}
+
+.builder-body--palette-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr) var(--builder-inspector-width);
+}
+
+/* No selection, no inspector column — the canvas takes the space instead of an empty panel sitting
+   there. Comes back the moment something is selected. */
+.builder-body--inspector-hidden {
+  grid-template-columns: var(--builder-palette-width) minmax(0, 1fr);
+}
+
+.builder-body--palette-collapsed.builder-body--inspector-hidden {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+/* Every column fills its full grid cell — width and height — rather than relying on implicit grid
+   stretch, which left the inspector short of the cell's actual bottom/right edge whenever it had
+   little or no content (an empty aside has near-zero natural height on its own). */
+.builder-body > * {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  box-sizing: border-box;
+}
+
+/* ---- palette ---- */
+
+.builder-shell .sidebar {
+  padding: 10px 8px;
+  border-right: 0;
+  overflow-y: auto;
+}
+
+.builder-shell .sidebar__header {
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--bx-ink-3);
+}
+
+.builder-shell .service-group__title {
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--bx-ink-3);
+}
+
+.builder-shell .service-item {
+  border-radius: 6px;
+  font-size: 12px;
+  transition: border-color var(--bx-hover) ease-out;
+}
+
+.builder-shell .service-item:hover {
+  border-color: var(--bx-accent);
+  color: var(--bx-ink);
+}
+
+.builder-shell .service-item__badge {
+  font-family: var(--bx-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- canvas surface ---- */
+
+.builder-shell .canvas-shell {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bx-ground);
+}
+
+.builder-shell .react-flow {
+  background-color: var(--bx-ground);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--bx-ink-3) 34%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.builder-shell .canvas-mode-pill {
+  padding: 5px 11px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 999px;
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  font-family: var(--bx-sans);
+  font-size: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  backdrop-filter: none;
+}
+
+.builder-shell .canvas-mode-pill--connecting {
+  border-color: var(--bx-accent);
+  background: var(--bx-accent-soft);
+  color: var(--bx-accent);
+  font-weight: 600;
+}
+
+.canvas-zoom-cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 8px;
+  background: var(--bx-surface);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.09);
+}
+
+.canvas-zoom-cluster button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--bx-ink-2);
+  cursor: pointer;
+}
+
+.canvas-zoom-cluster button:hover {
+  background: var(--bx-surface-sunken);
+  color: var(--bx-ink);
+}
+
+.canvas-zoom-cluster button:focus-visible {
+  outline: 2px solid var(--bx-accent);
+  outline-offset: -2px;
+}
+
+.canvas-zoom-cluster__readout {
+  min-width: 44px;
+  padding: 0 4px;
+  color: var(--bx-ink-2);
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.builder-shell .react-flow__minimap {
+  border: 1px solid var(--bx-rule);
+  border-radius: 8px;
+  background: var(--bx-surface);
+}
+
+/* ============================================================================
+   W2 — resource card
+   ============================================================================ */
+
+.aws-node--card {
+  /* Block, not the base `.aws-node` grid — the card fills the node box itself and must not be
+     centred inside a narrower track. */
+  display: block;
+  width: 218px;
+  height: 124px;
+  padding: 0;
+  background: transparent;
+}
+
+.aws-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1.5px solid var(--bx-rule, #d3dcdf);
+  border-radius: 8px;
+  background: var(--bx-surface, #fff);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.07);
+  transition: border-color var(--bx-hover, 90ms) ease-out;
+}
+
+.aws-node--card:hover .aws-card {
+  border-color: var(--bx-ink-3, #6b7d87);
+}
+
+.aws-node--card.selected .aws-card {
+  border-color: var(--bx-accent, #0b6e75);
+  box-shadow: 0 0 0 3px var(--bx-accent-soft, #e2f0f0);
+}
+
+.aws-node--card.warning .aws-card {
+  border-color: var(--bx-signal, #b03e10);
+}
+
+/* Service category, still readable when the icon stops resolving at low zoom. */
+.aws-card__stripe {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+}
+
+.aws-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 7px 13px;
+  min-width: 0;
+}
+
+.aws-card__icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 1px solid var(--bx-rule, #d3dcdf);
+  border-radius: 5px;
+  background: var(--bx-surface-sunken, #eef2f3);
+}
+
+.aws-card__identity {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.aws-card__name {
+  overflow: hidden;
+  color: var(--bx-ink, #0f1a20);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aws-card__type {
+  overflow: hidden;
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aws-card__meta {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  margin: 0;
+  padding: 5px 10px 0 13px;
+  border-top: 1px dashed var(--bx-rule-soft, #e6ecee);
+  min-width: 0;
+}
+
+.aws-card__meta-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.aws-card__meta-row dt {
+  overflow: hidden;
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aws-card__meta-row dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--bx-ink-2, #3c4c55);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aws-card__meta-row--missing dd {
+  color: var(--bx-signal, #b03e10);
+}
+
+.aws-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px 6px 13px;
+  border-top: 1px dashed var(--bx-rule-soft, #e6ecee);
+  font-size: 9.5px;
+  min-width: 0;
+}
+
+.aws-card__readiness {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aws-card__readiness--ready {
+  color: var(--bx-ok, #17683f);
+}
+
+.aws-card__readiness--blocked {
+  color: var(--bx-signal, #b03e10);
+}
+
+.aws-card__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.aws-card__region {
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+
+.aws-card__badges {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  display: flex;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.aws-card__badge {
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bx-surface-sunken, #eef2f3);
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.aws-card__badge--security {
+  background: var(--bx-signal-soft, #fbeae1);
+  color: var(--bx-signal, #b03e10);
+}
+
+.aws-card__badge--deployment {
+  background: var(--bx-ok-soft, #e2f0e8);
+  color: var(--bx-ok, #17683f);
+}
+
+/* Compact lenses share the card footprint so handles stay on the visible shape. */
+.aws-node--compact {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  width: 218px;
+  height: 124px;
+}
+
+/* ============================================================================
+   W3 — typed connection states
+   ============================================================================ */
+
+.port-handle {
+  opacity: 0;
+  transition: opacity var(--bx-hover, 90ms) ease-out;
+}
+
+.aws-node:hover .port-handle,
+.aws-node.selected .port-handle,
+.canvas-shell--connecting .port-handle {
+  opacity: 1;
+}
+
+.canvas-shell--connecting .react-flow__node.connect-reference {
+  opacity: 0.55;
+}
+
+.canvas-shell--connecting .react-flow__node.connect-reversed,
+.canvas-shell--connecting .react-flow__node.connect-none {
+  opacity: 0.22;
+}
+
+.canvas-shell--connecting .connect-typed .aws-card,
+.canvas-shell--connecting .connect-typed .aws-node__tile {
+  border-color: var(--bx-ok, #17683f);
+  box-shadow: 0 0 0 3px var(--bx-ok-soft, #e2f0e8);
+}
+
+.canvas-shell--connecting .connect-reversed .aws-card,
+.canvas-shell--connecting .connect-reversed .aws-node__tile {
+  border-color: var(--bx-warn, #8a5a05);
+  border-style: dashed;
+}
+
+.canvas-shell--connecting .connect-origin .aws-card,
+.canvas-shell--connecting .connect-origin .aws-node__tile {
+  border-color: var(--bx-accent, #0b6e75);
+  box-shadow: 0 0 0 3px var(--bx-accent-soft, #e2f0f0);
+}
+
+/* ---- boundary drop preview: answer before the drop, not after ---- */
+
+.react-flow__node.boundary-accept .group-box {
+  border-color: var(--bx-ok, #17683f);
+  background: var(--bx-ok-soft, #e2f0e8);
+}
+
+.react-flow__node.boundary-reject .group-box {
+  border-color: var(--bx-signal, #b03e10);
+  border-style: dashed;
+  background: var(--bx-signal-soft, #fbeae1);
+}
+
+.builder-shell .canvas-mode-pill--accept {
+  border-color: var(--bx-ok);
+  background: var(--bx-ok-soft);
+  color: var(--bx-ok);
+  font-weight: 600;
+}
+
+.builder-shell .canvas-mode-pill--reject {
+  border-color: var(--bx-signal);
+  background: var(--bx-signal-soft);
+  color: var(--bx-signal);
+  font-weight: 600;
+}
+
+/* ---- connection receipt: what the line will write ---- */
+
+.builder-shell .connection-receipt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--bx-ok);
+  border-radius: 8px;
+  background: var(--bx-surface);
+  box-shadow: 0 4px 14px rgba(9, 16, 21, 0.14);
+  font-family: var(--bx-sans);
+  font-size: 12px;
+}
+
+.builder-shell .connection-receipt--reference {
+  border-color: var(--bx-rule);
+}
+
+.builder-shell .connection-receipt__kind {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bx-ok-soft);
+  color: var(--bx-ok);
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.builder-shell .connection-receipt--reference .connection-receipt__kind {
+  background: var(--bx-surface-sunken);
+  color: var(--bx-ink-3);
+}
+
+.builder-shell .connection-receipt__expression {
+  color: var(--bx-ink);
+  font-family: var(--bx-mono);
+  font-size: 11.5px;
+}
+
+.builder-shell .connection-receipt__summary {
+  color: var(--bx-ink-2);
+}
+
+.builder-shell .connection-receipt__note {
+  color: var(--bx-ink-3);
+  font-size: 10.5px;
+  font-style: italic;
+}
+
+.builder-shell .connection-receipt button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bx-ink-3);
+  cursor: pointer;
+}
+
+.builder-shell .connection-receipt button:hover {
+  background: var(--bx-surface-sunken);
+  color: var(--bx-ink);
+}
+
+/* ============================================================================
+   W4 — motion budget. Only transform and opacity animate; camera moves only on
+   explicit request. Focus dimming carries no filter — that promoted every node
+   in the diagram to its own compositing layer for the duration of the fade.
+   ============================================================================ */
+
+.canvas-shell--layout-transition .react-flow__node {
+  transition: transform var(--bx-layout, 300ms) var(--bx-ease, ease-out);
+}
+
+.react-flow__node.focus-dim {
+  opacity: 0.22;
+  transition: opacity var(--bx-state, 120ms) ease-out;
+}
+
+.react-flow__node.focus-hit {
+  opacity: 1;
+  transition: opacity var(--bx-state, 120ms) ease-out;
+}
+
+.react-flow__edge.focus-dim,
+.react-flow__edge.focus-hit {
+  transition: opacity var(--bx-state, 120ms) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builder-shell,
+  .builder-shell * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
+
+/* ============================================================================
+   Command palette
+   ============================================================================ */
+
+.bx-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the fullscreen builder shell (1000), which is its own stacking context. */
+  z-index: 1200;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding-top: 14vh;
+  background: rgba(9, 16, 21, 0.42);
+}
+
+.bx-palette {
+  width: min(560px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--bx-rule, #d3dcdf);
+  border-radius: 10px;
+  background: var(--bx-surface, #fff);
+  box-shadow: 0 18px 46px rgba(9, 16, 21, 0.3);
+  font-family: var(--bx-sans);
+}
+
+.bx-palette__input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--bx-rule, #d3dcdf);
+  background: transparent;
+  color: var(--bx-ink, #0f1a20);
+  font-family: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.bx-palette__list {
+  max-height: 336px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bx-palette__group {
+  padding: 8px 10px 4px;
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bx-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bx-ink, #0f1a20);
+  font-family: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bx-palette__item[aria-selected="true"] {
+  background: var(--bx-accent-soft, #e2f0f0);
+  color: var(--bx-accent, #0b6e75);
+}
+
+.bx-palette__item-meta {
+  margin-left: auto;
+  color: var(--bx-ink-3, #6b7d87);
+  font-family: var(--bx-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.bx-palette__swatch {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 2px;
+}
+
+.bx-palette__empty {
+  padding: 22px 16px;
+  color: var(--bx-ink-3, #6b7d87);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ============================================================================
+   W1 ④ — inspector: a docked column, not a popup anchored to the node
+   ============================================================================ */
+
+/*
+ * `.dash-page--builder .properties-panel` (styles.css) is the legacy floating-popup rule: absolute
+ * position, width capped at `calc(100% - 20px)`, height left to shrink to content. It shares the
+ * exact specificity of the combined selectors below (one ancestor class + one element class), so
+ * relying on file/import order alone to win that tie was fragile — the popup rule kept winning,
+ * which is why the panel sat shrunk to its own content size at the top-left of the column instead
+ * of filling it, leaving grey visible on the right (the missing 20px of width) and the bottom (no
+ * content to stretch into). `!important` on these five properties is deliberate: they are the whole
+ * reason the popup rule exists, and the docked layout must always win regardless of selector order.
+ */
+.dash-page--builder .properties-panel--docked,
+.dashboard-builder-shell .properties-panel--docked,
+.builder-shell .properties-panel--docked {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0;
+  padding: 12px 0 0 12px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+  animation: none !important;
+  background: var(--bx-surface);
+}
+
+/* Trailing margins would reintroduce the bottom gap the padding above removes. */
+.builder-shell .properties-panel--docked > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Every control inside the panel is full-width; without border-box their padding and border push
+   them past the panel's right edge. */
+.builder-shell .properties-panel--docked *,
+.builder-shell .properties-panel--docked *::before,
+.builder-shell .properties-panel--docked *::after {
+  box-sizing: border-box;
+}
+
+.builder-shell .properties-panel--docked .field input,
+.builder-shell .properties-panel--docked .field select,
+.builder-shell .properties-panel--docked .field textarea,
+.builder-shell .properties-panel--docked .json-field-trigger {
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 9px;
+  font-size: 12.5px;
+}
+
+.builder-shell .properties-panel--docked .field {
+  min-width: 0;
+}
+
+.builder-shell .properties-panel--docked .field > span {
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+/* Long ARNs, file paths and Terraform expressions must wrap rather than widen the column. */
+.builder-shell .properties-panel--docked .json-field-trigger__preview,
+.builder-shell .properties-panel--docked .connection-list li,
+.builder-shell .properties-panel--docked code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.builder-shell .properties-panel--docked .panel-actions {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+.builder-shell .properties-panel--docked .panel-actions button {
+  width: 100%;
+}
+
+/* With no right padding on the panel itself, controls keep a hair of clearance from the scrollbar
+   without reserving a permanent gutter. */
+.builder-shell .properties-panel--docked > * {
+  padding-right: 10px;
+}
+
+.dash-page--builder .properties-panel--docked::before,
+.dashboard-builder-shell .properties-panel--docked::before,
+.builder-shell .properties-panel--docked::before {
+  /* Same tie as above — the legacy popup's arrow triangle must not survive onto the docked panel. */
+  content: none !important;
+}
+
+.builder-shell .panel-heading .eyebrow {
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--bx-ink-3);
+}
+
+.builder-shell .panel-heading h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bx-ink);
+}
+
+.bx-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--bx-rule);
+}
+
+.bx-tabs button {
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--bx-ink-3);
+  font-family: var(--bx-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bx-tabs button:hover {
+  color: var(--bx-ink);
+}
+
+.bx-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--bx-accent);
+  color: var(--bx-accent);
+}
+
+.bx-relations {
+  display: grid;
+  gap: 18px;
+  padding: 4px 0 8px;
+}
+
+.bx-relations__group {
+  display: grid;
+  gap: 6px;
+}
+
+.bx-relations__title {
+  color: var(--bx-ink-3);
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.bx-relation {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 6px;
+  background: var(--bx-surface);
+  font-family: var(--bx-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--bx-hover) ease-out;
+}
+
+.bx-relation:hover {
+  border-color: var(--bx-accent);
+}
+
+.bx-relation__peer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--bx-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.bx-relation__kind {
+  color: var(--bx-ink-3);
+  font-family: var(--bx-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bx-relation__detail {
+  color: var(--bx-ink-2);
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+}
+
+.bx-relation--reference .bx-relation__detail {
+  font-family: var(--bx-sans);
+  font-style: italic;
+  color: var(--bx-ink-3);
+}
+
+.bx-relations__empty {
+  padding: 14px 10px;
+  border: 1px dashed var(--bx-rule);
+  border-radius: 6px;
+  color: var(--bx-ink-3);
+  font-size: 12.5px;
+}
+
+/* ============================================================================
+   W1 ⑤ — status bar
+   ============================================================================ */
+
+.builder-status {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--bx-surface);
+  color: var(--bx-ink-3);
+  font-family: var(--bx-sans);
+  font-size: 11.5px;
+}
+
+.builder-status__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.builder-status__metric {
+  font-family: var(--bx-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.builder-status__metric b {
+  color: var(--bx-ink-2);
+  font-weight: 600;
+}
+
+.builder-shell .status-bar .health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--bx-rule);
+  border-radius: 999px;
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  font-family: var(--bx-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.builder-shell .status-bar .health:hover {
+  border-color: var(--bx-ink-3);
+}
+
+/* The issues panel is anchored to the health button, which now sits at the left end of the status
+   bar. Left `right: 0`, it opened leftwards out of the shell and slid under the side nav. */
+.builder-shell .status-bar-issues {
+  left: 0;
+  right: auto;
+  z-index: 60;
+  width: min(420px, calc(100vw - 32px));
+  border-color: var(--bx-rule);
+  background: var(--bx-surface);
+  color: var(--bx-ink-2);
+  box-shadow: 0 14px 38px rgba(9, 16, 21, 0.22);
+}
+
+.builder-shell .status-bar-issues__group strong {
+  color: var(--bx-ink-3);
+  font-family: var(--bx-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+}
+
+.builder-shell .status-bar-issues__group li {
+  color: var(--bx-ink-2);
+  overflow-wrap: anywhere;
+}

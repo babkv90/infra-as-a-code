@@ -11,7 +11,11 @@ import {
 } from 'reactflow';
 import { create } from 'zustand';
 import { serviceById } from '../data/awsServices';
-import type { AwsEdge, AwsEdgeData, AwsNode, DiagramDetailMode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
+import type { AwsEdge, AwsEdgeData, AwsNode, ConnectionRelationshipKind, DiagramDetailMode, DiagramSnapshot, DiagramViewMode, EdgeConnectionType, GroupKind, NodeBinding, ToolMode } from '../types';
+import { terraformTypeForService } from '../utils/resourceRegistry';
+import { sanitizeName } from '../utils/exportTerraform';
+import { evaluateConnection, type ConnectionRule } from '../utils/connectionRules';
+import { categorizeServicePair } from '../utils/diagramSemantics';
 import { normalizeDiagramSnapshot } from '../utils/diagramSchema';
 import { exportTerraform } from '../utils/exportTerraform';
 import { hasSavedPositions } from '../utils/diagramSemantics';
@@ -26,14 +30,6 @@ const ARCHITECTURE_VIEW_MODE_STORAGE_KEY = 'infraflow-architecture-view-mode';
 function readStoredWhiteboardMode(): boolean {
   try {
     return window.localStorage.getItem(WHITEBOARD_MODE_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function readStoredArchitectureViewMode(): boolean {
-  try {
-    return window.localStorage.getItem(ARCHITECTURE_VIEW_MODE_STORAGE_KEY) === 'true';
   } catch {
     return false;
   }
@@ -73,6 +69,7 @@ type DiagramStore = {
   // with whiteboardMode at the setter level — only one skin renders at a time.
   architectureViewMode: boolean;
   issues: ValidationIssue[];
+  lastConnection?: LastConnectionSummary;
   history: DiagramSnapshot[];
   future: DiagramSnapshot[];
   clipboard?: DiagramSnapshot;
@@ -117,6 +114,16 @@ type DiagramStore = {
   markSaved: () => void;
   checkpoint: () => void;
   attachNodeToContainingGroup: (nodeId: string) => void;
+  dismissLastConnection: () => void;
+};
+
+/** What the connection just drawn will contribute, shown briefly on the canvas after the drop. */
+export type LastConnectionSummary = {
+  edgeId: string;
+  kind: ConnectionRelationshipKind;
+  summary: string;
+  /** Terraform assignment this connection resolves, e.g. `vpc_id = aws_vpc.core_vpc.id`. */
+  expression?: string;
 };
 
 const maxHistory = 50;
@@ -141,7 +148,10 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   isValidated: false,
   isDark: false,
   whiteboardMode: readStoredWhiteboardMode(),
-  architectureViewMode: readStoredArchitectureViewMode(),
+  // Deliberately not restored from storage. The builder offers Diagram and Whiteboard only, so a
+  // persisted architecture flag from an earlier session would render the compact node with no
+  // control on screen to turn it off.
+  architectureViewMode: false,
   issues: [],
   history: [],
   future: [],
@@ -274,13 +284,22 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     });
   },
   onConnect: (connection) => {
+    const { nodes } = get();
+    const sourceService = nodes.find((node) => node.id === connection.source)?.data.serviceId;
+    const targetService = nodes.find((node) => node.id === connection.target)?.data.serviceId;
+    const verdict = evaluateConnection(sourceService, targetService);
+    if (verdict.status === 'reversed' || verdict.status === 'blocked') return;
+
     pushHistory(set, get);
-    const data: AwsEdgeData = inferEdgeData(connection.sourceHandle);
+    const rule = verdict.status === 'typed' ? verdict.rule : undefined;
+    const data = buildEdgeData(sourceService, targetService, rule, connection.sourceHandle);
+    const edgeId = `edge-${Date.now()}`;
+    const sourceNode = nodes.find((node) => node.id === connection.source);
     set((state) => ({
       edges: addEdge(
         {
           ...connection,
-          id: `edge-${Date.now()}`,
+          id: edgeId,
           type: 'flowEdge',
           animated: false,
           markerEnd: { type: MarkerType.ArrowClosed },
@@ -288,8 +307,17 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         },
         state.edges,
       ) as AwsEdge[],
+      // Close the loop on the drop: say what the connection will actually write, in the same
+      // Terraform address the generator will emit.
+      lastConnection: {
+        edgeId,
+        kind: rule?.kind ?? 'reference',
+        summary: rule?.summary ?? 'dependency ordering only',
+        expression: rule?.field && sourceNode ? `${rule.field} = ${terraformAddress(sourceNode)}.id` : undefined,
+      },
     }));
   },
+  dismissLastConnection: () => set({ lastConnection: undefined }),
   onEdgeUpdate: (edge, connection) => {
     pushHistory(set, get);
     set((state) => ({
@@ -580,21 +608,31 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const nodeHeight = Number(node.height ?? node.style?.height ?? 130);
     const centerX = absolutePosition.x + nodeWidth / 2;
     const centerY = absolutePosition.y + nodeHeight / 2;
-    const group = nodes
-      .filter((candidate) => canContainNode(candidate, node))
+    const containingBoundaries = nodes
+      .filter((candidate) => candidate.type === 'groupBox')
       .map((candidate) => {
-      const width = Number(candidate.width ?? candidate.style?.width ?? 520);
-      const height = Number(candidate.height ?? candidate.style?.height ?? 340);
+        const width = Number(candidate.width ?? candidate.style?.width ?? 520);
+        const height = Number(candidate.height ?? candidate.style?.height ?? 340);
         return { node: candidate, width, height, area: width * height };
       })
       .filter(({ node: candidate, width, height }) => centerX >= candidate.position.x && centerX <= candidate.position.x + width && centerY >= candidate.position.y && centerY <= candidate.position.y + height)
-      .sort((left, right) => left.area - right.area)[0]?.node;
+      .sort((left, right) => left.area - right.area);
+
+    const group = containingBoundaries.find(({ node: candidate }) => canContainNode(candidate, node))?.node;
+    // Dropping into a boundary that can't hold this resource used to fail silently — the node simply
+    // stayed unparented with no explanation. Say which rule refused it.
+    const refusedBy = group ? undefined : containingBoundaries[0]?.node;
+    const warning = refusedBy
+      ? `A ${refusedBy.data.groupKind ?? 'boundary'} can't contain ${node.data.serviceName}. Move it out, or use a boundary that accepts this resource.`
+      : undefined;
+
     set({
       nodes: nodes.map((candidate) =>
         candidate.id === nodeId ? withTopologySemantics({
           ...candidate,
           parentNode: group?.id,
           extent: undefined,
+          data: { ...candidate.data, warning },
           position: group
             ? {
                 x: absolutePosition.x - group.position.x,
@@ -635,15 +673,53 @@ function createNode(serviceId: string, position: XYPosition, id?: string): AwsNo
   });
 }
 
-function inferEdgeData(sourceHandle?: string | null): AwsEdgeData {
-  const label = sourceHandle?.toLowerCase().includes('event') ? 'event' : 'data';
-  const connectionType: EdgeConnectionType = 'data-flow';
+/**
+ * Record what a connection actually is, at the moment it is drawn.
+ *
+ * This used to stamp every new edge with the same payload — 'data-flow' / 'HTTPS' / port 443 —
+ * varying only on whether the handle id contained the word "event". The semantic category was then
+ * reverse-engineered later by matching substrings against that very default, so a connection's
+ * meaning was a guess about a value the builder itself had written.
+ */
+function buildEdgeData(
+  sourceService: string | undefined,
+  targetService: string | undefined,
+  rule: ConnectionRule | undefined,
+  sourceHandle?: string | null,
+): AwsEdgeData {
+  const isEvent = Boolean(sourceHandle?.toLowerCase().includes('event'));
+  const connectionType: EdgeConnectionType = categorizeServicePair(sourceService ?? '', targetService ?? '', { isEvent });
+
+  if (!rule) {
+    return {
+      // Plain language, not the internal token — this label is the only thing on the canvas telling
+      // the user this line carries ordering and nothing else.
+      label: 'depends on',
+      connectionType: 'dependency',
+      protocol: '',
+      port: '',
+      sourceService,
+      targetService,
+      relationshipKind: 'reference',
+    };
+  }
+
   return {
-    label,
+    label: rule.field ?? rule.summary,
     connectionType,
-    protocol: label === 'event' ? 'async' : 'HTTPS',
-    port: label === 'event' ? '' : '443',
+    protocol: rule.kind === 'resolves' ? 'Terraform' : isEvent ? 'async' : 'HTTPS',
+    port: '',
+    sourceService,
+    targetService,
+    resolvesField: rule.field,
+    relationshipKind: rule.kind,
+    relationshipSummary: rule.summary,
   };
+}
+
+function terraformAddress(node: AwsNode): string {
+  const type = terraformTypeForService(node.data.serviceId) ?? 'aws_resource';
+  return `${type}.${sanitizeName(node.data.label || node.data.serviceName)}`;
 }
 
 function isStatus(value: string | number): value is 'running' | 'stopped' | 'unknown' {

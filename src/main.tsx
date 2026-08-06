@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { initializeAnalytics } from './utils/analytics';
 import 'reactflow/dist/style.css';
 import './styles.css';
+// After styles.css on purpose: builder rules win where the two overlap.
+import './styles/builder.css';
 
 initializeAnalytics();
 

@@ -196,19 +196,57 @@ export const getLambdaRealtimeInsights = asyncHandler(async (req, res) => {
   }
 });
 
+// Cost Explorer's GetCostAndUsage is billed per request ($0.01, no free tier) and AWS itself only
+// refreshes the underlying cost data roughly once every 24h — so serving anything polled more often
+// than this from a live call just re-buys the same number.
+//
+// This is intentionally close to a full day (not just a few hours): startDailyBillingTracker()
+// (awsDailyBillingTracker.js) is meant to keep dailyBillingHistory fresh on its own, but it's only
+// ever started from server.js's app.listen() path — the actual production entrypoint, lambda.js,
+// never calls it, since a setInterval-based background job doesn't survive a Lambda container being
+// frozen between invocations. So in production this cache's own live-call fallback below is, in
+// practice, the *only* thing keeping billing data from going stale — it must stay short enough to
+// self-heal within about a day, not just decorative. If the Lambda entrypoint ever gets a real
+// scheduled trigger (e.g. an EventBridge rule) for the daily tracker, this can safely shrink further.
+const BILLING_REALTIME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function freshCachedDailyBilling(account) {
+  const history = Array.isArray(account.dailyBillingHistory) ? account.dailyBillingHistory : [];
+  if (!history.length) return null;
+
+  const latest = history[history.length - 1];
+  const recordedAt = latest?.recordedAt ? new Date(latest.recordedAt).getTime() : 0;
+  if (!recordedAt || Date.now() - recordedAt > BILLING_REALTIME_CACHE_TTL_MS) return null;
+
+  const dailyTrend = history.map(({ date, label, start, end, cost }) => ({ date, label, start, end, cost }));
+  return {
+    updatedAt: new Date(recordedAt).toISOString(),
+    start: history[0]?.start ?? '',
+    end: latest?.end ?? '',
+    total: Math.round(dailyTrend.reduce((sum, item) => sum + Number(item.cost ?? 0), 0) * 100) / 100,
+    dailyTrend,
+  };
+}
+
 export const getBillingRealtimeInsights = asyncHandler(async (req, res) => {
   const account = await AwsAccount.findOne({ workspace: req.user.workspace, status: 'connected' }).sort({ lastSyncAt: -1 });
   if (!account) throw new ApiError(404, 'Connected AWS account not found');
 
+  const cached = freshCachedDailyBilling(account);
+  if (cached) {
+    res.json({ success: true, data: cached });
+    return;
+  }
+
   try {
     const data = await getRealtimeDailyBilling(account);
-    if (account.syncSummary?.billing) {
-      account.syncSummary.billing.dailyTrend = data.dailyTrend;
-      mergeTrackedDailyBilling(account, account.syncSummary);
-      await account.save();
-      data.dailyTrend = account.dailyBillingHistory.map(({ date, label, start, end, cost }) => ({ date, label, start, end, cost }));
-      data.total = data.dailyTrend.reduce((sum, item) => sum + Number(item.cost ?? 0), 0);
-    }
+    if (!account.syncSummary) account.syncSummary = {};
+    if (!account.syncSummary.billing) account.syncSummary.billing = {};
+    account.syncSummary.billing.dailyTrend = data.dailyTrend;
+    mergeTrackedDailyBilling(account, account.syncSummary);
+    await account.save();
+    data.dailyTrend = account.dailyBillingHistory.map(({ date, label, start, end, cost }) => ({ date, label, start, end, cost }));
+    data.total = data.dailyTrend.reduce((sum, item) => sum + Number(item.cost ?? 0), 0);
     res.json({ success: true, data });
   } catch (error) {
     throw new ApiError(502, `Could not load realtime billing data: ${addAwsConnectionHint(error.message)}`);

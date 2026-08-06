@@ -57,7 +57,8 @@ export const addMessage = asyncHandler(async (req, res) => {
   }
 
   const message = req.validated.body.message;
-  const answer = await answerCloudQuestion(message);
+  const history = conversation.messages.map((entry) => ({ role: entry.role, content: entry.content }));
+  const answer = await answerCloudQuestion(message, history);
   conversation.messages.push({ role: 'user', content: message });
   conversation.messages.push({ role: 'assistant', content: answer.content, metadata: answer.metadata });
   await conversation.save();
