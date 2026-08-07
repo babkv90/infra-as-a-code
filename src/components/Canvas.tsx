@@ -19,17 +19,18 @@ import FlowEdge from './edges/FlowEdge';
 import AwsServiceNode from './nodes/AwsServiceNode';
 import GroupBoxNode from './nodes/GroupBoxNode';
 import LabelNode from './nodes/LabelNode';
-import { EdgeGeometryContext, RelationshipBadgeContext } from './canvasGraphContext';
+import { EdgeGeometryContext, LodBandContext, RelationshipBadgeContext, lodBandForZoom } from './canvasGraphContext';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AwsEdge, AwsNode } from '../types';
 import { getStoredUser } from '../auth/authClient';
 import { isServiceAllowedForUser } from '../utils/accessControl';
-import { buildHandleId, getOptimalConnectionSides, readHandlePort } from '../utils/connectionRouting';
-import { buildEdgeCategoryMap, buildVisibleGraph, type SemanticEdgeCategory } from '../utils/diagramSemantics';
+import { buildHandleId, getLayerDerivedConnectionSides, getOptimalConnectionSides, readHandlePort } from '../utils/connectionRouting';
+import { buildEdgeCategoryMap, buildVisibleGraph, semanticLayerForNode, type SemanticEdgeCategory } from '../utils/diagramSemantics';
 import { evaluateConnection } from '../utils/connectionRules';
 import { buildObstacleRects, buildRelationshipBadgeCounts } from '../utils/graphIndex';
 import { measuredNodeSize } from '../utils/nodeMetrics';
-import { canContainNode } from '../utils/topologySemantics';
+import { canContainNode, createAbsolutePositionResolver } from '../utils/topologySemantics';
+import { computeTiers } from '../utils/topologyOrdering';
 
 const nodeTypes: NodeTypes = {
   awsService: AwsServiceNode,
@@ -72,6 +73,9 @@ function Canvas() {
   const reactFlow = useReactFlow();
   const nodesInitialized = useNodesInitialized();
   const { zoom } = useViewport();
+  // Throttled to the three LOD bands (not the raw zoom) so this only changes identity — and only
+  // triggers a re-render of consuming cards — when a band boundary is actually crossed.
+  const lodBand = useMemo(() => lodBandForZoom(zoom), [zoom]);
   const [connectOrigin, setConnectOrigin] = useState<ConnectOrigin | null>(null);
   const [connectHoverNodeId, setConnectHoverNodeId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BoundaryDropTarget | null>(null);
@@ -113,6 +117,7 @@ function Canvas() {
   const redo = useDiagramStore((state) => state.redo);
   const checkpoint = useDiagramStore((state) => state.checkpoint);
   const attachNodeToContainingGroup = useDiagramStore((state) => state.attachNodeToContainingGroup);
+  const pinNode = useDiagramStore((state) => state.pinNode);
   const lastConnection = useDiagramStore((state) => state.lastConnection);
   const dismissLastConnection = useDiagramStore((state) => state.dismissLastConnection);
 
@@ -213,43 +218,74 @@ function Canvas() {
   // one edge currently showing a label, and are read at that moment rather than precomputed.
   const edgeGeometry = useMemo(() => ({ getObstacles: () => buildObstacleRects(reactFlow.getNodes()) }), [reactFlow]);
 
+  // buildVisibleGraph's node/edge filtering depends on identity, containment (parentNode) and
+  // service type — never on where anything currently sits — so keying its memo on `nodes` directly
+  // meant it re-ran over the full graph on every drag pointer-tick (nodes changes every tick).
+  const visibilitySignature = useMemo(
+    () => nodes.map((node) => `${node.id}:${node.type ?? ''}:${node.parentNode ?? ''}:${node.data.serviceId ?? ''}`).join('|'),
+    [nodes],
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on visibilitySignature, not `nodes`, on purpose (see above).
   const visibleGraph = useMemo(
     () => buildVisibleGraph(nodes, graphEdges, activeView, detailMode, isolatedNodeId),
-    [activeView, detailMode, graphEdges, isolatedNodeId, nodes],
+    [activeView, detailMode, graphEdges, isolatedNodeId, visibilitySignature],
   );
   const visibleEdges = visibleGraph.edges;
-  const visibleNodes = visibleGraph.nodes;
+  // applyElkLayeredLayout always emits "semantic column" boxes (Client/Edge-CDN/Network/Compute/...)
+  // alongside whatever derived VPC/Subnet containers deriveContainment produces — two independent,
+  // uncoordinated box systems drawing rectangles around overlapping sets of nodes. GroupBoxNode only
+  // gives them their intended lane treatment in Architecture View; outside it they fell through to
+  // the normal box renderer and rendered as a second, competing set of always-visible boundaries.
+  // They carry no parentNode link to anything (buildSemanticColumnGroups never sets one), so hiding
+  // them here is purely a visibility change — nothing is structurally attached to them.
+  const visibleNodes = useMemo(
+    () => (architectureViewMode ? visibleGraph.nodes : visibleGraph.nodes.filter((node) => node.data.config?.generated_group !== 'true')),
+    [architectureViewMode, visibleGraph.nodes],
+  );
+
+  // A plain, undeclared connection ("dependency ordering only" — see buildEdgeData) is the noisiest
+  // edge category and rarely worth seeing by default; selecting either endpoint reveals it, matching
+  // the existing focus/select affordances rather than adding a new one.
+  const selectedNodeIds = useMemo(() => new Set(nodes.filter((node) => node.selected).map((node) => node.id)), [nodes]);
+  const referenceRevealedEdges = useMemo(
+    () => visibleEdges.filter((edge) => edge.data?.relationshipKind !== 'reference' || selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)),
+    [selectedNodeIds, visibleEdges],
+  );
+  // Multiple edges between the exact same pair (typically re-imported/duplicated diagrams) collapse
+  // into one line with a count badge rather than drawing the same connection N times.
+  const mergedVisibleEdges = useMemo(() => mergeParallelEdges(referenceRevealedEdges), [referenceRevealedEdges]);
 
   const routingNodeById = useMemo(() => {
-    const byId = new Map(visibleNodes.map((node) => [node.id, node]));
+    const resolveAbsolutePosition = createAbsolutePositionResolver(visibleNodes);
     return new Map(
-      visibleNodes.map((node) => {
-        const parent = node.parentNode ? byId.get(node.parentNode) : undefined;
-        return [
-          node.id,
-          parent
-            ? {
-                ...node,
-                position: {
-                  x: node.position.x + parent.position.x,
-                  y: node.position.y + parent.position.y,
-                },
-              }
-            : node,
-        ];
-      }),
+      visibleNodes.map((node) => [
+        node.id,
+        node.parentNode ? { ...node, position: resolveAbsolutePosition(node.id) } : node,
+      ]),
     );
   }, [visibleNodes]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`, on purpose.
-  const edgeCategories = useMemo(() => buildEdgeCategoryMap(visibleEdges, nodes), [visibleEdges, serviceSignature]);
+  // Handle sides should come from where a node sits in the deterministic layered layout (Fix 2/3),
+  // not raw geometry, which shifts attachment points on every drag. semanticLayerForNode is a pure
+  // function of service id (untouched — Architecture View's own column boxes depend on it), refined
+  // by tier (longest path from the nearest ingress node) for position within that layer.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`.
+  const layerById = useMemo(() => {
+    const serviceNodes = nodes.filter((node) => node.type === 'awsService');
+    const tiers = computeTiers(serviceNodes, graphEdges, nodes);
+    return new Map(serviceNodes.map((node) => [node.id, semanticLayerForNode(node) * 1000 + (tiers.get(node.id) ?? 0)]));
+  }, [serviceSignature, graphEdges]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serviceSignature, not `nodes`, on purpose (see above).
+  const edgeCategories = useMemo(() => buildEdgeCategoryMap(mergedVisibleEdges, nodes), [mergedVisibleEdges, serviceSignature]);
 
   // Bundle slots let parallel edges into the same target fan out instead of stacking. Computed once
   // per graph here; it used to be re-derived inside every edge, re-categorising every peer edge each
   // time, which made the whole pass roughly O(E squared * N).
   const edgeBundles = useMemo(() => {
     const slotsByKey = new Map<string, string[]>();
-    for (const edge of visibleEdges) {
+    for (const edge of mergedVisibleEdges) {
       const key = `${edge.target}|${edgeCategories.get(edge.id) ?? 'data-flow'}`;
       const slot = slotsByKey.get(key);
       if (slot) slot.push(edge.id);
@@ -261,22 +297,23 @@ function Canvas() {
       edgeIds.forEach((edgeId, index) => bundles.set(edgeId, { index, size: edgeIds.length }));
     }
     return bundles;
-  }, [edgeCategories, visibleEdges]);
+  }, [edgeCategories, mergedVisibleEdges]);
 
   const routedVisibleEdges = useMemo(
     () =>
-      visibleEdges.map((edge) =>
-        withSemanticEdgeHandles(edge, routingNodeById, edgeCategories.get(edge.id) ?? 'data-flow', edgeBundles.get(edge.id)),
+      mergedVisibleEdges.map((edge) =>
+        withSemanticEdgeHandles(edge, routingNodeById, layerById, edgeCategories.get(edge.id) ?? 'data-flow', edgeBundles.get(edge.id)),
       ),
-    [edgeBundles, edgeCategories, routingNodeById, visibleEdges],
+    [edgeBundles, edgeCategories, layerById, mergedVisibleEdges, routingNodeById],
   );
 
   useEffect(() => {
     if (!visibleNodes.length || !nodesInitialized) return;
     if (lastViewportFitVersionRef.current === fitViewVersion) return;
     lastViewportFitVersionRef.current = fitViewVersion;
-    if (visibleNodes.length > 24) return;
-    // One fit, not two. The old settled-fit timeout fired a second animation 180ms into the first.
+    // Large graphs are exactly the ones that need fitting — a 76-resource stack opening mid-canvas at
+    // whatever the last viewport happened to be is the opposite of what a reader needs. One fit, not
+    // two: the old settled-fit timeout fired a second animation 180ms into the first.
     const frame = requestAnimationFrame(() => reactFlow.fitView({ padding: 0.12, duration: 360, maxZoom: 1.1 }));
     return () => cancelAnimationFrame(frame);
   }, [fitViewVersion, nodesInitialized, reactFlow, visibleNodes.length]);
@@ -370,6 +407,7 @@ function Canvas() {
     >
       <RelationshipBadgeContext.Provider value={relationshipBadges}>
         <EdgeGeometryContext.Provider value={edgeGeometry}>
+          <LodBandContext.Provider value={lodBand}>
           <ReactFlow
             nodes={presentationNodes}
             edges={presentationEdges}
@@ -452,6 +490,9 @@ function Canvas() {
               boundarySnapshotRef.current = [];
               dropTargetRef.current = null;
               setDropTarget(null);
+              // A manual drag is a deliberate placement — auto-layout must never undo it on the next
+              // structural change, so it's pinned here regardless of node type (service card or box).
+              pinNode(node.id);
               attachNodeToContainingGroup(node.id);
             }}
             snapToGrid
@@ -459,7 +500,7 @@ function Canvas() {
             defaultViewport={{ x: 0, y: 0, zoom: 1.25 }}
             minZoom={0.08}
             maxZoom={2.2}
-            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineType={ConnectionLineType.Step}
             panOnScroll
             panOnDrag={[0, 1, 2]}
             panActivationKeyCode="Space"
@@ -501,9 +542,9 @@ function Canvas() {
             <MiniMap position="bottom-right" nodeColor={minimapColor} pannable zoomable maskColor="rgba(15, 23, 42, 0.48)" />
             <Panel
               position="top-center"
-              className={`canvas-mode-pill ${connectHint ? 'canvas-mode-pill--connecting' : ''} ${dropTarget ? (dropTarget.accepted ? 'canvas-mode-pill--accept' : 'canvas-mode-pill--reject') : ''}`}
+              className={`canvas-mode-pill ${connectHint ? 'canvas-mode-pill--connecting' : ''} ${dropTarget ? (dropTarget.accepted ? 'canvas-mode-pill--accept' : 'canvas-mode-pill--reject') : ''} ${!connectHint && !dropTarget && activeView === 'dependencies' && mergedVisibleEdges.length > HIGH_EDGE_COUNT_WARNING_THRESHOLD ? 'canvas-mode-pill--warning' : ''}`}
             >
-              {dropTarget?.message ?? connectHint ?? canvasStateLabel(mode, activeView, detailMode)}
+              {dropTarget?.message ?? connectHint ?? canvasStateLabel(mode, activeView, detailMode, mergedVisibleEdges.length)}
             </Panel>
 
             {/* Frame 3 of the connection interaction: state what the line will actually write. */}
@@ -526,7 +567,9 @@ function Canvas() {
               </Panel>
             )}
             {architectureViewMode && <ArchitectureLegend />}
+            {!architectureViewMode && !whiteboardMode && <DefaultEdgeLegend />}
           </ReactFlow>
+          </LodBandContext.Provider>
         </EdgeGeometryContext.Provider>
       </RelationshipBadgeContext.Provider>
     </main>
@@ -534,14 +577,19 @@ function Canvas() {
 }
 
 function snapshotBoundaries(nodes: AwsNode[], dragged: AwsNode): BoundaryCandidate[] {
+  // Group boxes nest too (a derived subnet box inside a derived vpc box) — position is relative to
+  // whatever the immediate parent is, so a candidate 2+ levels deep needs the full ancestor walk,
+  // not just its own raw (parent-relative) position.
+  const resolveAbsolutePosition = createAbsolutePositionResolver(nodes);
   return nodes
     .filter((node) => node.type === 'groupBox')
     .map((node) => {
       const { width, height } = measuredNodeSize(node);
+      const position = resolveAbsolutePosition(node.id);
       return {
         id: node.id,
-        x: node.position.x,
-        y: node.position.y,
+        x: position.x,
+        y: position.y,
         width,
         height,
         area: width * height,
@@ -554,8 +602,12 @@ function snapshotBoundaries(nodes: AwsNode[], dragged: AwsNode): BoundaryCandida
 
 function resolveDropTarget(candidates: BoundaryCandidate[], dragged: AwsNode): BoundaryDropTarget | null {
   const { width, height } = measuredNodeSize(dragged);
-  const centerX = dragged.position.x + width / 2;
-  const centerY = dragged.position.y + height / 2;
+  // dragged comes straight from React Flow's onNodeDrag, which already exposes positionAbsolute —
+  // needed here (rather than the parent-relative `position`) now that boundary candidates above are
+  // themselves in absolute coordinates, so a node nested under a derived box still hit-tests correctly.
+  const draggedPosition = dragged.positionAbsolute ?? dragged.position;
+  const centerX = draggedPosition.x + width / 2;
+  const centerY = draggedPosition.y + height / 2;
 
   // Candidates are pre-sorted smallest-first, so the first hit is the innermost boundary.
   const hit = candidates.find(
@@ -582,6 +634,26 @@ function ArchitectureLegend() {
     { label: 'Monitoring', color: '#60a5fa', dash: '2 6' },
   ];
 
+  return <EdgeLegendPanel items={items} />;
+}
+
+// Matches FlowEdge's default (non-whiteboard, non-architecture) palette and dash pattern exactly —
+// edges are colored by category in every lens now, so the key that explains what a color means has
+// to follow, not just live behind the Architecture toggle.
+function DefaultEdgeLegend() {
+  const items: Array<{ label: string; color: string; dash?: string }> = [
+    { label: 'Data flow', color: '#2563eb' },
+    { label: 'Network routing', color: '#0ea5e9' },
+    { label: 'Security', color: '#dc2626', dash: '7 6' },
+    { label: 'Dependency', color: '#7c3aed', dash: '4 6' },
+    { label: 'Monitoring', color: '#64748b', dash: '4 6' },
+    { label: 'Deployment', color: '#16a34a', dash: '4 6' },
+  ];
+
+  return <EdgeLegendPanel items={items} />;
+}
+
+function EdgeLegendPanel({ items }: { items: Array<{ label: string; color: string; dash?: string }> }) {
   return (
     <Panel position="bottom-center" className="architecture-legend">
       <span className="architecture-legend__title">Legend:</span>
@@ -597,9 +669,20 @@ function ArchitectureLegend() {
   );
 }
 
+// A node is only routed by geometry when its position isn't governed by the deterministic layout at
+// all: pinned (excluded from auto-layout entirely — see elkLayout.ts) or manually contained in a
+// hand-drawn boundary. Everything else has a real layer to route from.
+function isFixedForRouting(node: AwsNode, nodesById: Map<string, AwsNode>): boolean {
+  if (node.data.pinned) return true;
+  if (!node.parentNode) return false;
+  const parent = nodesById.get(node.parentNode);
+  return Boolean(parent?.type === 'groupBox' && !parent.data.derivedContainer);
+}
+
 function withSemanticEdgeHandles(
   edge: AwsEdge,
   nodesById: Map<string, AwsNode>,
+  layerById: Map<string, number>,
   category: SemanticEdgeCategory,
   bundle: EdgeBundleSlot | undefined,
 ): AwsEdge {
@@ -609,10 +692,16 @@ function withSemanticEdgeHandles(
 
   const sourcePort = sourceNode.data.ports.outputs[0];
   const targetPort = targetNode.data.ports.inputs[0];
-  // Handle sides come from actual node geometry (which side of source really faces target), not a
-  // side fixed by category — a fixed 'right'/'left' regardless of position forced edges into an
-  // unnecessary detour/zigzag even between two nodes that were already stacked or adjacent.
-  const { sourceSide, targetSide } = getOptimalConnectionSides(sourceNode, targetNode);
+  const sourceLayer = layerById.get(sourceNode.id);
+  const targetLayer = layerById.get(targetNode.id);
+  // Handle sides come from where each node sits in the deterministic layered layout (Fix 4), not raw
+  // geometry — geometry shifts attachment points on every drag even when nothing about the actual
+  // relationship changed. Pinned/manually-placed nodes have no layout-governed layer to route from,
+  // so they keep the geometry fallback that used to apply to every edge.
+  const { sourceSide, targetSide } =
+    sourceLayer !== undefined && targetLayer !== undefined && !isFixedForRouting(sourceNode, nodesById) && !isFixedForRouting(targetNode, nodesById)
+      ? getLayerDerivedConnectionSides(sourceLayer, targetLayer, sourceNode, targetNode)
+      : getOptimalConnectionSides(sourceNode, targetNode);
 
   return {
     ...edge,
@@ -631,19 +720,45 @@ function withSemanticEdgeHandles(
   };
 }
 
+/** Multiple edges between the exact same (source, target) pair collapse into one, keeping the first
+ * and tallying the rest into `hiddenCount` — FlowEdge already renders that as a "+N" label suffix. */
+function mergeParallelEdges(edges: AwsEdge[]): AwsEdge[] {
+  const bySourceTarget = new Map<string, AwsEdge[]>();
+  for (const edge of edges) {
+    const key = `${edge.source}|${edge.target}`;
+    const bucket = bySourceTarget.get(key);
+    if (bucket) bucket.push(edge);
+    else bySourceTarget.set(key, [edge]);
+  }
+
+  return Array.from(bySourceTarget.values()).map((bucket) => {
+    if (bucket.length === 1) return bucket[0];
+    const [primary, ...rest] = bucket;
+    return primary.data ? { ...primary, data: { ...primary.data, hiddenCount: rest.length } } : primary;
+  });
+}
+
+// Above this, "All connections" is showing enough at once to stop being a readable diagnostic and
+// start being the same undifferentiated soup the default lens exists to avoid.
+const HIGH_EDGE_COUNT_WARNING_THRESHOLD = 60;
+
 /**
  * What the canvas is doing, in words a user recognises. This used to concatenate three internal enum
  * values — "All Connections / Full Topology - Select mode" — which described the implementation
  * rather than telling anyone what to do next.
  */
-function canvasStateLabel(mode: string, view: string, detail: string): string {
+function canvasStateLabel(mode: string, view: string, detail: string, visibleEdgeCount: number): string {
   if (mode === 'connect') return 'Drag from one resource to another to connect them';
   if (mode === 'group') return 'Click the canvas to place a boundary';
   if (mode === 'label') return 'Click the canvas to place a note';
 
   const lens = viewLabel(view);
   const depth = detail === 'overview' ? 'key resources only' : detail === 'architecture' ? 'architecture detail' : 'every resource';
-  return `Showing ${lens.toLowerCase()} · ${depth}`;
+  const base = `Showing ${lens.toLowerCase()} · ${depth}`;
+  if (view === 'dependencies' && visibleEdgeCount > HIGH_EDGE_COUNT_WARNING_THRESHOLD) {
+    return `${base} · ${visibleEdgeCount} connections — switch to Application flow for a readable view`;
+  }
+  return base;
 }
 
 function viewLabel(view: string): string {

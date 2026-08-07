@@ -79,12 +79,10 @@ function shouldRenderEdgeWithCategory(
   activeView: DiagramViewMode,
   detailMode: DiagramDetailMode,
 ): boolean {
-  // Containment edges (e.g. "in VPC", "placed in") are only redundant with the diagram when the
-  // relationship is already implied visually by group-box nesting. Flat templates that never use
-  // group boxes have no other way to show that relationship, so hiding these unconditionally left
-  // foundational nodes (VPC, subnets, route tables...) with no visible edges at all in every view.
-  // Full Topology is the one mode meant to hide nothing, so let it through there.
-  if (category === 'containment' && detailMode !== 'full-topology') return false;
+  // Containment is nesting now (deriveContainment projects it into parentNode/extent — see Fix 1),
+  // so the edge is redundant with the diagram in every view, including Full Topology: drawing both
+  // the box and a line for the same relationship is exactly the duplication Fix 1 exists to remove.
+  if (category === 'containment') return false;
 
   if (detailMode === 'overview' && !['data-flow', 'network-routing'].includes(category)) return false;
   if (detailMode === 'architecture' && ['deployment', 'monitoring'].includes(category)) return false;

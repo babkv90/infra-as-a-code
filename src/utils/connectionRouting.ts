@@ -35,6 +35,22 @@ export function getOptimalConnectionSides(sourceNode: NodeLike, targetNode: Node
   return dy >= 0 ? { sourceSide: 'bottom', targetSide: 'top' } : { sourceSide: 'top', targetSide: 'bottom' };
 }
 
+/**
+ * Handle sides derived from layout direction rather than raw node geometry (Fix 4). With
+ * `elk.direction: RIGHT`, a node in an earlier layer connects out its right side into the next
+ * layer's left side — deterministic, and stable as nodes move within their layer, unlike geometry
+ * which shifts attachment points on every drag. Same-layer pairs (no layer order to derive a
+ * direction from) fall back to relative vertical position, matching how a same-column connection
+ * already reads in the deterministic layout.
+ */
+export function getLayerDerivedConnectionSides(sourceLayer: number, targetLayer: number, sourceNode: NodeLike, targetNode: NodeLike): ConnectionSides {
+  if (sourceLayer < targetLayer) return { sourceSide: 'right', targetSide: 'left' };
+  if (sourceLayer > targetLayer) return { sourceSide: 'left', targetSide: 'right' };
+  const sourceCenter = centerOf(getNodeBounds(sourceNode));
+  const targetCenter = centerOf(getNodeBounds(targetNode));
+  return targetCenter.y >= sourceCenter.y ? { sourceSide: 'bottom', targetSide: 'top' } : { sourceSide: 'top', targetSide: 'bottom' };
+}
+
 export function withOptimalEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>): AwsEdge {
   const sourceNode = nodesById.get(edge.source);
   const targetNode = nodesById.get(edge.target);

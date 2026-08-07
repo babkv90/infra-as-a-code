@@ -67,3 +67,32 @@ function numberValue(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
+
+/**
+ * A node's `position` is relative to its immediate parent only, so nesting 2+ levels deep (Region >
+ * VPC > Subnet > resource) requires walking the full ancestor chain, not just one hop. Returns a
+ * resolver rather than a single answer because callers (edge routing, boundary hit-testing) need the
+ * absolute position of many nodes that share ancestors — each resolver instance memoises per node so
+ * a shared grandparent's walk is only ever done once per call.
+ */
+export function createAbsolutePositionResolver(nodes: AwsNode[]): (nodeId: string) => { x: number; y: number } {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const cache = new Map<string, { x: number; y: number }>();
+
+  function resolve(nodeId: string, visiting: Set<string>): { x: number; y: number } {
+    const cached = cache.get(nodeId);
+    if (cached) return cached;
+    const node = byId.get(nodeId);
+    if (!node) return { x: 0, y: 0 };
+    // A cycle (shouldn't occur, but parentNode is user/import-controlled data) bails out at this
+    // node's own relative position rather than recursing forever.
+    if (visiting.has(nodeId)) return node.position;
+    visiting.add(nodeId);
+    const parentPosition = node.parentNode ? resolve(node.parentNode, visiting) : { x: 0, y: 0 };
+    const absolute = { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
+    cache.set(nodeId, absolute);
+    return absolute;
+  }
+
+  return (nodeId: string) => resolve(nodeId, new Set());
+}

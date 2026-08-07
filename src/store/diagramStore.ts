@@ -15,13 +15,15 @@ import type { AwsEdge, AwsEdgeData, AwsNode, ConnectionRelationshipKind, Diagram
 import { terraformTypeForService } from '../utils/resourceRegistry';
 import { sanitizeName } from '../utils/exportTerraform';
 import { evaluateConnection, type ConnectionRule } from '../utils/connectionRules';
-import { categorizeServicePair } from '../utils/diagramSemantics';
+import { categorizeServicePair, hasSavedPositions } from '../utils/diagramSemantics';
 import { normalizeDiagramSnapshot } from '../utils/diagramSchema';
+import { deriveContainment } from '../utils/deriveContainment';
 import { exportTerraform } from '../utils/exportTerraform';
-import { hasSavedPositions } from '../utils/diagramSemantics';
+import { FEATURE_FLAGS } from '../utils/featureFlags';
 import { applyElkLayeredLayout, normalizeSemanticEdges } from '../utils/elkLayout';
+import { ensureBoundaryContainment, resolveNodeOverlaps } from '../utils/resolveNodeOverlaps';
 import { validateGeneratedTerraform } from '../utils/terraformValidation';
-import { canContainNode, withTopologySemantics } from '../utils/topologySemantics';
+import { canContainNode, createAbsolutePositionResolver, withTopologySemantics } from '../utils/topologySemantics';
 import { validateDiagram, type ValidationIssue } from '../utils/validate';
 
 const WHITEBOARD_MODE_STORAGE_KEY = 'infraflow-whiteboard-mode';
@@ -115,6 +117,7 @@ type DiagramStore = {
   checkpoint: () => void;
   attachNodeToContainingGroup: (nodeId: string) => void;
   dismissLastConnection: () => void;
+  pinNode: (nodeId: string) => void;
 };
 
 /** What the connection just drawn will contribute, shown briefly on the canvas after the drop. */
@@ -128,6 +131,52 @@ export type LastConnectionSummary = {
 
 const maxHistory = 50;
 
+/** Re-derives parentNode/extent from the model's containment relationships. No-op behind the flag,
+ * so the projection can be staged and rolled back without touching every call site again. */
+function applyDerivedContainment(nodes: AwsNode[], edges: AwsEdge[]): AwsNode[] {
+  return FEATURE_FLAGS.ff_derived_containers ? deriveContainment(nodes, edges) : nodes;
+}
+
+function applyNonOverlappingNodes(nodes: AwsNode[], edges: AwsEdge[], preferredNodeId?: string): AwsNode[] {
+  const derived = applyDerivedContainment(nodes, edges);
+  const separated = resolveNodeOverlaps(derived, preferredNodeId);
+  const contained = ensureBoundaryContainment(separated);
+  return ensureBoundaryContainment(resolveNodeOverlaps(contained, preferredNodeId));
+}
+
+let autoLayoutRequestId = 0;
+
+/**
+ * Fire-and-forget auto-layout for structural mutators outside importDiagram/autoArrange, which
+ * already run ELK themselves inline. Reads state via `get()` rather than taking nodes/edges as
+ * arguments so it always lays out whatever the mutator's own `set()` just committed (post-derivation),
+ * not a stale snapshot from before that call. A monotonic request id guards against a slow layout
+ * pass resolving after a newer structural change and clobbering it. No-op behind the flag.
+ */
+function triggerAutoLayout(
+  get: () => DiagramStore,
+  set: (partial: Partial<DiagramStore> | ((state: DiagramStore) => Partial<DiagramStore>)) => void,
+): void {
+  if (!FEATURE_FLAGS.ff_auto_layout) return;
+  const requestId = ++autoLayoutRequestId;
+  const { nodes, edges } = get();
+  void applyElkLayeredLayout(nodes, edges)
+    .then((laidOutNodes) => {
+      if (requestId !== autoLayoutRequestId) return;
+      set((state) => {
+        const nextEdges = normalizeSemanticEdges(state.edges, laidOutNodes);
+        return {
+          nodes: applyNonOverlappingNodes(laidOutNodes, nextEdges),
+          edges: nextEdges,
+          fitViewVersion: state.fitViewVersion + 1,
+        };
+      });
+    })
+    // A layout failure here used to be a silent unhandled rejection — the canvas just kept whatever
+    // (uncoordinated) positions it had before, with no signal that auto-layout never ran at all.
+    .catch((error) => console.error('Auto-layout failed; positions were not updated.', error));
+}
+
 export const useDiagramStore = create<DiagramStore>((set, get) => ({
   nodes: [],
   edges: [],
@@ -137,9 +186,8 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   focusNodeIds: [],
   fitViewVersion: 0,
   mode: 'select',
-  // Opens showing every node and edge fully interlinked ("All Connections" + "Full Topology") so a
-  // freshly loaded or imported diagram never looks broken/disconnected by default. Users can still
-  // narrow down to a specific relationship view or detail level from the toolbar.
+  // Opens with the complete topology visible. Auto-arrange and filters remain explicit user actions,
+  // so the builder does not hide infrastructure details or move a saved/manual diagram on load.
   activeView: 'dependencies',
   detailMode: 'full-topology',
   isolatedNodeId: undefined,
@@ -206,12 +254,16 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   addServiceNode: (serviceId, position) => {
     pushHistory(set, get);
     const node = createNode(serviceId, position);
-    set((state) => ({
-      nodes: [...state.nodes.map((existing) => ({ ...existing, selected: false })), { ...node, selected: false }],
-      selectedNodeId: undefined,
-      selectedEdgeId: undefined,
-      focusNodeIds: [],
-    }));
+    set((state) => {
+      const nextNodes = [...state.nodes.map((existing) => ({ ...existing, selected: false })), { ...node, selected: false }];
+      return {
+        nodes: applyNonOverlappingNodes(nextNodes, state.edges, node.id),
+        selectedNodeId: undefined,
+        selectedEdgeId: undefined,
+        focusNodeIds: [],
+      };
+    });
+    triggerAutoLayout(get, set);
   },
   addGroupNode: (kind, position) => {
     pushHistory(set, get);
@@ -244,7 +296,10 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         groupKind: kind,
       },
     };
-    set((state) => ({ nodes: [...state.nodes, withTopologySemantics(node)], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [] }));
+    set((state) => {
+      const nextNodes = [...state.nodes, withTopologySemantics(node)];
+      return { nodes: applyNonOverlappingNodes(nextNodes, state.edges, node.id), selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [] };
+    });
   },
   addLabelNode: (position = { x: 240, y: 180 }) => {
     pushHistory(set, get);
@@ -265,7 +320,10 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         config: {},
       },
     };
-    set((state) => ({ nodes: [...state.nodes, withTopologySemantics(node)], selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [node.id] }));
+    set((state) => {
+      const nextNodes = [...state.nodes, withTopologySemantics(node)];
+      return { nodes: applyNonOverlappingNodes(nextNodes, state.edges, node.id), selectedNodeId: node.id, selectedEdgeId: undefined, focusNodeIds: [node.id] };
+    });
   },
   onNodesChange: (changes) => {
     set((state) => {
@@ -295,8 +353,8 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const data = buildEdgeData(sourceService, targetService, rule, connection.sourceHandle);
     const edgeId = `edge-${Date.now()}`;
     const sourceNode = nodes.find((node) => node.id === connection.source);
-    set((state) => ({
-      edges: addEdge(
+    set((state) => {
+      const nextEdges = addEdge(
         {
           ...connection,
           id: edgeId,
@@ -306,22 +364,27 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
           data,
         },
         state.edges,
-      ) as AwsEdge[],
-      // Close the loop on the drop: say what the connection will actually write, in the same
-      // Terraform address the generator will emit.
-      lastConnection: {
-        edgeId,
-        kind: rule?.kind ?? 'reference',
-        summary: rule?.summary ?? 'dependency ordering only',
-        expression: rule?.field && sourceNode ? `${rule.field} = ${terraformAddress(sourceNode)}.id` : undefined,
-      },
-    }));
+      ) as AwsEdge[];
+      return {
+        edges: nextEdges,
+        nodes: applyNonOverlappingNodes(state.nodes, nextEdges),
+        // Close the loop on the drop: say what the connection will actually write, in the same
+        // Terraform address the generator will emit.
+        lastConnection: {
+          edgeId,
+          kind: rule?.kind ?? 'reference',
+          summary: rule?.summary ?? 'dependency ordering only',
+          expression: rule?.field && sourceNode ? `${rule.field} = ${terraformAddress(sourceNode)}.id` : undefined,
+        },
+      };
+    });
+    triggerAutoLayout(get, set);
   },
   dismissLastConnection: () => set({ lastConnection: undefined }),
   onEdgeUpdate: (edge, connection) => {
     pushHistory(set, get);
-    set((state) => ({
-      edges: state.edges.map((candidate) =>
+    set((state) => {
+      const nextEdges = state.edges.map((candidate) =>
         candidate.id === edge.id
           ? {
             ...candidate,
@@ -331,8 +394,10 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
             targetHandle: connection.targetHandle ?? candidate.targetHandle,
           }
           : candidate,
-      ),
-    }));
+      );
+      return { edges: nextEdges, nodes: applyNonOverlappingNodes(state.nodes, nextEdges) };
+    });
+    triggerAutoLayout(get, set);
   },
   updateNodeData: (nodeId, patch) => {
     pushHistory(set, get);
@@ -447,7 +512,11 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       selected: true,
       data: { ...node.data, label: `${node.data.label} copy` },
     };
-    set((state) => ({ nodes: [...state.nodes.map((item) => ({ ...item, selected: false })), copy], selectedNodeId: copy.id }));
+    set((state) => {
+      const nextNodes = [...state.nodes.map((item) => ({ ...item, selected: false })), copy];
+      return { nodes: applyNonOverlappingNodes(nextNodes, state.edges, copy.id), selectedNodeId: copy.id };
+    });
+    triggerAutoLayout(get, set);
   },
   deleteSelection: () => {
     const { selectedNodeId, selectedEdgeId, nodes, edges } = get();
@@ -457,15 +526,20 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     if (!selectedNodeIds.size && !selectedEdgeIds.size) return;
 
     pushHistory(set, get);
-    set((state) => ({
-      nodes: state.nodes.filter((node) => !selectedNodeIds.has(node.id)),
-      edges: state.edges.filter((edge) => !selectedEdgeIds.has(edge.id) && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target)),
-      selectedNodeId: undefined,
-      selectedEdgeId: undefined,
-      inspectorNodeId: undefined,
-      inspectorEdgeId: undefined,
-      focusNodeIds: [],
-    }));
+    set((state) => {
+      const nextNodes = state.nodes.filter((node) => !selectedNodeIds.has(node.id));
+      const nextEdges = state.edges.filter((edge) => !selectedEdgeIds.has(edge.id) && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target));
+      return {
+        nodes: applyNonOverlappingNodes(nextNodes, nextEdges),
+        edges: nextEdges,
+        selectedNodeId: undefined,
+        selectedEdgeId: undefined,
+        inspectorNodeId: undefined,
+        inspectorEdgeId: undefined,
+        focusNodeIds: [],
+      };
+    });
+    triggerAutoLayout(get, set);
   },
   copySelection: () => {
     const { selectedNodeId, selectedEdgeId, nodes, edges } = get();
@@ -486,13 +560,18 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const edges = clipboard.edges
       .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
       .map((edge) => ({ ...edge, id: `${edge.id}-paste-${Date.now()}`, source: idMap.get(edge.source)!, target: idMap.get(edge.target)! }));
-    set((state) => ({
-      nodes: [...state.nodes.map((node) => ({ ...node, selected: false })), ...nodes],
-      edges: [...state.edges, ...edges],
-      selectedNodeId: nodes[0]?.id,
-      selectedEdgeId: undefined,
-      focusNodeIds: nodes.map((node) => node.id),
-    }));
+    set((state) => {
+      const nextNodes = [...state.nodes.map((node) => ({ ...node, selected: false })), ...nodes];
+      const nextEdges = [...state.edges, ...edges];
+      return {
+        nodes: applyNonOverlappingNodes(nextNodes, nextEdges, nodes[0]?.id),
+        edges: nextEdges,
+        selectedNodeId: nodes[0]?.id,
+        selectedEdgeId: undefined,
+        focusNodeIds: nodes.map((node) => node.id),
+      };
+    });
+    triggerAutoLayout(get, set);
   },
   selectAll: () => {
     set((state) => ({
@@ -508,7 +587,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const previous = history[history.length - 1];
     if (!previous) return;
     set({
-      nodes: previous.nodes,
+      nodes: applyNonOverlappingNodes(previous.nodes, previous.edges),
       edges: previous.edges,
       history: history.slice(0, -1),
       future: [{ nodes, edges }, ...get().future].slice(0, maxHistory),
@@ -526,7 +605,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const next = future[0];
     if (!next) return;
     set({
-      nodes: next.nodes,
+      nodes: applyNonOverlappingNodes(next.nodes, next.edges),
       edges: next.edges,
       history: [...history, { nodes, edges }].slice(-maxHistory),
       future: future.slice(1),
@@ -555,35 +634,51 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
   importDiagram: (snapshot) => {
     pushHistory(set, get);
     const normalized = normalizeDiagramSnapshot(snapshot);
-    // Architecture mode's whole point is the semantic column layout, so re-run it for every
-    // opened diagram there — even ones with their own saved/template positions — instead of only
-    // the position-less-import case the default view relies on.
+    // Re-laying-out an already-positioned diagram on every load was tried and reverted — it produced
+    // a visible flash (the diagram renders once with its saved positions, then a moment later ELK's
+    // async pass overwrites it with a fresh one), which reads as the diagram breaking itself rather
+    // than an improvement. Architecture mode's whole point is the semantic column layout, so it still
+    // re-runs there even over saved/template positions; a diagram genuinely stale enough to need
+    // re-arranging is one "Auto arrange" click away rather than something imposed on every load.
     const shouldAutoLayout = !hasSavedPositions(normalized.nodes) || get().architectureViewMode;
     const semanticEdges = normalizeSemanticEdges(normalized.edges, normalized.nodes);
     // Loading a diagram (a demo, a template, or the user's own saved one) isn't itself an
     // unsaved change relative to what's on the server, so this clears the isDirty flag pushHistory
     // just set — only edits made *after* this point should count as dirty.
-    set((state) => ({ nodes: normalized.nodes, edges: semanticEdges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], isolatedNodeId: undefined, fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
+    set((state) => ({ nodes: applyNonOverlappingNodes(normalized.nodes, semanticEdges), edges: semanticEdges, activeRegion: normalized.activeRegion ?? state.activeRegion, selectedNodeId: undefined, selectedEdgeId: undefined, inspectorNodeId: undefined, inspectorEdgeId: undefined, focusNodeIds: [], isolatedNodeId: undefined, fitViewVersion: state.fitViewVersion + 1, isDirty: false }));
     if (shouldAutoLayout) {
-      void applyElkLayeredLayout(normalized.nodes, semanticEdges).then((laidOutNodes) => {
-        set((state) => ({
-          nodes: laidOutNodes,
-          edges: normalizeSemanticEdges(state.edges, laidOutNodes),
-          fitViewVersion: state.fitViewVersion + 1,
-          isDirty: false,
-        }));
-      });
+      void applyElkLayeredLayout(normalized.nodes, semanticEdges)
+        .then((laidOutNodes) => {
+          set((state) => {
+            const nextEdges = normalizeSemanticEdges(state.edges, laidOutNodes);
+            return {
+              nodes: applyNonOverlappingNodes(laidOutNodes, nextEdges),
+              edges: nextEdges,
+              fitViewVersion: state.fitViewVersion + 1,
+              isDirty: false,
+            };
+          });
+        })
+        .catch((error) => console.error('Auto-layout failed on import; positions were not updated.', error));
     }
   },
   autoArrange: async () => {
     const { nodes, edges } = get();
     if (!nodes.length) return;
     pushHistory(set, get);
-    const semanticEdges = normalizeSemanticEdges(edges, nodes);
-    const laidOutNodes = await applyElkLayeredLayout(nodes, semanticEdges);
+    // Auto arrange clears pins for the selection — or everything, if nothing is selected — so a
+    // pinned node stays fixed against ordinary structural changes but a deliberate re-arrange can
+    // still move it.
+    const hasSelection = nodes.some((node) => node.selected);
+    const unpinnedNodes = nodes.map((node) =>
+      node.data.pinned && (!hasSelection || node.selected) ? { ...node, data: { ...node.data, pinned: undefined } } : node,
+    );
+    const semanticEdges = normalizeSemanticEdges(edges, unpinnedNodes);
+    const laidOutNodes = await applyElkLayeredLayout(unpinnedNodes, semanticEdges);
+    const finalEdges = normalizeSemanticEdges(semanticEdges, laidOutNodes);
     set({
-      nodes: laidOutNodes,
-      edges: normalizeSemanticEdges(semanticEdges, laidOutNodes),
+      nodes: applyNonOverlappingNodes(laidOutNodes, finalEdges),
+      edges: finalEdges,
       selectedNodeId: undefined,
       selectedEdgeId: undefined,
       inspectorNodeId: undefined,
@@ -599,26 +694,30 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     const { nodes } = get();
     const node = nodes.find((candidate) => candidate.id === nodeId);
     if (!node || node.type === 'groupBox') return;
-    const parentNode = node.parentNode ? nodes.find((candidate) => candidate.id === node.parentNode) : undefined;
-    const absolutePosition = {
-      x: node.position.x + (parentNode?.position.x ?? 0),
-      y: node.position.y + (parentNode?.position.y ?? 0),
-    };
+    // Full ancestor walk, not a single parent hop — a candidate boundary can itself be nested (a
+    // manual Subnet box inside a manual VPC box, or a derived box the dragged node is being pulled
+    // out of), and a single-level offset gets both the dragged node's and the candidates' absolute
+    // positions wrong the moment nesting is 2+ levels deep.
+    const resolveAbsolutePosition = createAbsolutePositionResolver(nodes);
+    const absolutePosition = resolveAbsolutePosition(nodeId);
     const nodeWidth = Number(node.width ?? node.style?.width ?? 238);
     const nodeHeight = Number(node.height ?? node.style?.height ?? 130);
     const centerX = absolutePosition.x + nodeWidth / 2;
     const centerY = absolutePosition.y + nodeHeight / 2;
     const containingBoundaries = nodes
-      .filter((candidate) => candidate.type === 'groupBox')
+      // Derived boxes are a separate, model-driven layer — attaching by drag would just be undone by
+      // the next structural change that re-runs deriveContainment, so they're not valid drop targets.
+      .filter((candidate) => candidate.type === 'groupBox' && !candidate.data.derivedContainer)
       .map((candidate) => {
         const width = Number(candidate.width ?? candidate.style?.width ?? 520);
         const height = Number(candidate.height ?? candidate.style?.height ?? 340);
-        return { node: candidate, width, height, area: width * height };
+        return { node: candidate, width, height, area: width * height, position: resolveAbsolutePosition(candidate.id) };
       })
-      .filter(({ node: candidate, width, height }) => centerX >= candidate.position.x && centerX <= candidate.position.x + width && centerY >= candidate.position.y && centerY <= candidate.position.y + height)
+      .filter(({ position, width, height }) => centerX >= position.x && centerX <= position.x + width && centerY >= position.y && centerY <= position.y + height)
       .sort((left, right) => left.area - right.area);
 
-    const group = containingBoundaries.find(({ node: candidate }) => canContainNode(candidate, node))?.node;
+    const match = containingBoundaries.find(({ node: candidate }) => canContainNode(candidate, node));
+    const group = match?.node;
     // Dropping into a boundary that can't hold this resource used to fail silently — the node simply
     // stayed unparented with no explanation. Say which rule refused it.
     const refusedBy = group ? undefined : containingBoundaries[0]?.node;
@@ -626,23 +725,28 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       ? `A ${refusedBy.data.groupKind ?? 'boundary'} can't contain ${node.data.serviceName}. Move it out, or use a boundary that accepts this resource.`
       : undefined;
 
-    set({
-      nodes: nodes.map((candidate) =>
+    const nextNodes = nodes.map((candidate) =>
         candidate.id === nodeId ? withTopologySemantics({
           ...candidate,
           parentNode: group?.id,
           extent: undefined,
           data: { ...candidate.data, warning },
-          position: group
+          position: group && match
             ? {
-                x: absolutePosition.x - group.position.x,
-                y: absolutePosition.y - group.position.y,
+                x: absolutePosition.x - match.position.x,
+                y: absolutePosition.y - match.position.y,
               }
             : absolutePosition,
         }, group) : candidate,
-      ),
+      );
+    set({
+      nodes: applyNonOverlappingNodes(nextNodes, get().edges, nodeId),
     });
   },
+  pinNode: (nodeId) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) => (node.id === nodeId ? { ...node, data: { ...node.data, pinned: true } } : node)),
+    })),
 }));
 
 function pushHistory(set: (partial: Partial<DiagramStore>) => void, get: () => DiagramStore): void {

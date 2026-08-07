@@ -8,7 +8,7 @@ import type { AwsNodeData } from '../../types';
 import { buildHandleId, type ConnectionSide } from '../../utils/connectionRouting';
 import { getServiceRequirement } from '../../utils/resourceRequirements';
 import { terraformTypeForService } from '../../utils/resourceRegistry';
-import { useRelationshipBadges } from '../canvasGraphContext';
+import { useLodBand, useRelationshipBadges } from '../canvasGraphContext';
 
 const iconFallback = Icons.Cloud;
 const connectionSides: ConnectionSide[] = ['left', 'right', 'top', 'bottom'];
@@ -53,6 +53,7 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
   const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const relationshipBadges = useRelationshipBadges(id);
+  const lodBand = useLodBand();
 
   const Icon = ((Icons as unknown as Record<string, typeof iconFallback>)[data.icon] ?? iconFallback);
   // The whiteboard and architecture lenses keep the original compact tile — they exist to show shape
@@ -60,7 +61,7 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
   const isCompact = whiteboardMode || architectureViewMode;
   const isWhiteboardOutline = whiteboardMode && (data.serviceId ? whiteboardOutlineServiceIds.has(data.serviceId) : false);
 
-  const summaryLines = useMemo(() => (isCompact ? [] : buildSummaryLines(data)), [data, isCompact]);
+  const summaryLines = useMemo(() => (isCompact || lodBand !== 'full' ? [] : buildSummaryLines(data)), [data, isCompact, lodBand]);
   const terraformType = terraformTypeForService(data.serviceId);
   const blockingCount = summaryLines.filter((line) => line.missing).length;
 
@@ -158,6 +159,57 @@ function AwsServiceNode({ id, data, selected }: NodeProps<AwsNodeData>) {
         </div>
         <div className={`aws-node__label ${whiteboardMode ? 'aws-node__label--whiteboard' : ''} ${architectureViewMode ? 'aws-node__label--architecture' : ''}`}>
           <span>{data.label}</span>
+        </div>
+        {data.warning && <div className="node-warning">{data.warning}</div>}
+        {contextMenu}
+      </div>
+    );
+  }
+
+  // Level of detail (Fix 5): at low zoom the full card's attribute rows are illegible and just add
+  // spacing pressure, so density steps down in two bands below the unchanged full card at >0.8 zoom.
+  // Reuses the full card's own classes/markup for its head section rather than inventing new ones, so
+  // whatever styling already applies there (font size, truncation, icon color) carries over exactly.
+  if (lodBand === 'icon') {
+    return (
+      <div
+        className={`aws-node aws-node--card aws-node--lod-icon ${selected ? 'selected' : ''} ${data.warning ? 'warning' : ''}`}
+        onContextMenu={openContextMenu}
+        title={data.label}
+      >
+        <div className="aws-card aws-card--lod-icon">
+          <div className="aws-card__stripe" style={{ background: data.color }} />
+          {handles}
+          <span className="aws-card__icon aws-card__icon--lod" style={{ color: data.color }}>
+            <Icon size={20} strokeWidth={2} />
+          </span>
+        </div>
+        {data.warning && <div className="node-warning">{data.warning}</div>}
+        {contextMenu}
+      </div>
+    );
+  }
+
+  if (lodBand === 'compact') {
+    return (
+      <div
+        className={`aws-node aws-node--card aws-node--lod-compact ${selected ? 'selected' : ''} ${data.warning ? 'warning' : ''}`}
+        onContextMenu={openContextMenu}
+      >
+        <div className="aws-card aws-card--lod-compact">
+          <div className="aws-card__stripe" style={{ background: data.color }} />
+          {handles}
+          <div className="aws-card__head">
+            <span className="aws-card__icon" style={{ color: data.color }}>
+              <Icon size={18} strokeWidth={2.1} />
+            </span>
+            <span className="aws-card__identity">
+              <span className="aws-card__name" title={data.label}>
+                {data.label}
+              </span>
+              <span className="aws-card__type">{terraformType ?? data.serviceName}</span>
+            </span>
+          </div>
         </div>
         {data.warning && <div className="node-warning">{data.warning}</div>}
         {contextMenu}

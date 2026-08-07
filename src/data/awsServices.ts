@@ -102,7 +102,7 @@ export const awsServices: AwsService[] = [
     { key: 'cidr_block', label: 'CIDR block', type: 'text' },
     { key: 'enable_dns_hostnames', label: 'DNS hostnames', type: 'select', options: booleanOptions },
     { key: 'enable_dns_support', label: 'DNS support', type: 'select', options: booleanOptions },
-  ]),
+  ], 'container'),
   service('subnet', 'Subnet', 'Subnet', 'Networking', 'Network', '#16a34a', ['VPC'], ['ENI', 'Route'], 'aws_subnet', { name: '', vpc_id: '', cidr_block: '', availability_zone: '', map_public_ip_on_launch: '' }, [
     ...commonFields,
     nameField,
@@ -110,7 +110,7 @@ export const awsServices: AwsService[] = [
     { key: 'cidr_block', label: 'CIDR block', type: 'text' },
     { key: 'availability_zone', label: 'Availability zone', type: 'text' },
     { key: 'map_public_ip_on_launch', label: 'Auto-assign public IP', type: 'select', options: booleanOptions },
-  ]),
+  ], 'container'),
   service('igw', 'Internet Gateway', 'IGW', 'Networking', 'Router', '#0891b2', ['VPC'], ['Internet'], 'aws_internet_gateway', { name: '', vpc_id: '' }, [
     ...commonFields,
     nameField,
@@ -383,6 +383,7 @@ function service(
   terraformType: string,
   defaultConfig: Record<string, string | number>,
   fields = commonFields,
+  renderRole: AwsService['renderRole'] = 'leaf',
 ): AwsService {
   return {
     id,
@@ -396,5 +397,6 @@ function service(
     fields,
     terraformType,
     defaultConfig: { region: 'ap-south-1', status: 'running', ...defaultConfig },
+    renderRole,
   };
 }

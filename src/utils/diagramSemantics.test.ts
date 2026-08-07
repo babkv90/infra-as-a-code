@@ -37,9 +37,9 @@ describe('diagram semantics', () => {
     expect(visible).not.toContain('monitoring-1');
   });
 
-  it('shows containment edges in full topology, since flat diagrams have no other way to convey them', () => {
+  it('never draws containment edges, including in full topology — containment is nesting now (Fix 1/4), not a line', () => {
     const visible = edges.filter((candidate) => shouldRenderEdge(candidate, nodes, 'dependencies', 'full-topology')).map((candidate) => candidate.id);
-    expect(visible).toContain('network-1');
+    expect(visible).not.toContain('network-1');
   });
 
   it('still hides containment edges outside full topology, e.g. the default application flow', () => {

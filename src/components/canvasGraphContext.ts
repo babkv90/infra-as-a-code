@@ -25,3 +25,26 @@ export const EdgeGeometryContext = createContext<EdgeGeometryAccess>(emptyGeomet
 export function useEdgeGeometry(): EdgeGeometryAccess {
   return useContext(EdgeGeometryContext);
 }
+
+// Level of detail (Fix 5): card density driven by zoom. A context rather than a prop threads this
+// to every AwsServiceNode without Canvas re-rendering the whole node list on every zoom tick — and
+// since the *value* is one of three string bands rather than the raw zoom number, a card only
+// re-renders when its band actually changes (React bails out of a context update when the value is
+// unchanged by Object.is, which a same-content string always is), not on every intermediate zoom.
+export type LodBand = 'icon' | 'compact' | 'full';
+
+// Lower than the original 0.5/0.8 split: fitView on anything past a handful of nodes routinely lands
+// well under 0.8 zoom just from padding + node count, which made "compact" (no attribute rows) the
+// de facto default card for most real diagrams rather than the deliberately-zoomed-out state it's
+// meant for. These thresholds are for genuinely pulling back to see the whole shape of a large stack.
+export function lodBandForZoom(zoom: number): LodBand {
+  if (zoom < 0.3) return 'icon';
+  if (zoom < 0.55) return 'compact';
+  return 'full';
+}
+
+export const LodBandContext = createContext<LodBand>('full');
+
+export function useLodBand(): LodBand {
+  return useContext(LodBandContext);
+}

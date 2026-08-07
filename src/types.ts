@@ -35,6 +35,10 @@ export type AwsService = {
   fields: AwsField[];
   terraformType: string;
   defaultConfig: Record<string, string | number>;
+  /** Whether this service renders as a boundary its relationship-model children nest inside, rather
+   * than a leaf card. Absent/'leaf' for everything except the handful of catalogue services that
+   * actually hold other resources (see deriveContainment.ts). */
+  renderRole?: 'container' | 'leaf';
 };
 
 export type GroupKind = 'Terraform stack' | 'Region' | 'Module' | 'VPC' | 'Availability Zone' | 'Public Subnet' | 'Private Subnet' | 'Security Group';
@@ -127,6 +131,17 @@ export type AwsNodeData = {
   bindings?: NodeBinding[];
   visual?: NodeVisualState;
   infrastructure?: NodeInfrastructureState;
+  /** Marks a groupBox synthesized by deriveContainment.ts, as opposed to one the user drew — the
+   * two are separate layers: attachNodeToContainingGroup must never target this box, and this
+   * box's own contents are rebuilt from the model on every structural change rather than dragged. */
+  derivedContainer?: boolean;
+  /** Set on a leaf service node that resolves no containment relationship to any container in the
+   * model, so it has no derived parentNode at all — a candidate for Fix 3's external lane. */
+  externalLane?: boolean;
+  /** Set when the user manually drags this node (see diagramStore's pinNode). Auto-layout treats a
+   * pinned node as fixed — excluded from ELK's algorithm entirely rather than repositioned — until
+   * "Auto arrange" clears the pin for the selection (or everything, if nothing is selected). */
+  pinned?: boolean;
 };
 
 export type ConnectionRelationshipKind = 'resolves' | 'composes' | 'reference';

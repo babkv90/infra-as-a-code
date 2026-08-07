@@ -242,12 +242,14 @@ function Toolbar({
     const canvasShell = document.querySelector('.canvas-shell');
     canvasShell?.classList.add('canvas-shell--layout-transition');
     window.setTimeout(() => {
-      void autoArrange().finally(() => {
-      window.setTimeout(() => {
-        canvasShell?.classList.remove('canvas-shell--layout-transition');
-        setIsArranging(false);
-      }, 420);
-      });
+      void autoArrange()
+        .catch((error) => console.error('Auto arrange failed.', error))
+        .finally(() => {
+          window.setTimeout(() => {
+            canvasShell?.classList.remove('canvas-shell--layout-transition');
+            setIsArranging(false);
+          }, 420);
+        });
     }, 0);
   }
 

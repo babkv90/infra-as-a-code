@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, Position, getSmoothStepPath, type EdgeProps } from 'reactflow';
 import { useDiagramStore } from '../../store/diagramStore';
 import type { AwsEdgeData } from '../../types';
 import { useEdgeGeometry } from '../canvasGraphContext';
@@ -60,7 +60,7 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
   const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const geometry = useEdgeGeometry();
-  const [edgePath, rawLabelX, rawLabelY] = getBundledSmoothPath({
+  const [edgePath, rawLabelX, rawLabelY] = getBundledStepPath({
     sourceX,
     sourceY,
     targetX,
@@ -72,7 +72,11 @@ function FlowEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sour
   });
   const connectionType = data?.semanticCategory ?? data?.connectionType ?? 'data-flow';
   const typeColor = architectureViewMode ? architectureEdgeColors[connectionType] : (whiteboardMode ? whiteboardEdgeColors : edgeColors)[connectionType];
-  const color = whiteboardMode || architectureViewMode ? typeColor : selected || data?.highlighted ? typeColor : '#8b9097';
+  // Always colored by relationship category, in every lens — a flat gray default (color only on
+  // select/highlight) was exactly what made the flow unreadable at a glance: data-flow, security,
+  // network-routing and dependency edges were visually identical until you clicked one. Selection
+  // still reads clearly via stroke width and the drop-shadow glow below, not via color.
+  const color = typeColor;
   // Imported diagrams carry a lot of auto-generated "reference"/Terraform edges whose label says
   // nothing; those stay mute. A reference a user deliberately drew is different — the label is the
   // only thing distinguishing it from a modelled relationship, so it must show.
@@ -141,11 +145,17 @@ function labelOffsetForEdge(id: string): { x: number; y: number } {
   return { x: 0, y: offsets[hash % offsets.length] };
 }
 
-// Below this gap, a bezier control offset would overshoot the actual distance between the two
-// nodes and bulge into a visible loop — close nodes read far better as a direct line.
-const STRAIGHT_LINE_DISTANCE = 200;
+// 2px corners, right angles otherwise — matches the deterministic layered layout's own geometry
+// (Fix 2/3) far better than a bezier, which reads as a diagonal "as the crow flies" line that has no
+// relationship to the actual left-to-right layer structure.
+const CORNER_RADIUS = 2;
+// Multiple edges converging on the same target (an edgeBundles slot) fan out across the handle's
+// side instead of all landing on the exact same point — spacing per slot, capped so the fan never
+// reaches past the card's own face even with a large bundle.
+const BUNDLE_SLOT_SPACING = 16;
+const MAX_BUNDLE_SPREAD = 84;
 
-function getBundledSmoothPath({
+function getBundledStepPath({
   sourceX,
   sourceY,
   targetX,
@@ -155,36 +165,23 @@ function getBundledSmoothPath({
   bundleIndex = 0,
   bundleSize = 1,
 }: Pick<EdgeProps<AwsEdgeData>, 'sourceX' | 'sourceY' | 'targetX' | 'targetY' | 'sourcePosition' | 'targetPosition'> & { bundleIndex?: number; bundleSize?: number }): [string, number, number] {
-  const straightDistance = Math.hypot(targetX - sourceX, targetY - sourceY);
-  const bundleOffset = (bundleIndex - (bundleSize - 1) / 2) * 14;
-  const length = straightDistance || 1;
-  const perpX = (-(targetY - sourceY) / length) * bundleOffset;
-  const perpY = ((targetX - sourceX) / length) * bundleOffset;
-  const midX = (sourceX + targetX) / 2;
-  const midY = (sourceY + targetY) / 2;
+  const bundleOffset =
+    bundleSize > 1 ? (bundleIndex - (bundleSize - 1) / 2) * Math.min(BUNDLE_SLOT_SPACING, MAX_BUNDLE_SPREAD / (bundleSize - 1)) : 0;
+  const isTargetVerticalSide = targetPosition === Position.Top || targetPosition === Position.Bottom;
+  const adjustedTargetX = isTargetVerticalSide ? targetX + bundleOffset : targetX;
+  const adjustedTargetY = isTargetVerticalSide ? targetY : targetY + bundleOffset;
 
-  if (straightDistance < STRAIGHT_LINE_DISTANCE) {
-    // No bundling needed: a plain straight line. Bundled (multiple edges sharing an endpoint):
-    // nudge the midpoint sideways per bundle slot so parallel edges fan out instead of overlapping.
-    if (bundleOffset === 0) {
-      return [`M ${sourceX},${sourceY} L ${targetX},${targetY}`, midX, midY];
-    }
-    return [`M ${sourceX},${sourceY} Q ${midX + perpX},${midY + perpY} ${targetX},${targetY}`, midX + perpX, midY + perpY];
-  }
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX: adjustedTargetX,
+    targetY: adjustedTargetY,
+    targetPosition,
+    borderRadius: CORNER_RADIUS,
+  });
 
-  // Longer edges: a single smooth cubic bezier that leaves/arrives along each node's facing side.
-  // Never a boxy right-angle detour — a stepped lead/junction path reads as broken/disconnected the
-  // moment the two nodes aren't perfectly aligned, even when every point is mathematically correct.
-  const sourceVector = sideVector(String(sourcePosition));
-  const targetVector = sideVector(String(targetPosition));
-  const controlDistance = Math.min(Math.max(straightDistance * 0.38, 40), 220);
-  const c1x = sourceX + sourceVector.x * controlDistance + perpX;
-  const c1y = sourceY + sourceVector.y * controlDistance + perpY;
-  const c2x = targetX + targetVector.x * controlDistance + perpX;
-  const c2y = targetY + targetVector.y * controlDistance + perpY;
-  const label = cubicPoint(0.5, { x: sourceX, y: sourceY }, { x: c1x, y: c1y }, { x: c2x, y: c2y }, { x: targetX, y: targetY });
-
-  return [`M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`, label.x, label.y];
+  return [path, labelX, labelY];
 }
 
 function avoidLabelOverlap(base: Point, obstacles: ObstacleRect[], hashOffset: Point): Point {
@@ -213,22 +210,6 @@ function rectsOverlap(left: Rect, right: Rect): boolean {
 
 function expandRect(rect: Rect, padding: number): Rect {
   return { x: rect.x - padding, y: rect.y - padding, width: rect.width + padding * 2, height: rect.height + padding * 2 };
-}
-
-function sideVector(position: string): { x: number; y: number } {
-  if (position === 'left') return { x: -1, y: 0 };
-  if (position === 'right') return { x: 1, y: 0 };
-  if (position === 'top') return { x: 0, y: -1 };
-  if (position === 'bottom') return { x: 0, y: 1 };
-  return { x: 1, y: 0 };
-}
-
-function cubicPoint(t: number, start: Point, controlA: Point, controlB: Point, end: Point): Point {
-  const inverse = 1 - t;
-  return {
-    x: inverse ** 3 * start.x + 3 * inverse ** 2 * t * controlA.x + 3 * inverse * t ** 2 * controlB.x + t ** 3 * end.x,
-    y: inverse ** 3 * start.y + 3 * inverse ** 2 * t * controlA.y + 3 * inverse * t ** 2 * controlB.y + t ** 3 * end.y,
-  };
 }
 
 export default memo(FlowEdge);
