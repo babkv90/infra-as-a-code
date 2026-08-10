@@ -95,9 +95,10 @@ export function normalizeAccessPlan(workspace) {
   return workspace?.plan || 'free';
 }
 
-export function canUseAiAgent(user, workspace) {
-  const plan = normalizeAccessPlan(workspace);
-  return hasCredits(user) || plan === 'pro' || plan === 'enterprise';
+// Restricted to Super Admin only — not a plan/credits gate like the rest of this file. Keep this in
+// sync with src/utils/accessControl.ts's canUseAiAgent on the frontend.
+export function canUseAiAgent(user) {
+  return user?.role === roles.SUPER_ADMIN;
 }
 
 export function canUseApplicationPipelines(user, workspace) {

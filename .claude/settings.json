@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/DELL/AppData/Local/Temp/claude/d--infra-as-a-code/39e9c6b7-4065-4a0f-b3d1-32e3a2b763a2/scratchpad/pw-test/**)",
+      "Bash(mkdir -p screenshots-3d)",
+      "Bash(node test-3d.mjs)"
+    ]
+  }
+}

@@ -3992,7 +3992,7 @@ textarea {
   --lp-pipeline-node-bg: rgba(2, 6, 23, 0.78);
   position: relative;
   overflow: visible;
-  padding: 2px 4px 0;
+  padding: 22px 4px 0;
 }
 
 .lp-hero-pipeline::before {
@@ -4003,27 +4003,6 @@ textarea {
   transform: translateX(-58%);
   animation: lp-pipeline-sheen 6.5s ease-in-out infinite;
   pointer-events: none;
-}
-
-.lp-hero-pipeline__header {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 12px;
-  color: var(--lp-pipeline-muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.lp-hero-pipeline__header strong {
-  color: var(--lp-pipeline-accent);
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .lp-hero-pipeline__track {
@@ -6198,12 +6177,6 @@ button.lp-security-item {
 
   .lp-hero-pipeline {
     padding: 12px;
-  }
-
-  .lp-hero-pipeline__header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
   }
 
   .lp-hero-pipeline__track {
@@ -21698,4 +21671,259 @@ button.dash-kpi-card {
     min-height: var(--dash-control-height-sm);
     font-size: var(--dash-font-md);
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* 3D View — view-only isometric-block rendering of the same diagram data */
+/* as the 2D canvas. Scoped entirely under three-d-* classes so none of   */
+/* this touches the 2D builder's own styling.                             */
+/* ---------------------------------------------------------------------- */
+
+.builder-view-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.builder-view-tabs button {
+  padding: 6px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: rgba(148, 163, 184, 0.08);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.builder-view-tabs button.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: inset 0 2px 0 #2563eb;
+}
+
+.dark .builder-view-tabs button.active {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.builder-3d-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 320px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.three-d-view-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #0a0f1c;
+}
+
+.three-d-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.92);
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.three-d-view-toolbar__hint {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.three-d-view-reset-button {
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.three-d-view-reset-button:hover {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.three-d-view-root canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.three-d-loading {
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.three-d-empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #94a3b8;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.three-d-container-label {
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 5px;
+  background: rgba(10, 15, 28, 0.88);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.three-d-node-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.three-d-node-tag--hovered {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.three-d-node-tag--selected {
+  box-shadow: 0 0 0 1.5px #38bdf8;
+}
+
+/* Declutter mode: with no label text, the tag collapses to just the round icon badge. */
+.three-d-node-tag:not(:has(.three-d-node-tag__label)) {
+  padding: 3px;
+}
+
+.three-d-node-tag__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.three-d-inspector {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  width: 220px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.three-d-inspector__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  padding: 3px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.three-d-inspector__close:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+}
+
+.three-d-inspector__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-right: 18px;
+  margin-bottom: 10px;
+}
+
+.three-d-inspector__header strong {
+  display: block;
+  font-size: 13px;
+}
+
+.three-d-inspector__header span {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.three-d-inspector__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.three-d-inspector__fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.three-d-inspector__fields > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.three-d-inspector__fields dt {
+  color: #94a3b8;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.three-d-inspector__fields dd {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
 }

@@ -71,9 +71,9 @@ export function canDeployByRole(user?: AuthUser | null) {
   return (roleRank[user?.role ?? 'viewer'] ?? 0) >= roleRank.devops;
 }
 
+// Restricted to Super Admin only — not a plan/credits gate like the rest of this file.
 export function canUseAiAgent(user?: AuthUser | null) {
-  const plan = getAccessPlan(user);
-  return hasCredits(user) || plan === 'pro' || plan === 'enterprise';
+  return isSuperAdmin(user);
 }
 
 export function canUseApplicationPipelines(user?: AuthUser | null) {

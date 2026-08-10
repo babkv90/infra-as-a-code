@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { AgentConversation } from '../models/AgentConversation.js';
-import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
 import { canUseAiAgent } from '../utils/accessControl.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -67,8 +66,7 @@ export const addMessage = asyncHandler(async (req, res) => {
 });
 
 async function assertAiAccess(req) {
-  const workspace = await Workspace.findById(req.user.workspace);
-  if (!canUseAiAgent(req.user, workspace)) {
-    throw new ApiError(403, 'AI support is available for Pro, Enterprise, and Super admin accounts.');
+  if (!canUseAiAgent(req.user)) {
+    throw new ApiError(403, 'AI Cloud Agent is available to Super Admin accounts only.');
   }
 }

@@ -7,7 +7,7 @@ import { clearAuthSession, getStoredUser } from '../auth/authClient';
 import { useDiagramStore } from '../store/diagramStore';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
-import { getAccessPlan, serviceAccessTierForUser } from '../utils/accessControl';
+import { getAccessPlan, isSuperAdmin, serviceAccessTierForUser } from '../utils/accessControl';
 
 type SettingsPageProps = {
   theme: ThemeMode;
@@ -22,6 +22,16 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
   const setArchitectureViewMode = useDiagramStore((state) => state.setArchitectureViewMode);
   const hasDiagramNodes = useDiagramStore((state) => state.nodes.length > 0);
   const autoArrangeDiagram = useDiagramStore((state) => state.autoArrange);
+  const canUseWhiteboard = isSuperAdmin(user);
+
+  // whiteboardMode is a localStorage-backed flag, not tied to any particular user — if this browser
+  // previously had a Super Admin session that enabled it, a non-Super-Admin logging in afterwards
+  // would otherwise silently inherit it. Correct that as soon as this page (where the toggle lives)
+  // mounts, rather than only hiding the button and leaving the stale state in place.
+  useEffect(() => {
+    if (whiteboardMode && !canUseWhiteboard) setWhiteboardMode(false);
+  }, [canUseWhiteboard, whiteboardMode, setWhiteboardMode]);
+
   const accessPlan = getAccessPlan(user);
   const accessTier = serviceAccessTierForUser(user);
   const profileInitials = (user?.name || user?.email || 'U')
@@ -188,11 +198,13 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
               Diagram
               {!whiteboardMode && !architectureViewMode && <Check size={15} />}
             </button>
-            <button className={`dash-secondary-action ${whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(true)} type="button">
-              <PenTool size={16} />
-              Whiteboard
-              {whiteboardMode && <Check size={15} />}
-            </button>
+            {canUseWhiteboard && (
+              <button className={`dash-secondary-action ${whiteboardMode ? 'is-active' : ''}`} onClick={() => setWhiteboardMode(true)} type="button">
+                <PenTool size={16} />
+                Whiteboard
+                {whiteboardMode && <Check size={15} />}
+              </button>
+            )}
             <button
               className={`dash-secondary-action ${architectureViewMode ? 'is-active' : ''}`}
               onClick={() => {

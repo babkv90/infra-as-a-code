@@ -67,7 +67,7 @@ export const getSuperAdminOverview = asyncHandler(async (_req, res) => {
       creditRequest: user.creditRequest ?? { status: 'none' },
       accessTier: serviceAccessTier(user, workspace),
       allowedServices: allowedServiceIdsForAccess(user, workspace).size,
-      aiEnabled: canUseAiAgent(user, workspace),
+      aiEnabled: canUseAiAgent(user),
       diagramsCreated: diagramsByUser.get(String(user._id)) ?? 0,
       deploymentsCreated: deploymentsByUser.get(String(user._id)) ?? 0,
       successfulDeployments: deployedByUser.get(String(user._id)) ?? 0,

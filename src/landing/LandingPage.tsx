@@ -306,10 +306,6 @@ function HeroSection() {
 function HeroPipelineAnimation() {
   return (
     <div className="lp-hero-pipeline" aria-label="Application deployment pipeline from Git sync to live release">
-      <div className="lp-hero-pipeline__header">
-        <span>Application deploy pipeline</span>
-        <strong>Sync Git → ship</strong>
-      </div>
       <div className="lp-hero-pipeline__track">
         <span className="lp-hero-pipeline__flow" aria-hidden="true" />
         {heroPipelineSteps.map((step, index) => {

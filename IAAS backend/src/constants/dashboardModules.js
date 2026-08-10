@@ -26,7 +26,7 @@ export const dashboardModules = Object.freeze([
     id: 'ai-agent',
     label: 'AI Cloud Agent',
     description: 'Ask cloud, cost, security, and architecture questions.',
-    minimumRole: roles.VIEWER,
+    minimumRole: roles.SUPER_ADMIN,
     permissions: ['agent:read', 'agent:chat'],
     badge: 'AI',
   },

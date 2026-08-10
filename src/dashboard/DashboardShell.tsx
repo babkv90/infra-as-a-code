@@ -1,4 +1,4 @@
-﻿import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import Editor from '@monaco-editor/react';
 import {
@@ -54,6 +54,9 @@ import ResourceInfoViewer from '../components/ResourceInfoViewer';
 import Sidebar from '../components/Sidebar';
 import StatusBar from '../components/StatusBar';
 import Toolbar from '../components/Toolbar';
+// Lazy: three.js + drei are a substantial download that only the 3D tab needs — nobody who stays on
+// the 2D diagram should pay for it.
+const ThreeDView = lazy(() => import('../components/threeDView'));
 import { getStoredUser, logout } from '../auth/authClient';
 import { isEnterpriseDemoDiagram, loadDemoDiagrams } from '../data/enterpriseDemoSource';
 import { useDiagramStore } from '../store/diagramStore';
@@ -145,7 +148,8 @@ import {
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import type { ValidationIssue } from '../utils/validate';
-import { canUseAiAgent, canUseApplicationPipelines, hasCredits, serviceAccessTierForUser } from '../utils/accessControl';
+import { canUseApplicationPipelines, hasCredits, isSuperAdmin, serviceAccessTierForUser } from '../utils/accessControl';
+import type { AuthUser } from '../auth/authClient';
 
 // Still used by KpiGrid and ResourceTable's own detail popups even though the Runtime Lab page
 // that originally introduced this type/component was removed — see RuntimeLabDetailModal below.
@@ -165,6 +169,17 @@ const dashboardPageIds = new Set<DashboardPage>(dashboardNavItems.map((item) => 
 // page. Kept as a filter (not removed from DashboardPage/dashboardNavItems/renderPage) so the
 // pages themselves stay intact and this is a one-line revert if they need to come back.
 const hiddenDashboardPages = new Set<DashboardPage>(['terraform', 'security']);
+
+// Nav entry hidden and direct ?view=... deep link redirected to Overview for anyone who isn't
+// Super Admin — same "kept as a filter, not removed" reasoning as hiddenDashboardPages above, just
+// role-aware instead of universal.
+const superAdminOnlyPages = new Set<DashboardPage>(['ai-agent', 'support', 'super-admin']);
+
+function isDashboardPageAllowedForUser(page: DashboardPage, user: AuthUser | null): boolean {
+  if (hiddenDashboardPages.has(page)) return false;
+  if (superAdminOnlyPages.has(page)) return isSuperAdmin(user);
+  return true;
+}
 const githubConnectionCacheKey = 'infraflow.github.connection';
 const githubRepositoriesCacheKey = 'infraflow.github.repositories';
 const githubRepositoriesCacheEvent = 'infraflow:github-repositories-cache';
@@ -236,7 +251,7 @@ function safeJsonParse<T>(value: string): T | null {
 
 function getInitialDashboardPage(): DashboardPage {
   const page = new URLSearchParams(window.location.search).get('view') as DashboardPage | null;
-  return page && dashboardPageIds.has(page) && !hiddenDashboardPages.has(page) ? page : 'overview';
+  return page && dashboardPageIds.has(page) && isDashboardPageAllowedForUser(page, getStoredUser()) ? page : 'overview';
 }
 
 function getDashboardUrl(page: DashboardPage) {
@@ -279,10 +294,8 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   const visibleNavItems = useMemo(
     () =>
       dashboardNavItems.filter((item) => {
-        if (hiddenDashboardPages.has(item.id)) return false;
-        if (item.id === 'ai-agent') return canUseAiAgent(currentUser);
+        if (!isDashboardPageAllowedForUser(item.id, currentUser)) return false;
         if (item.id === 'app-pipeline') return canUseApplicationPipelines(currentUser);
-        if (item.id === 'super-admin') return currentUser?.role === 'superadmin';
         return true;
       }),
     [currentUser],
@@ -296,7 +309,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
   // entirely. The matching popstate listener below is what makes the back/forward buttons
   // actually update activePage instead of just changing the URL underneath a stale page.
   function goToDashboardPage(page: DashboardPage) {
-    if (hiddenDashboardPages.has(page)) return;
+    if (!isDashboardPageAllowedForUser(page, currentUser)) return;
     setActivePage(page);
     window.history.pushState(null, '', getDashboardUrl(page));
   }
@@ -1446,6 +1459,7 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const terraformFileRef = useRef<HTMLInputElement>(null);
   const builderShellRef = useRef<HTMLDivElement>(null);
   const flow = useReactFlow();
+  const [builderViewMode, setBuilderViewMode] = useState<'2d' | '3d'>('2d');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(false);
   // Drives whether the inspector column is reserved at all. Selected here (rather than left to
@@ -1468,8 +1482,17 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   const [saveDiagramName, setSaveDiagramName] = useState(currentDiagramName);
   const [renameDiagramName, setRenameDiagramName] = useState(currentDiagramName);
   const [directoryMessage, setDirectoryMessage] = useState('');
-  const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved, isDirty } = useDiagramStore();
+  const { nodes, edges, issues, activeRegion, validate, setDark, importDiagram, markSaved, isDirty, whiteboardMode, setWhiteboardMode } = useDiagramStore();
   const user = getStoredUser();
+  const isSuperAdminUser = isSuperAdmin(user);
+
+  // whiteboardMode is a localStorage-backed flag, not tied to any particular user — someone landing
+  // straight in the builder (never visiting Settings, where the toggle itself lives) would otherwise
+  // silently inherit a Super Admin's prior choice on a shared browser. See the matching correction
+  // in GithubSettingsPage.tsx for the other entry point into this same state.
+  useEffect(() => {
+    if (whiteboardMode && !isSuperAdminUser) setWhiteboardMode(false);
+  }, [isSuperAdminUser, whiteboardMode, setWhiteboardMode]);
   const canWriteDiagrams = canRoleWriteDiagrams(user?.role);
   const canDeleteDiagrams = canRoleDeleteDiagrams(user?.role);
   const accessTier = serviceAccessTierForUser(user);
@@ -1891,24 +1914,54 @@ function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
             </button>
           </div>
         )}
-        <Toolbar
-          theme={theme}
-          isFullscreen={isFullscreen}
-          onToggleFullscreen={() => void toggleBuilderFullscreen()}
-          onOpenDeployment={openDeploymentFromBuilder}
-          onSaveDiagram={() => void saveCurrentDiagram()}
-          canSaveDiagram={canWriteDiagrams}
-          isSavingDiagram={isSavingDiagram}
-          saveDiagramTitle={canWriteDiagrams ? 'Save diagram to backend' : 'Architect, admin, or owner role required to save diagrams'}
-        />
-        <div
-          className={`builder-body ${isServicePanelCollapsed ? 'builder-body--palette-collapsed' : ''} ${hasInspectorSelection ? '' : 'builder-body--inspector-hidden'}`}
-        >
-          <Sidebar isCollapsed={isServicePanelCollapsed} onToggleCollapsed={() => setIsServicePanelCollapsed((value) => !value)} user={user} />
-          <Canvas />
-          {hasInspectorSelection && <PropertiesPanel />}
-        </div>
-        <StatusBar />
+        {isSuperAdminUser && (
+          <div className="builder-view-tabs" role="tablist" aria-label="Diagram view mode">
+            <button
+              aria-selected={builderViewMode === '2d'}
+              className={builderViewMode === '2d' ? 'active' : ''}
+              onClick={() => setBuilderViewMode('2d')}
+              role="tab"
+              type="button"
+            >
+              2D Diagram
+            </button>
+            <button
+              aria-selected={builderViewMode === '3d'}
+              className={builderViewMode === '3d' ? 'active' : ''}
+              onClick={() => setBuilderViewMode('3d')}
+              role="tab"
+              type="button"
+            >
+              3D View
+            </button>
+          </div>
+        )}
+        {builderViewMode === '2d' || !isSuperAdminUser ? (
+          <>
+            <Toolbar
+              theme={theme}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={() => void toggleBuilderFullscreen()}
+              onOpenDeployment={openDeploymentFromBuilder}
+              onSaveDiagram={() => void saveCurrentDiagram()}
+              canSaveDiagram={canWriteDiagrams}
+              isSavingDiagram={isSavingDiagram}
+              saveDiagramTitle={canWriteDiagrams ? 'Save diagram to backend' : 'Architect, admin, or owner role required to save diagrams'}
+            />
+            <div
+              className={`builder-body ${isServicePanelCollapsed ? 'builder-body--palette-collapsed' : ''} ${hasInspectorSelection ? '' : 'builder-body--inspector-hidden'}`}
+            >
+              <Sidebar isCollapsed={isServicePanelCollapsed} onToggleCollapsed={() => setIsServicePanelCollapsed((value) => !value)} user={user} />
+              <Canvas />
+              {hasInspectorSelection && <PropertiesPanel />}
+            </div>
+            <StatusBar />
+          </>
+        ) : (
+          <Suspense fallback={<div className="builder-3d-loading">Loading 3D view...</div>}>
+            <ThreeDView />
+          </Suspense>
+        )}
       </div>
       {isDeleteDialogOpen && (
         <div className="diagram-delete-dialog-backdrop" role="presentation" onMouseDown={() => setIsDeleteDialogOpen(false)}>
