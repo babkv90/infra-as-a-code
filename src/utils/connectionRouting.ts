@@ -1,4 +1,4 @@
-import type { AwsEdge, AwsNode } from '../types';
+import type { AwsNode } from '../types';
 
 export type ConnectionSide = 'left' | 'right' | 'top' | 'bottom';
 
@@ -49,21 +49,6 @@ export function getLayerDerivedConnectionSides(sourceLayer: number, targetLayer:
   const sourceCenter = centerOf(getNodeBounds(sourceNode));
   const targetCenter = centerOf(getNodeBounds(targetNode));
   return targetCenter.y >= sourceCenter.y ? { sourceSide: 'bottom', targetSide: 'top' } : { sourceSide: 'top', targetSide: 'bottom' };
-}
-
-export function withOptimalEdgeHandles(edge: AwsEdge, nodesById: Map<string, AwsNode>): AwsEdge {
-  const sourceNode = nodesById.get(edge.source);
-  const targetNode = nodesById.get(edge.target);
-  if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return edge;
-
-  const sides = getOptimalConnectionSides(sourceNode, targetNode);
-  const sourcePort = sourceNode.data.ports.outputs[0];
-  const targetPort = targetNode.data.ports.inputs[0];
-  return {
-    ...edge,
-    sourceHandle: sourcePort ? buildHandleId('out', sides.sourceSide, readHandlePort(edge.sourceHandle, sourcePort)) : undefined,
-    targetHandle: targetPort ? buildHandleId('in', sides.targetSide, readHandlePort(edge.targetHandle, targetPort)) : undefined,
-  };
 }
 
 export function buildHandleId(kind: 'in' | 'out', side: ConnectionSide, port = 'default'): string {

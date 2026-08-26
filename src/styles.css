@@ -5470,6 +5470,57 @@ button.lp-security-item {
   color: #c4b5fd;
 }
 
+.lp-timeline-teaser-intro {
+  max-width: 640px;
+  margin: -8px 0 24px;
+}
+
+.lp-timeline-teaser-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.lp-timeline-teaser-card h3 {
+  margin: 8px 0 8px;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.lp-timeline-teaser-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.lp-timeline-teaser-card--loading {
+  opacity: 0.35;
+  animation: lp-timeline-teaser-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes lp-timeline-teaser-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.lp-timeline-teaser-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+
 .lp-pricing-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -6458,6 +6509,1094 @@ button.lp-security-item {
 
   .reference-reader header a {
     flex: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Progress Timeline / changelog blog (/blog, /blog/:id) — an editorial reading experience that
+   DOES follow the app's light/dark/pearl toggle (see the theme overrides below), just with its
+   own restrained, considered palette per theme rather than reusing the dashboard's SaaS-blue
+   tokens — the same way a publication's reader view has its own light/dark modes distinct from
+   the OS chrome around it.
+   Base (pearl) palette: #FAF9F6 page / #FFFFFF surface / #1A1A1A text / #6B6B63 secondary /
+   #E8E5DF hairline / #1D3557 accent (ink blue, used sparingly for links, tags, and the primary
+   action). Light and dark variants below swap the same roles.
+   Type: "Source Serif 4" for headings + reading body, "Inter" for UI chrome and metadata.
+   --------------------------------------------------------------------------------------------- */
+
+.timeline-page {
+  --timeline-bg: #faf9f6;
+  --timeline-surface: #ffffff;
+  --timeline-text: #1a1a1a;
+  --timeline-text-secondary: #6b6b63;
+  --timeline-text-tertiary: #9c9c94;
+  --timeline-hairline: #e8e5df;
+  --timeline-accent: #1d3557;
+  --timeline-accent-hover: #14263f;
+  --timeline-accent-tint: rgba(29, 53, 87, 0.07);
+  --timeline-accent-tint-strong: rgba(29, 53, 87, 0.12);
+  --timeline-topbar-bg: rgba(250, 249, 246, 0.88);
+  --timeline-error: #a13a3a;
+  --timeline-error-border: rgba(178, 58, 58, 0.35);
+  --timeline-font-serif: 'Source Serif 4', Georgia, 'Iowan Old Style', 'Palatino Linotype', Palatino, serif;
+  --timeline-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  min-height: 100vh;
+  background: var(--timeline-bg);
+  color: var(--timeline-text);
+  font-family: var(--timeline-font-sans);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* Plain "light" theme: cooler, crisper white than pearl's warm off-white — reuses the same
+   neutral tokens the dashboard's light theme uses (--bg-app/--text-primary/--border-subtle) so
+   switching themes elsewhere in the app and landing back here feels consistent. Pearl also
+   carries the app-theme-light class (see App.tsx's themeClassName), so the pearl override right
+   below needs the compound selector to win over this one. */
+.app-theme-light .timeline-page {
+  --timeline-bg: #f8fafc;
+  --timeline-surface: #ffffff;
+  --timeline-text: #111827;
+  --timeline-text-secondary: #475569;
+  --timeline-text-tertiary: #94a3b8;
+  --timeline-hairline: #e2e8f0;
+  --timeline-accent-tint: rgba(29, 53, 87, 0.06);
+  --timeline-accent-tint-strong: rgba(29, 53, 87, 0.1);
+  --timeline-topbar-bg: rgba(248, 250, 252, 0.88);
+}
+
+.app-theme-light.app-theme-pearl .timeline-page {
+  --timeline-bg: #faf9f6;
+  --timeline-surface: #ffffff;
+  --timeline-text: #1a1a1a;
+  --timeline-text-secondary: #6b6b63;
+  --timeline-text-tertiary: #9c9c94;
+  --timeline-hairline: #e8e5df;
+  --timeline-accent-tint: rgba(29, 53, 87, 0.07);
+  --timeline-accent-tint-strong: rgba(29, 53, 87, 0.12);
+  --timeline-topbar-bg: rgba(250, 249, 246, 0.88);
+}
+
+.app-theme-dark .timeline-page {
+  --timeline-bg: #0b1420;
+  --timeline-surface: #141d2e;
+  --timeline-text: #ededea;
+  --timeline-text-secondary: #9aa3b2;
+  --timeline-text-tertiary: #6b7686;
+  --timeline-hairline: rgba(255, 255, 255, 0.1);
+  --timeline-accent: #6f9bd6;
+  --timeline-accent-hover: #86acdf;
+  --timeline-accent-tint: rgba(111, 155, 214, 0.14);
+  --timeline-accent-tint-strong: rgba(111, 155, 214, 0.22);
+  --timeline-topbar-bg: rgba(11, 20, 32, 0.85);
+  --timeline-error: #e28e8e;
+  --timeline-error-border: rgba(226, 142, 142, 0.35);
+}
+
+.timeline-page a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.timeline-page :focus-visible {
+  outline: 2px solid var(--timeline-accent);
+  outline-offset: 2px;
+}
+
+.timeline-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 60px;
+  padding: 6px clamp(16px, 2.5vw, 40px);
+  border-bottom: 1px solid var(--timeline-hairline);
+  background: var(--timeline-topbar-bg);
+  backdrop-filter: blur(14px);
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+/* Matches .lp-nav .app-logo--nav img's size so the bar renders at the same height as the landing
+   page's nav — the unscoped .app-logo--nav rule alone is taller (152x82) than what either nav
+   actually uses. */
+.timeline-topbar .app-logo--nav img {
+  width: 128px;
+  height: 56px;
+}
+
+.timeline-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* .timeline-page prefixed here (and on the other .timeline-* anchor rules below) purely to win
+   CSS specificity against .timeline-page a's blanket `color: inherit` reset — a bare single class
+   selector (0,1,0) loses to that reset's (0,1,1), which is what let .timeline-button--primary's
+   "white text" get silently overridden to near-black. Two classes (0,2,0) always wins. */
+.timeline-page .timeline-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--timeline-text);
+  font-family: var(--timeline-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.timeline-ghost-button:hover {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent-tint);
+  color: var(--timeline-accent);
+}
+
+.timeline-ghost-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.timeline-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--timeline-text);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.timeline-icon-button:hover {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent-tint);
+}
+
+.timeline-shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 56px clamp(16px, 2.5vw, 40px) 88px;
+}
+
+.timeline-intro {
+  max-width: 720px;
+  margin-bottom: 48px;
+}
+
+.timeline-eyebrow {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--timeline-accent);
+  font-family: var(--timeline-font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.timeline-intro h1 {
+  margin: 0 0 14px;
+  color: var(--timeline-text);
+  font-family: var(--timeline-font-serif);
+  font-size: clamp(32px, 4.5vw, 46px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.timeline-intro p {
+  max-width: 620px;
+  color: var(--timeline-text-secondary);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.timeline-controls__divider {
+  width: 1px;
+  height: 14px;
+  background: var(--timeline-hairline);
+}
+
+.timeline-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--timeline-text-secondary);
+  font-family: var(--timeline-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.timeline-text-button:hover {
+  color: var(--timeline-accent);
+}
+
+.timeline-text-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.timeline-spin {
+  animation: timeline-spin 1s linear infinite;
+}
+
+@keyframes timeline-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.timeline-error,
+.timeline-empty {
+  max-width: 720px;
+  padding: 16px 18px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 10px;
+  background: var(--timeline-surface);
+  color: var(--timeline-text-secondary);
+  font-size: 14px;
+}
+
+.timeline-error {
+  border-color: var(--timeline-error-border);
+  color: var(--timeline-error);
+}
+
+.timeline-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 999px;
+  color: var(--timeline-text-secondary);
+  font-family: var(--timeline-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+/* --- List page feed: a stacked editorial list, hairline-divided, no card shadows --- */
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 28px;
+  padding: 32px 0;
+  border-bottom: 1px solid var(--timeline-hairline);
+}
+
+.timeline-list .timeline-row:first-child {
+  padding-top: 0;
+}
+
+.timeline-row__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 96px;
+  border-radius: 10px;
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.timeline-row:hover .timeline-row__mark {
+  transform: scale(1.03);
+  filter: brightness(1.08);
+}
+
+.timeline-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--timeline-text-tertiary);
+  font-family: var(--timeline-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.timeline-row h2 {
+  margin: 0 0 8px;
+  font-family: var(--timeline-font-serif);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.32;
+}
+
+.timeline-row h2 a {
+  transition: color 180ms ease;
+}
+
+.timeline-row h2 a:hover {
+  color: var(--timeline-accent);
+}
+
+.timeline-row__excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0 0 16px;
+  max-width: 640px;
+  color: var(--timeline-text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.timeline-row__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.timeline-row__filemeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--timeline-text-tertiary);
+  font-family: var(--timeline-font-sans);
+  font-size: 12px;
+}
+
+.timeline-page .timeline-download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--timeline-text-secondary);
+  font-family: var(--timeline-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 180ms ease;
+}
+
+.timeline-page .timeline-download-link:hover {
+  color: var(--timeline-accent);
+}
+
+@media (max-width: 640px) {
+  .timeline-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 24px 0;
+  }
+
+  .timeline-row__mark {
+    order: -1;
+    height: 64px;
+  }
+
+  .timeline-row__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* --- Single article reader --- */
+
+.timeline-article-shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 56px clamp(16px, 2.5vw, 40px) 96px;
+}
+
+.timeline-article__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  min-height: 22px;
+}
+
+.timeline-article h1 {
+  margin: 0 0 18px;
+  color: var(--timeline-text);
+  font-family: var(--timeline-font-serif);
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.timeline-article__subtitle {
+  margin: 0 0 24px;
+  max-width: 620px;
+  color: var(--timeline-text-secondary);
+  font-family: var(--timeline-font-serif);
+  font-size: 20px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.timeline-article__byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--timeline-hairline);
+  color: var(--timeline-text-secondary);
+  font-family: var(--timeline-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.timeline-article__byline-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--timeline-text-tertiary);
+}
+
+.timeline-article__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 40px;
+}
+
+.timeline-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 8px;
+  font-family: var(--timeline-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.timeline-button--ghost {
+  background: transparent;
+  color: var(--timeline-text);
+}
+
+.timeline-button--ghost:hover {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent-tint);
+  color: var(--timeline-accent);
+}
+
+/* A blue-to-teal gradient, not a flat fill — pairs with the reading progress bar below (same
+   gradient) so the two read as one accent system, and stays on the same blue/cyan family the rest
+   of the product already uses (dashboard's --accent-primary, the old timeline cyan) rather than
+   introducing an unrelated color. Same treatment across all three themes on purpose — this is the
+   one strong "brand" moment on an otherwise very restrained page. */
+.timeline-page .timeline-button--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(6, 20, 40, 0.08);
+}
+
+.timeline-page .timeline-button--primary:hover {
+  background: linear-gradient(135deg, #1d4ed8, #0891b2);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.28);
+  transform: translateY(-1px);
+}
+
+/* Editorial reading typography: a serif face, generous line-height, and a narrower measure
+   (bounded by .timeline-article-shell's max-width) for comfortable long-form reading. */
+.timeline-article__body {
+  font-family: var(--timeline-font-serif);
+  font-size: 19px;
+  line-height: 1.75;
+  color: var(--timeline-text);
+}
+
+.timeline-article__body h1,
+.timeline-article__body h2,
+.timeline-article__body h3,
+.timeline-article__body h4 {
+  position: relative;
+  margin: 44px 0 16px;
+  color: var(--timeline-text);
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.3;
+  scroll-margin-top: 90px;
+}
+
+.timeline-article__body h1 {
+  font-size: 30px;
+}
+
+.timeline-article__body h2 {
+  font-size: 25px;
+}
+
+.timeline-article__body h3 {
+  font-size: 21px;
+}
+
+.timeline-article__body h4 {
+  font-size: 19px;
+}
+
+.timeline-page .timeline-heading__anchor {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  color: var(--timeline-text-tertiary);
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease;
+  vertical-align: middle;
+}
+
+.timeline-heading:hover .timeline-heading__anchor,
+.timeline-heading__anchor:focus-visible {
+  opacity: 1;
+}
+
+.timeline-heading__anchor:hover {
+  color: var(--timeline-accent);
+}
+
+.timeline-article__body p {
+  margin: 0 0 24px;
+}
+
+.timeline-inline-code {
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  background: var(--timeline-accent-tint);
+  color: var(--timeline-text);
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.82em;
+}
+
+.timeline-page .timeline-inline-link {
+  color: var(--timeline-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--timeline-accent-tint-strong);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 150ms ease;
+}
+
+.timeline-page .timeline-inline-link:hover {
+  text-decoration-color: var(--timeline-accent);
+}
+
+.timeline-article__body ul,
+.timeline-article__body ol {
+  margin: 0 0 24px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.timeline-article__body ul {
+  counter-reset: none;
+}
+
+.timeline-article__body ol {
+  counter-reset: timeline-ol;
+}
+
+.timeline-article__body li {
+  position: relative;
+  margin-bottom: 10px;
+  padding-left: 28px;
+}
+
+.timeline-article__body ul > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.7em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--timeline-accent);
+}
+
+.timeline-article__body ol > li {
+  counter-increment: timeline-ol;
+}
+
+.timeline-article__body ol > li::before {
+  content: counter(timeline-ol) '.';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--timeline-accent);
+  font-family: var(--timeline-font-sans);
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.timeline-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-left: 0 !important;
+}
+
+.timeline-task-item::before {
+  content: none !important;
+}
+
+.timeline-task-item__box {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.35em;
+  border: 1.5px solid var(--timeline-hairline);
+  border-radius: 4px;
+  background: var(--timeline-surface);
+}
+
+.timeline-task-item__box--checked {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 11px;
+}
+
+.timeline-task-item__text--done {
+  color: var(--timeline-text-tertiary);
+  text-decoration: line-through;
+}
+
+/* --- Code blocks --- */
+
+.timeline-code {
+  overflow: hidden;
+  margin: 0 0 28px;
+  border-radius: 10px;
+  background: #1e1e1e;
+  font-family: var(--timeline-font-sans);
+}
+
+.timeline-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline-code__lang {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timeline-code__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.timeline-code__copy:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.timeline-code__pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 14px 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.timeline-code__pre code {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.timeline-code__line {
+  display: table-row;
+}
+
+.timeline-code__line-number {
+  display: table-cell;
+  width: 1%;
+  padding: 0 16px;
+  color: rgba(255, 255, 255, 0.28);
+  text-align: right;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.timeline-code__line-content {
+  display: table-cell;
+  width: 100%;
+  padding: 0 20px 0 16px;
+  white-space: pre;
+}
+
+/* --- Mermaid diagrams --- */
+
+.timeline-diagram {
+  margin: 0 0 28px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 12px;
+  background: var(--timeline-surface);
+}
+
+.timeline-diagram__viewport {
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 24px;
+  touch-action: none;
+}
+
+.timeline-diagram__canvas {
+  transition: transform 120ms ease;
+}
+
+.timeline-diagram__canvas svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.timeline-diagram__loading,
+.timeline-diagram--error p {
+  padding: 20px;
+  color: var(--timeline-text-tertiary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.timeline-diagram__controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--timeline-hairline);
+}
+
+.timeline-diagram__controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--timeline-text-secondary);
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.timeline-diagram__controls button:hover:not(:disabled) {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent-tint);
+  color: var(--timeline-accent);
+}
+
+.timeline-diagram__controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- Blockquotes / callouts --- */
+
+.timeline-quote {
+  margin: 0 0 28px;
+  padding: 2px 0 2px 20px;
+  border-left: 3px solid var(--timeline-accent);
+}
+
+.timeline-quote p {
+  margin: 0;
+  color: var(--timeline-text-secondary);
+  font-style: italic;
+}
+
+.timeline-callout {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 28px;
+  padding: 14px 18px;
+  border: 1px solid var(--timeline-hairline);
+  border-left: 3px solid var(--timeline-callout-color, var(--timeline-accent));
+  border-radius: 8px;
+  background: var(--timeline-callout-bg, var(--timeline-accent-tint));
+  font-family: var(--timeline-font-sans);
+}
+
+.timeline-callout__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--timeline-callout-color, var(--timeline-accent));
+}
+
+.timeline-callout__label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--timeline-callout-color, var(--timeline-accent));
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.timeline-callout p {
+  margin: 0;
+  color: var(--timeline-text);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.timeline-callout--note {
+  --timeline-callout-color: #2563eb;
+  --timeline-callout-bg: rgba(37, 99, 235, 0.07);
+}
+
+.timeline-callout--tip {
+  --timeline-callout-color: #15803d;
+  --timeline-callout-bg: rgba(21, 128, 61, 0.07);
+}
+
+.timeline-callout--important {
+  --timeline-callout-color: #7c3aed;
+  --timeline-callout-bg: rgba(124, 58, 237, 0.07);
+}
+
+.timeline-callout--warning,
+.timeline-callout--caution {
+  --timeline-callout-color: #b45309;
+  --timeline-callout-bg: rgba(180, 83, 9, 0.07);
+}
+
+/* --- Tables --- */
+
+.timeline-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 28px;
+  border: 1px solid var(--timeline-hairline);
+  border-radius: 10px;
+}
+
+.timeline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--timeline-font-sans);
+  font-size: 14.5px;
+}
+
+.timeline-table th {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--timeline-hairline);
+  background: var(--timeline-accent-tint);
+  color: var(--timeline-text-secondary);
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.timeline-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--timeline-hairline);
+  color: var(--timeline-text);
+}
+
+.timeline-table tr:last-child td {
+  border-bottom: none;
+}
+
+.timeline-table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.timeline-table tbody tr:hover {
+  background: var(--timeline-accent-tint);
+}
+
+/* --- Images --- */
+
+.timeline-figure {
+  margin: 0 0 28px;
+}
+
+.timeline-figure__img {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+
+.timeline-figure__img--loaded {
+  opacity: 1;
+}
+
+.timeline-figure figcaption {
+  margin-top: 8px;
+  color: var(--timeline-text-tertiary);
+  font-family: var(--timeline-font-sans);
+  font-size: 13px;
+  text-align: center;
+}
+
+.timeline-article__body > *:first-child {
+  margin-top: 0;
+}
+
+.timeline-article__footer {
+  margin-top: 56px;
+  padding-top: 28px;
+  border-top: 1px solid var(--timeline-hairline);
+}
+
+/* --- Reading progress bar --- */
+
+.timeline-progress {
+  position: sticky;
+  top: 69px;
+  z-index: 49;
+  height: 3px;
+  background: transparent;
+}
+
+.timeline-progress__bar {
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, #2563eb, #06b6d4);
+  transform: scaleX(0);
+}
+
+/* --- Article layout + table of contents --- */
+
+.timeline-article-layout {
+  position: relative;
+}
+
+.timeline-toc {
+  display: none;
+}
+
+@media (min-width: 1600px) {
+  .timeline-toc {
+    position: fixed;
+    top: 96px;
+    left: calc(50% + 564px);
+    display: block;
+    width: 200px;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+  }
+
+  .timeline-toc__label {
+    display: block;
+    margin-bottom: 10px;
+    color: var(--timeline-text-tertiary);
+    font-family: var(--timeline-font-sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .timeline-toc ul {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-left: 1px solid var(--timeline-hairline);
+  }
+
+  .timeline-toc li {
+    padding-left: 14px;
+  }
+
+  .timeline-toc__level-3 {
+    padding-left: 26px;
+  }
+
+  .timeline-toc a {
+    display: block;
+    color: var(--timeline-text-tertiary);
+    font-family: var(--timeline-font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    transition: color 150ms ease;
+  }
+
+  .timeline-toc a:hover {
+    color: var(--timeline-text);
+  }
+
+  .timeline-toc a.timeline-toc__link--active {
+    color: var(--timeline-accent);
+    font-weight: 600;
+  }
+}
+
+@media (max-width: 640px) {
+  .timeline-article__body {
+    font-size: 17px;
+  }
+
+  .timeline-article__subtitle {
+    font-size: 18px;
   }
 }
 
@@ -9161,6 +10300,98 @@ button.dash-kpi-card {
 .dash-chat-sources span {
   color: #93c5fd;
   font-size: 12px;
+}
+
+/* AgentRunTimeline — same status-glyph vocabulary as .deploy-monitor__* (DeploymentLiveMonitor.tsx),
+   applied to a multi-agent run's live progress instead of Terraform resource events. */
+.agent-timeline {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.agent-timeline__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.agent-timeline__row--error {
+  border-radius: 7px;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.agent-timeline__row-body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding-top: 1px;
+}
+
+.agent-timeline__row-body strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-timeline__row-body span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-timeline__row-body em {
+  color: #93c5fd;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.agent-timeline__chip {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.agent-timeline__glyph {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #64748b;
+}
+
+.agent-timeline__glyph--success {
+  color: #4ade80;
+}
+
+.agent-timeline__glyph--active {
+  color: #38bdf8;
+}
+
+.agent-timeline__glyph--pending {
+  color: rgba(148, 163, 184, 0.4);
+}
+
+.agent-timeline__spin {
+  animation: deploy-monitor-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-timeline__spin {
+    animation: none;
+  }
 }
 
 .dash-agent-actions button {

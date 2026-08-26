@@ -1,12 +1,26 @@
+// The AI Cloud Agent chat UI — the dashboard page a user actually types questions into. Sends
+// messages through agentApi.ts (which hits Express's /agent/* routes), then polls the run this
+// backend kicks off via AgentRunTimeline until it completes and the assistant reply lands in
+// `conversation.messages`. This component never talks to the Python multi-agent service directly.
 import { ArrowRight, FilePlus2, Sparkles } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
 import { canUseAiAgent } from '../../utils/accessControl';
-import { createAgentConversation, sendAgentMessage, type AgentConversation } from '../agentApi';
+import { createAgentConversation, getAgentRunStatus, sendAgentMessage, type AgentConversation } from '../agentApi';
+import { AgentRunTimeline } from '../components/AgentRunTimeline';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { agentActions } from '../dashboardData';
+
+// Same interval family as DeploymentLiveMonitor.tsx's POLL_MS (2500) — a run's per-turn wall-clock
+// budget is much shorter (see MAX_WALL_SECONDS in services/agents/app/runner.py), so this polls a
+// little faster.
+const RUN_POLL_MS = 1500;
+// Buffer over the backend's own MAX_WALL_SECONDS (60s) — a client-side backstop so a run can never
+// leave the UI polling forever, even if some failure mode Express/Python don't already guard
+// against (a lost callback, a crashed process) leaves an AgentRun stuck at 'running'.
+const MAX_POLL_MS = 90_000;
 
 export function AgentPage() {
   const user = getStoredUser();
@@ -14,20 +28,59 @@ export function AgentPage() {
   const [conversation, setConversation] = useState<AgentConversation | null>(null);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<Awaited<ReturnType<typeof getAgentRunStatus>> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [conversation?.messages.length, isSending]);
+  }, [conversation?.messages.length, activeRunId, runStatus]);
+
+  // Polls the agent run this app just kicked off, the same way DeploymentLiveMonitor.tsx polls a
+  // deployment's status — no SSE/EventSource in this codebase, this reuses that established
+  // pattern instead of introducing a new one.
+  useEffect(() => {
+    if (!activeRunId) return;
+    let isMounted = true;
+    const deadline = Date.now() + MAX_POLL_MS;
+
+    async function poll() {
+      if (Date.now() > deadline) {
+        setError('This run is taking much longer than expected and may be stuck — try again.');
+        setActiveRunId(null);
+        return;
+      }
+
+      try {
+        const status = await getAgentRunStatus(activeRunId as string);
+        if (!isMounted) return;
+        setRunStatus(status);
+        setConversation(status.conversation);
+        if (status.status !== 'running') {
+          setActiveRunId(null);
+        }
+      } catch (pollError) {
+        if (!isMounted) return;
+        setError(pollError instanceof Error ? pollError.message : 'Unable to check the agent run status.');
+        setActiveRunId(null);
+      }
+    }
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), RUN_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+  }, [activeRunId]);
 
   async function submitMessage(message: string) {
     const cleanMessage = message.trim();
-    if (!cleanMessage || isSending) return;
+    if (!cleanMessage || activeRunId) return;
 
     setDraft('');
     setError('');
-    setIsSending(true);
+    setRunStatus(null);
 
     const optimisticConversation: AgentConversation = conversation ?? {
       _id: 'pending',
@@ -41,15 +94,14 @@ export function AgentPage() {
     });
 
     try {
-      const updatedConversation =
+      const result =
         conversation && conversation._id !== 'pending'
           ? await sendAgentMessage(conversation._id, cleanMessage)
           : await createAgentConversation(cleanMessage);
-      setConversation(updatedConversation);
+      setConversation(result.conversation);
+      if (result.runId) setActiveRunId(result.runId);
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Unable to send message to the RAG agent.');
-    } finally {
-      setIsSending(false);
+      setError(sendError instanceof Error ? sendError.message : 'Unable to send message to the AI agent.');
     }
   }
 
@@ -59,27 +111,30 @@ export function AgentPage() {
   }
 
   async function startNewChat() {
-    if (isSending) return;
+    if (activeRunId) return;
     setConversation(null);
     setDraft('');
     setError('');
+    setRunStatus(null);
   }
+
+  const isBusy = activeRunId !== null;
 
   return (
     <div className="dash-page dash-page--agent">
       {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
       <div className="dash-agent-layout">
-        <Panel title="AWS Well-Architected RAG agent" action={hasAgentAccess ? 'Live RAG' : 'Paid plan'}>
+        <Panel title="AI Cloud Agent" action={hasAgentAccess ? 'Multi-agent' : 'Paid plan'}>
           {hasAgentAccess ? (
             <>
               <div className="dash-agent-question-suggestions" aria-label="Suggested questions">
                 {agentActions.map((action) => (
-                  <button disabled={isSending} key={action} onClick={() => void submitMessage(action)} type="button">
+                  <button disabled={isBusy} key={action} onClick={() => void submitMessage(action)} type="button">
                     <Sparkles size={15} />
                     {action}
                   </button>
                 ))}
-                <button disabled={isSending} onClick={() => void startNewChat()} type="button">
+                <button disabled={isBusy} onClick={() => void startNewChat()} type="button">
                   <FilePlus2 size={15} />
                   New chat
                 </button>
@@ -101,23 +156,19 @@ export function AgentPage() {
                     </div>
                   ))
                 ) : (
-                  <EmptyState>Ask the AWS Well-Architected RAG agent a question.</EmptyState>
+                  <EmptyState>Ask the AI Cloud Agent a question about your architecture, cost, or security.</EmptyState>
                 )}
-                {isSending && (
-                  <div className="dash-chat-bubble dash-chat-bubble--agent">
-                    <p>Retrieving AWS Well-Architected context...</p>
-                  </div>
-                )}
+                {runStatus && <AgentRunTimeline route={runStatus.route} status={runStatus.status} steps={runStatus.steps} />}
                 <div ref={chatEndRef} />
               </div>
               <form className="dash-chat-input" onSubmit={handleSubmit}>
                 <input
-                  disabled={isSending}
+                  disabled={isBusy}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Ask about reliability, security, cost, operations, or Well-Architected best practices..."
+                  placeholder="Ask about your architecture, Terraform, cost, or security..."
                   value={draft}
                 />
-                <button disabled={isSending || !draft.trim()} type="submit">
+                <button disabled={isBusy || !draft.trim()} type="submit">
                   <ArrowRight size={16} />
                 </button>
               </form>

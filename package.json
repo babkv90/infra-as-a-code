@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run gen:agent-schemas",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "gen:agent-schemas": "tsx scripts/gen-agent-schemas.ts",
     "test": "vitest run src/utils/diagramSemantics.test.ts src/utils/elkLayout.test.ts src/utils/connectionRules.test.ts src/utils/deriveContainment.test.ts src/store/diagramStore.test.ts src/utils/topologyOrdering.test.ts src/utils/connectionRouting.test.ts src/utils/layoutPipeline.test.ts src/utils/resolveNodeOverlaps.test.ts"
   },
   "dependencies": {
@@ -18,7 +20,9 @@
     "elkjs": "^0.12.0",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
+    "mermaid": "^11.16.1",
     "monaco-editor": "^0.56.0",
+    "prism-react-renderer": "^2.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4",
@@ -30,6 +34,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.169.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
     "vitest": "^4.1.10"

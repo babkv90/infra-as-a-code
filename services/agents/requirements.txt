@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+langgraph==0.2.62
+pydantic==2.10.4
+pydantic-settings==2.7.1
+httpx==0.28.1
+openai==1.59.6
+python-jose[cryptography]==3.3.0
+python-dotenv==1.0.1
+
+# Deliberately not included here: any AWS SDK or Mongo driver package. This service holds the
+# reasoning, never the keys — see infraflow-multi-agent-plan.pdf §0 and tests/test_no_cloud_sdk.py.
+
+pytest==8.3.4

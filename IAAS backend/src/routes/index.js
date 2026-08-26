@@ -6,6 +6,7 @@ import { deploymentRouter } from './deploymentRoutes.js';
 import { terraformPayloadRouter } from './terraformPayloadRoutes.js';
 import { awsRouter } from './awsRoutes.js';
 import { agentRouter } from './agentRoutes.js';
+import { internalAgentToolsRouter } from './internalAgentTools.js';
 import { userRouter } from './userRoutes.js';
 import { referenceDocRouter } from './referenceDocRoutes.js';
 import { superAdminRouter } from './superAdminRoutes.js';
@@ -13,6 +14,7 @@ import { applicationPipelineRouter } from './applicationPipelineRoutes.js';
 import { githubRouter } from './githubRoutes.js';
 import { notificationRouter } from './notificationRoutes.js';
 import { ticketRouter } from './ticketRoutes.js';
+import { timelineRouter } from './timelineRoutes.js';
 
 export const apiRouter = Router();
 
@@ -27,6 +29,7 @@ apiRouter.use('/deployments', deploymentRouter);
 apiRouter.use('/terraform-payload', terraformPayloadRouter);
 apiRouter.use('/aws', awsRouter);
 apiRouter.use('/agent', agentRouter);
+apiRouter.use('/internal/agent-tools', internalAgentToolsRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/superadmin', superAdminRouter);
 apiRouter.use('/app-pipelines', applicationPipelineRouter);
@@ -34,3 +37,4 @@ apiRouter.use('/github', githubRouter);
 apiRouter.use('/notifications', notificationRouter);
 apiRouter.use('/tickets', ticketRouter);
 apiRouter.use('/reference-docs', referenceDocRouter);
+apiRouter.use('/timeline', timelineRouter);

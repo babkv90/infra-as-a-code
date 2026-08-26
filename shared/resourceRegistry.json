@@ -3,6 +3,7 @@
   "resources": {
     "alb": { "terraformType": "aws_lb", "required": ["subnets"], "recommended": ["name", "load_balancer_type", "internal", "security_groups"], "outputs": ["arn", "dns_name", "zone_id"], "edgeResolvable": { "subnets": "subnet" } },
     "apigw": { "terraformType": "aws_apigatewayv2_api", "required": ["protocol_type"], "recommended": ["name"], "outputs": ["id", "api_endpoint", "execution_arn"] },
+    "apprunner": { "terraformType": "aws_apprunner_service", "required": ["image_uri", "port"], "recommended": ["service_name", "cpu", "memory", "auto_deployments_enabled", "health_check_path"], "outputs": ["arn", "service_url", "status"], "edgeResolvable": { "image_uri": "ecr" } },
     "beanstalk": { "terraformType": "aws_elastic_beanstalk_environment", "required": ["application", "solution_stack_name"], "recommended": ["name"], "outputs": ["id", "name", "endpoint_url", "cname"] },
     "cloudfront": { "terraformType": "aws_cloudfront_distribution", "required": ["enabled"], "recommended": ["comment", "default_root_object", "price_class"], "outputs": ["id", "arn", "domain_name", "hosted_zone_id"] },
     "cloudwatch": { "terraformType": "aws_cloudwatch_metric_alarm", "required": ["comparison_operator", "evaluation_periods", "metric_name", "namespace", "period", "statistic", "threshold"], "recommended": ["alarm_name"], "outputs": ["arn", "id"] },

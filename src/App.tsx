@@ -5,6 +5,8 @@ import DashboardShell from './dashboard/DashboardShell';
 import LandingPage from './landing/LandingPage';
 import LegalPage from './legal/LegalPage';
 import ReferenceDocsPage from './reference/ReferenceDocsPage';
+import TimelineArticlePage from './landing/TimelineArticlePage';
+import TimelinePage from './landing/TimelinePage';
 import GithubSettingsPage from './settings/GithubSettingsPage';
 import { getNextTheme, isThemeMode, type ThemeMode } from './theme';
 
@@ -96,6 +98,15 @@ function App() {
 
   if (path === '/references') {
     page = <ReferenceDocsPage theme={theme} onToggleTheme={toggleTheme} />;
+  }
+
+  if (path === '/blog' || path === '/timeline') {
+    page = <TimelinePage theme={theme} onToggleTheme={toggleTheme} />;
+  }
+
+  const blogArticleId = path.startsWith('/blog/') ? decodeURIComponent(path.slice('/blog/'.length)) : '';
+  if (blogArticleId) {
+    page = <TimelineArticlePage id={blogArticleId} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   if (path.startsWith('/legal/')) {

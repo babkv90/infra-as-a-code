@@ -1,0 +1,1946 @@
+{
+  "serviceIds": [
+    "ec2",
+    "lambda",
+    "ecs",
+    "eks",
+    "beanstalk",
+    "apprunner",
+    "vpc",
+    "subnet",
+    "igw",
+    "route-table",
+    "route",
+    "route-association",
+    "security-group",
+    "alb",
+    "lb-target-group",
+    "lb-target-attachment",
+    "lb-listener",
+    "apigw",
+    "cloudfront",
+    "route53",
+    "waf",
+    "nat",
+    "s3",
+    "efs",
+    "ebs",
+    "rds",
+    "docdb-subnet-group",
+    "docdb",
+    "docdb-instance",
+    "dynamodb",
+    "elasticache",
+    "redshift",
+    "sqs",
+    "sns",
+    "eventbridge",
+    "kinesis",
+    "iam",
+    "secrets",
+    "kms",
+    "cognito",
+    "codepipeline",
+    "codebuild",
+    "ecr",
+    "cloudwatch",
+    "xray"
+  ],
+  "services": {
+    "ec2": {
+      "terraformType": "aws_instance",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "ami": {
+          "type": "text"
+        },
+        "instance_type": {
+          "type": "select",
+          "options": [
+            "t3.micro",
+            "t3.small",
+            "t3.medium",
+            "m6i.large",
+            "c7g.large"
+          ]
+        },
+        "key_name": {
+          "type": "text"
+        },
+        "subnet_id": {
+          "type": "text"
+        },
+        "vpc_security_group_ids": {
+          "type": "text"
+        },
+        "associate_public_ip_address": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "iam_role_arn": {
+          "type": "iam-role"
+        },
+        "iam_instance_profile": {
+          "type": "text"
+        }
+      }
+    },
+    "lambda": {
+      "terraformType": "aws_lambda_function",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "function_name": {
+          "type": "text"
+        },
+        "role_arn": {
+          "type": "iam-role"
+        },
+        "filename": {
+          "type": "file-path"
+        },
+        "source_code_hash": {
+          "type": "text"
+        },
+        "handler": {
+          "type": "text"
+        },
+        "runtime": {
+          "type": "select",
+          "options": [
+            "nodejs20.x",
+            "python3.12",
+            "java21",
+            "go1.x"
+          ]
+        },
+        "memory_size": {
+          "type": "number"
+        },
+        "timeout": {
+          "type": "number"
+        }
+      }
+    },
+    "ecs": {
+      "terraformType": "aws_ecs_service",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "cluster": {
+          "type": "text"
+        },
+        "task_definition": {
+          "type": "text"
+        },
+        "desired_count": {
+          "type": "number"
+        },
+        "launch_type": {
+          "type": "select",
+          "options": [
+            "FARGATE",
+            "EC2"
+          ]
+        }
+      }
+    },
+    "eks": {
+      "terraformType": "aws_eks_cluster",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "role_arn": {
+          "type": "iam-role"
+        },
+        "version": {
+          "type": "text"
+        },
+        "subnet_ids": {
+          "type": "text"
+        }
+      }
+    },
+    "beanstalk": {
+      "terraformType": "aws_elastic_beanstalk_environment",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "application": {
+          "type": "text"
+        },
+        "solution_stack_name": {
+          "type": "text"
+        },
+        "tier": {
+          "type": "text"
+        }
+      }
+    },
+    "apprunner": {
+      "terraformType": "aws_apprunner_service",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "service_name": {
+          "type": "text"
+        },
+        "image_uri": {
+          "type": "text"
+        },
+        "port": {
+          "type": "number"
+        },
+        "cpu": {
+          "type": "select",
+          "options": [
+            "0.25 vCPU",
+            "0.5 vCPU",
+            "1 vCPU",
+            "2 vCPU",
+            "4 vCPU"
+          ]
+        },
+        "memory": {
+          "type": "select",
+          "options": [
+            "0.5 GB",
+            "1 GB",
+            "2 GB",
+            "3 GB",
+            "4 GB",
+            "6 GB",
+            "8 GB",
+            "10 GB",
+            "12 GB"
+          ]
+        },
+        "image_tag": {
+          "type": "text"
+        },
+        "auto_deployments_enabled": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "health_check_path": {
+          "type": "text"
+        }
+      }
+    },
+    "vpc": {
+      "terraformType": "aws_vpc",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "cidr_block": {
+          "type": "text"
+        },
+        "enable_dns_hostnames": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "enable_dns_support": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "subnet": {
+      "terraformType": "aws_subnet",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "vpc_id": {
+          "type": "text"
+        },
+        "cidr_block": {
+          "type": "text"
+        },
+        "availability_zone": {
+          "type": "text"
+        },
+        "map_public_ip_on_launch": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "igw": {
+      "terraformType": "aws_internet_gateway",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "vpc_id": {
+          "type": "text"
+        }
+      }
+    },
+    "route-table": {
+      "terraformType": "aws_route_table",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "vpc_id": {
+          "type": "text"
+        }
+      }
+    },
+    "route": {
+      "terraformType": "aws_route",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "route_table_id": {
+          "type": "text"
+        },
+        "destination_cidr_block": {
+          "type": "text"
+        },
+        "gateway_id": {
+          "type": "text"
+        }
+      }
+    },
+    "route-association": {
+      "terraformType": "aws_route_table_association",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "subnet_id": {
+          "type": "text"
+        },
+        "route_table_id": {
+          "type": "text"
+        }
+      }
+    },
+    "security-group": {
+      "terraformType": "aws_security_group",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "description": {
+          "type": "text"
+        },
+        "vpc_id": {
+          "type": "text"
+        },
+        "ingress_ports": {
+          "type": "text"
+        },
+        "ingress_cidr_blocks": {
+          "type": "text"
+        },
+        "egress_cidr_blocks": {
+          "type": "text"
+        }
+      }
+    },
+    "alb": {
+      "terraformType": "aws_lb",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "load_balancer_type": {
+          "type": "select",
+          "options": [
+            "application",
+            "network",
+            "gateway"
+          ]
+        },
+        "subnets": {
+          "type": "text"
+        },
+        "security_groups": {
+          "type": "text"
+        },
+        "internal": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "lb-target-group": {
+      "terraformType": "aws_lb_target_group",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "port": {
+          "type": "number"
+        },
+        "protocol": {
+          "type": "select",
+          "options": [
+            "HTTP",
+            "HTTPS",
+            "TCP",
+            "TLS"
+          ]
+        },
+        "vpc_id": {
+          "type": "text"
+        }
+      }
+    },
+    "lb-target-attachment": {
+      "terraformType": "aws_lb_target_group_attachment",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "target_group_arn": {
+          "type": "text"
+        },
+        "target_id": {
+          "type": "text"
+        },
+        "port": {
+          "type": "number"
+        }
+      }
+    },
+    "lb-listener": {
+      "terraformType": "aws_lb_listener",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "load_balancer_arn": {
+          "type": "text"
+        },
+        "port": {
+          "type": "number"
+        },
+        "protocol": {
+          "type": "select",
+          "options": [
+            "HTTP",
+            "HTTPS",
+            "TCP",
+            "TLS"
+          ]
+        },
+        "target_group_arn": {
+          "type": "text"
+        }
+      }
+    },
+    "apigw": {
+      "terraformType": "aws_apigatewayv2_api",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "protocol_type": {
+          "type": "select",
+          "options": [
+            "HTTP",
+            "WEBSOCKET"
+          ]
+        }
+      }
+    },
+    "cloudfront": {
+      "terraformType": "aws_cloudfront_distribution",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "enabled": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "comment": {
+          "type": "text"
+        },
+        "default_root_object": {
+          "type": "text"
+        },
+        "price_class": {
+          "type": "select",
+          "options": [
+            "PriceClass_100",
+            "PriceClass_200",
+            "PriceClass_All"
+          ]
+        }
+      }
+    },
+    "route53": {
+      "terraformType": "aws_route53_record",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "zone_id": {
+          "type": "text"
+        },
+        "name": {
+          "type": "text"
+        },
+        "type": {
+          "type": "select",
+          "options": [
+            "A",
+            "AAAA",
+            "CNAME",
+            "TXT",
+            "MX"
+          ]
+        },
+        "ttl": {
+          "type": "number"
+        },
+        "records": {
+          "type": "text"
+        }
+      }
+    },
+    "waf": {
+      "terraformType": "aws_wafv2_web_acl",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "scope": {
+          "type": "select",
+          "options": [
+            "REGIONAL",
+            "CLOUDFRONT"
+          ]
+        },
+        "default_action": {
+          "type": "select",
+          "options": [
+            "allow",
+            "block"
+          ]
+        },
+        "metric_name": {
+          "type": "text"
+        }
+      }
+    },
+    "nat": {
+      "terraformType": "aws_nat_gateway",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "allocation_id": {
+          "type": "text"
+        },
+        "subnet_id": {
+          "type": "text"
+        },
+        "connectivity_type": {
+          "type": "select",
+          "options": [
+            "public",
+            "private"
+          ]
+        }
+      }
+    },
+    "s3": {
+      "terraformType": "aws_s3_bucket",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "bucket": {
+          "type": "text"
+        },
+        "bucket_prefix": {
+          "type": "text"
+        },
+        "versioning": {
+          "type": "select",
+          "options": [
+            "Enabled",
+            "Suspended"
+          ]
+        },
+        "website_index_document": {
+          "type": "text"
+        },
+        "website_error_document": {
+          "type": "text"
+        },
+        "public_read": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "efs": {
+      "terraformType": "aws_efs_file_system",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "creation_token": {
+          "type": "text"
+        },
+        "encrypted": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "performance_mode": {
+          "type": "select",
+          "options": [
+            "generalPurpose",
+            "maxIO"
+          ]
+        },
+        "throughput_mode": {
+          "type": "select",
+          "options": [
+            "bursting",
+            "provisioned",
+            "elastic"
+          ]
+        }
+      }
+    },
+    "ebs": {
+      "terraformType": "aws_ebs_volume",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "availability_zone": {
+          "type": "text"
+        },
+        "size": {
+          "type": "number"
+        },
+        "type": {
+          "type": "select",
+          "options": [
+            "gp3",
+            "gp2",
+            "io1",
+            "io2",
+            "st1",
+            "sc1"
+          ]
+        },
+        "encrypted": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "rds": {
+      "terraformType": "aws_db_instance",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "identifier": {
+          "type": "text"
+        },
+        "engine": {
+          "type": "select",
+          "options": [
+            "mysql",
+            "postgres",
+            "aurora-postgresql",
+            "aurora-mysql"
+          ]
+        },
+        "instance_class": {
+          "type": "text"
+        },
+        "allocated_storage": {
+          "type": "number"
+        },
+        "username": {
+          "type": "text"
+        },
+        "password": {
+          "type": "text"
+        },
+        "db_name": {
+          "type": "text"
+        },
+        "skip_final_snapshot": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "docdb-subnet-group": {
+      "terraformType": "aws_docdb_subnet_group",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "subnet_ids": {
+          "type": "text"
+        }
+      }
+    },
+    "docdb": {
+      "terraformType": "aws_docdb_cluster",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "cluster_identifier": {
+          "type": "text"
+        },
+        "engine": {
+          "type": "select",
+          "options": [
+            "docdb"
+          ]
+        },
+        "db_subnet_group_name": {
+          "type": "text"
+        },
+        "vpc_security_group_ids": {
+          "type": "text"
+        },
+        "master_username": {
+          "type": "text"
+        },
+        "master_password": {
+          "type": "text"
+        }
+      }
+    },
+    "docdb-instance": {
+      "terraformType": "aws_docdb_cluster_instance",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "identifier": {
+          "type": "text"
+        },
+        "cluster_identifier": {
+          "type": "text"
+        },
+        "instance_class": {
+          "type": "text"
+        },
+        "engine": {
+          "type": "select",
+          "options": [
+            "docdb"
+          ]
+        }
+      }
+    },
+    "dynamodb": {
+      "terraformType": "aws_dynamodb_table",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "billing_mode": {
+          "type": "select",
+          "options": [
+            "PAY_PER_REQUEST",
+            "PROVISIONED"
+          ]
+        },
+        "hash_key": {
+          "type": "text"
+        },
+        "hash_key_type": {
+          "type": "select",
+          "options": [
+            "S",
+            "N",
+            "B"
+          ]
+        },
+        "read_capacity": {
+          "type": "number"
+        },
+        "write_capacity": {
+          "type": "number"
+        }
+      }
+    },
+    "elasticache": {
+      "terraformType": "aws_elasticache_cluster",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "cluster_id": {
+          "type": "text"
+        },
+        "engine": {
+          "type": "select",
+          "options": [
+            "redis",
+            "memcached"
+          ]
+        },
+        "node_type": {
+          "type": "text"
+        },
+        "num_cache_nodes": {
+          "type": "number"
+        },
+        "port": {
+          "type": "number"
+        }
+      }
+    },
+    "redshift": {
+      "terraformType": "aws_redshift_cluster",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "cluster_identifier": {
+          "type": "text"
+        },
+        "node_type": {
+          "type": "text"
+        },
+        "master_username": {
+          "type": "text"
+        },
+        "master_password": {
+          "type": "text"
+        },
+        "database_name": {
+          "type": "text"
+        }
+      }
+    },
+    "sqs": {
+      "terraformType": "aws_sqs_queue",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "fifo_queue": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        },
+        "visibility_timeout_seconds": {
+          "type": "number"
+        },
+        "message_retention_seconds": {
+          "type": "number"
+        }
+      }
+    },
+    "sns": {
+      "terraformType": "aws_sns_topic",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "display_name": {
+          "type": "text"
+        }
+      }
+    },
+    "eventbridge": {
+      "terraformType": "aws_cloudwatch_event_rule",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "event_pattern": {
+          "type": "text"
+        },
+        "schedule_expression": {
+          "type": "text"
+        }
+      }
+    },
+    "kinesis": {
+      "terraformType": "aws_kinesis_stream",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "shard_count": {
+          "type": "number"
+        },
+        "retention_period": {
+          "type": "number"
+        }
+      }
+    },
+    "iam": {
+      "terraformType": "aws_iam_role",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "assume_role_policy": {
+          "type": "json"
+        }
+      }
+    },
+    "secrets": {
+      "terraformType": "aws_secretsmanager_secret",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "description": {
+          "type": "text"
+        },
+        "recovery_window_in_days": {
+          "type": "number"
+        }
+      }
+    },
+    "kms": {
+      "terraformType": "aws_kms_key",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "description": {
+          "type": "text"
+        },
+        "key_usage": {
+          "type": "select",
+          "options": [
+            "ENCRYPT_DECRYPT",
+            "SIGN_VERIFY",
+            "GENERATE_VERIFY_MAC"
+          ]
+        },
+        "deletion_window_in_days": {
+          "type": "number"
+        },
+        "enable_key_rotation": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "cognito": {
+      "terraformType": "aws_cognito_user_pool",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "mfa_configuration": {
+          "type": "select",
+          "options": [
+            "OFF",
+            "ON",
+            "OPTIONAL"
+          ]
+        }
+      }
+    },
+    "codepipeline": {
+      "terraformType": "aws_codepipeline",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "role_arn": {
+          "type": "iam-role"
+        },
+        "pipeline_type": {
+          "type": "select",
+          "options": [
+            "V1",
+            "V2"
+          ]
+        }
+      }
+    },
+    "codebuild": {
+      "terraformType": "aws_codebuild_project",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "service_role": {
+          "type": "text"
+        },
+        "compute_type": {
+          "type": "text"
+        },
+        "image": {
+          "type": "text"
+        },
+        "type": {
+          "type": "text"
+        }
+      }
+    },
+    "ecr": {
+      "terraformType": "aws_ecr_repository",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "name": {
+          "type": "text"
+        },
+        "image_tag_mutability": {
+          "type": "select",
+          "options": [
+            "MUTABLE",
+            "IMMUTABLE"
+          ]
+        },
+        "scan_on_push": {
+          "type": "select",
+          "options": [
+            "true",
+            "false"
+          ]
+        }
+      }
+    },
+    "cloudwatch": {
+      "terraformType": "aws_cloudwatch_metric_alarm",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "alarm_name": {
+          "type": "text"
+        },
+        "comparison_operator": {
+          "type": "text"
+        },
+        "evaluation_periods": {
+          "type": "number"
+        },
+        "metric_name": {
+          "type": "text"
+        },
+        "namespace": {
+          "type": "text"
+        },
+        "period": {
+          "type": "number"
+        },
+        "statistic": {
+          "type": "text"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      }
+    },
+    "xray": {
+      "terraformType": "aws_xray_group",
+      "required": [],
+      "fields": {
+        "region": {
+          "type": "select",
+          "options": [
+            "us-east-1",
+            "us-east-2",
+            "us-west-2",
+            "eu-west-1",
+            "ap-south-1",
+            "ap-southeast-1"
+          ]
+        },
+        "status": {
+          "type": "select",
+          "options": [
+            "running",
+            "stopped",
+            "unknown"
+          ]
+        },
+        "group_name": {
+          "type": "text"
+        },
+        "filter_expression": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}

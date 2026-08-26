@@ -105,45 +105,6 @@ export async function syncFilesToGithub({ token, owner, repo, branch, message, f
   };
 }
 
-export async function deleteFilesFromGithub({ token, owner, repo, branch, message, paths }) {
-  const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const headers = githubApiHeaders(token);
-  const deleted = [];
-
-  for (const rawPath of paths) {
-    const path = String(rawPath ?? '').replace(/^\/+/, '');
-    if (!path) continue;
-
-    const existingResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}?ref=${encodeURIComponent(branch)}`, { headers });
-    if (existingResponse.status === 404) continue;
-    const existing = await existingResponse.json().catch(async () => ({ message: await existingResponse.text() }));
-    if (!existingResponse.ok) {
-      throw new ApiError(existingResponse.status, `GitHub read failed for ${path}: ${existing?.message ?? 'unknown error'}`);
-    }
-    if (!existing?.sha) continue;
-
-    const deleteResponse = await fetch(`${apiBase}/contents/${encodeURIComponentPath(path)}`, {
-      method: 'DELETE',
-      headers,
-      body: JSON.stringify({
-        message: `${message}: remove ${path}`,
-        branch,
-        sha: existing.sha,
-      }),
-    });
-    const result = await deleteResponse.json().catch(async () => ({ message: await deleteResponse.text() }));
-    if (!deleteResponse.ok) {
-      throw new ApiError(deleteResponse.status, githubSyncErrorMessage(path, result?.message));
-    }
-    deleted.push({ path, commitSha: result?.commit?.sha ?? '' });
-  }
-
-  return {
-    files: deleted,
-    commitSha: deleted[deleted.length - 1]?.commitSha ?? '',
-  };
-}
-
 export async function syncFilesToGithubCommit({ token, owner, repo, branch, message, files, deletePaths = [] }) {
   const apiBase = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const headers = githubApiHeaders(token);

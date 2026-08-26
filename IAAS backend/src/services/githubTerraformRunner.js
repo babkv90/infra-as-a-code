@@ -311,20 +311,6 @@ async function dispatchWorkflow({ deployment, account, action, isUpdate }) {
   await deployment.save();
 }
 
-// GitHub's status/conclusion model translated to this app's existing DeploymentRecord.status enum —
-// see terraformDeploymentRunner.js and DeploymentModal.tsx for the values the rest of the app expects.
-export function mapGithubStatusToDeploymentStatus(status, conclusion, { action = 'apply' } = {}) {
-  if (status === 'queued') return 'queued';
-  if (status === 'in_progress') return action === 'destroy' ? 'destroying' : 'deploying';
-  if (status !== 'completed') return action === 'destroy' ? 'destroying' : 'deploying';
-
-  if (conclusion === 'success') return action === 'destroy' ? 'destroyed' : 'deployed';
-  if (conclusion === 'cancelled') return 'cancelled';
-  // failure, timed_out, action_required, skipped, neutral, stale — all treated as a failure needing a
-  // human look rather than silently assumed successful.
-  return 'failed';
-}
-
 // Exported for githubTerraformValidator.js — the async validation workflow needs the exact same
 // tfvars content as a real apply/destroy run, since terraformGenerator.js emits the same
 // `lookup(var.lambda_source_code_hashes, ...)` reference either way (see stageLambdaZipUploads'

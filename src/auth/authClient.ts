@@ -190,7 +190,6 @@ async function authRequest(path: string, payload: LoginPayload | RegisterPayload
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
-
       'Content-Type': 'application/json',
     },
     credentials: 'include',

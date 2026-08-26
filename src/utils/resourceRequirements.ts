@@ -54,6 +54,20 @@ const serviceRequirements: Record<string, ServiceRequirement> = {
     ],
   },
   ecs: { required: [], recommended: ['name', 'cluster', 'desired_count', 'launch_type'], outputs: ['id', 'name', 'cluster'] },
+  apprunner: {
+    required: ['image_uri', 'port'],
+    recommended: ['service_name', 'cpu', 'memory', 'auto_deployments_enabled', 'health_check_path'],
+    // 'service_id' deliberately excluded: it collides with the diagram-metadata field of the same
+    // name every resource's output entry already carries (see resourceOutputBlock in both
+    // exportTerraform.ts and the backend's terraformGenerator.js) — including it here would emit a
+    // duplicate object key in the generated Terraform outputs block.
+    outputs: ['arn', 'service_url', 'status'],
+    connectivity: [
+      'Connect an ECR node to auto-fill the image URI, or set one directly for an existing/public image.',
+      'The ECR access role App Runner needs is created automatically — no separate IAM node required.',
+      'Bind OPENAI_API_KEY and AGENT_TOOL_SECRET as environment bindings to a Secrets Manager node rather than typing them as plain config.',
+    ],
+  },
   eks: { required: ['role_arn', 'subnet_ids'], recommended: ['name'], outputs: ['arn', 'endpoint', 'certificate_authority', 'identity'] },
   beanstalk: { required: ['application', 'solution_stack_name'], recommended: ['name'], outputs: ['id', 'name', 'endpoint_url', 'cname'] },
   vpc: { required: ['cidr_block'], recommended: ['enable_dns_hostnames', 'enable_dns_support'], outputs: ['id', 'arn', 'cidr_block', 'default_security_group_id'] },

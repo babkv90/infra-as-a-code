@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// src/config -> src -> IAAS backend -> repo root, used only to build TIMELINE_SOURCE_DIRS' default below.
+const repoRoot = path.resolve(__dirname, '..', '..', '..');
 
 // AWS_LAMBDA_FUNCTION_NAME is a reserved variable Lambda always sets on the real function's
 // behalf, never present anywhere else — the standard way to detect "this process is actually
@@ -102,6 +104,14 @@ export const env = {
   STORAGE_S3_REGION: readString('STORAGE_S3_REGION') || readString('AWS_REGION'),
   STORAGE_DYNAMODB_LOCK_TABLE: readString('STORAGE_DYNAMODB_LOCK_TABLE'),
   RAG_API_URL: readString('RAG_API_URL', 'http://127.0.0.1:8000'),
+  // The Python/FastAPI multi-agent service (services/agents). Distinct port from RAG_API_URL above
+  // — that service is unrelated and unused by the agent flow as of M0.
+  AGENT_API_URL: readString('AGENT_API_URL', 'http://127.0.0.1:8001'),
+  // Signs the short-lived machine JWT Express mints per agent run (agentIdentity.js) and that the
+  // Python service verifies before trusting a call, and that requireAgentScope.js verifies on every
+  // /internal/agent-tools/* request. Deliberately its own secret, not shared with JWT_ACCESS_SECRET
+  // — it authenticates a service-to-service call acting on a user's behalf, not a user session.
+  AGENT_TOOL_SECRET: readString('AGENT_TOOL_SECRET', 'dev-agent-tool-secret-change-me'),
   GITHUB_CLIENT_ID: readFirstString(['INFRAFLOW_GITHUB_CLIENT_ID', 'GITHUB_CLIENT_ID']),
   GITHUB_CLIENT_SECRET: readFirstString(['INFRAFLOW_GITHUB_CLIENT_SECRET', 'GITHUB_CLIENT_SECRET']),
   GITHUB_OAUTH_CALLBACK_URL: readFirstString(['INFRAFLOW_GITHUB_OAUTH_CALLBACK_URL', 'GITHUB_OAUTH_CALLBACK_URL']),
@@ -151,10 +161,36 @@ export const env = {
   // Optional — omitted, Secrets Manager encrypts with its own AWS-managed default key
   // (aws/secretsmanager). Set to a customer-managed KMS key ARN/id for stricter key control.
   SECRETS_MANAGER_KMS_KEY_ID: readString('SECRETS_MANAGER_KMS_KEY_ID'),
+  // Folders the landing page's Progress Timeline / changelog blog (services/timelineScanner.js)
+  // scans for .pdf/.md/.docx to turn into blog entries. Defaults to a few in-repo folders plus a
+  // machine-local notes folder that only exists on this dev machine — the scanner silently skips
+  // any directory that isn't there, so the feature degrades gracefully (repo folders only) on any
+  // other machine/deployment rather than erroring.
+  TIMELINE_SOURCE_DIRS: readList(
+    'TIMELINE_SOURCE_DIRS',
+    [
+      path.join(repoRoot, 'docs'),
+      path.join(repoRoot, 'output', 'pdf'),
+      path.join(repoRoot, 'generated'),
+      path.join(repoRoot, 'reports'),
+      'D:\\Notes\\InfraFlow Docs',
+    ].join(','),
+  ),
+  // How long a scan's results are reused before the next request triggers a fresh one. Short
+  // enough that dropping a new file into a source folder shows up on the blog within a minute,
+  // long enough that parsing PDFs/docx isn't redone on every single page load.
+  TIMELINE_CACHE_TTL_MS: readNumber('TIMELINE_CACHE_TTL_MS', 60_000),
 };
 
 if (!env.MONGODB_URI) {
   console.warn('MONGODB_URI is not set. Add it to IAAS backend/.env before running the API.');
+}
+
+if (env.AGENT_TOOL_SECRET === 'dev-agent-tool-secret-change-me') {
+  console.warn(
+    'AGENT_TOOL_SECRET is not set — falling back to a shared, publicly-known dev value. ' +
+      'Set AGENT_TOOL_SECRET to a real secret (matching services/agents/.env) before any real deployment.',
+  );
 }
 
 if (env.GITHUB_TOKEN_ENCRYPTION_KEY === 'dev-github-token-encryption-key-change-me') {

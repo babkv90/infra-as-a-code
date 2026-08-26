@@ -35,6 +35,7 @@ const intermediateServiceIds = [
   'lb-listener',
   'ecr',
   'ecs',
+  'apprunner',
   'iam',
   'secrets',
   'kms',

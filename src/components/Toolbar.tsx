@@ -8,23 +8,17 @@ import {
   LayoutGrid,
   Maximize2,
   Minimize2,
-  Focus,
   Network,
   Redo2,
   Rocket,
   Save,
   ScanLine,
-  ScanSearch,
   SearchCheck,
   SquareDashedMousePointer,
   Tags,
-  TerminalSquare,
   Trash2,
   Undo2,
   Upload,
-  Wand2,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useState } from 'react';
@@ -98,7 +92,6 @@ function Toolbar({
   const autoArrange = useDiagramStore((state) => state.autoArrange);
   const markSaved = useDiagramStore((state) => state.markSaved);
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
-  const architectureViewMode = useDiagramStore((state) => state.architectureViewMode);
   const setWhiteboardMode = useDiagramStore((state) => state.setWhiteboardMode);
   const setArchitectureViewMode = useDiagramStore((state) => state.setArchitectureViewMode);
 

@@ -4,11 +4,13 @@ import {
   Boxes,
   Check,
   ChevronRight,
+  Clock,
   Copy,
   Database,
   ExternalLink,
   Github,
   GitBranch,
+  History,
   KeyRound,
   LockKeyhole,
   Menu,
@@ -28,6 +30,8 @@ import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import AppLogo from '../components/AppLogo';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
+import { renderInlineMarkdown } from './blocks/inlineMarkdown';
+import { getTimelineEntries, type TimelineEntry } from './timelineApi';
 import {
   DASHBOARD_ROUTE,
   LOGIN_ROUTE,
@@ -165,6 +169,7 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
         <SecuritySection onOpenDetail={setDetail} />
         <HowItWorksSection onOpenDetail={setDetail} />
         {/* <PricingSection /> */}
+        <TimelineTeaserSection />
         <FinalCTA />
       </main>
       <Footer footerRef={footerRef} />
@@ -261,6 +266,7 @@ function navHref(label: string): string {
     'AWS Insights': '#aws-insights',
     Terraform: '#terraform-export',
     Workflow: '#docs',
+    Blog: '/blog', // a real route, not an in-page anchor — the rest of these scroll within this page
   };
 
   return routes[label] ?? '#product';
@@ -752,6 +758,65 @@ function HowItWorksSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDe
 //   );
 // }
 
+// Live teaser for the Progress Timeline / changelog blog (src/landing/TimelinePage.tsx at /blog):
+// pulls the 3 most recent real entries straight from the same GET /timeline the full page uses,
+// rather than hand-maintained marketing copy that would drift from what's actually shipped. Fails
+// quietly (renders nothing) rather than showing a broken section if the backend is unreachable —
+// this is the one section on an otherwise-static landing page that depends on a live API call.
+function TimelineTeaserSection() {
+  const [entries, setEntries] = useState<TimelineEntry[] | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    getTimelineEntries()
+      .then((result) => {
+        if (isCurrent) setEntries([...result.entries].reverse().slice(0, 3));
+      })
+      .catch(() => {
+        if (isCurrent) setEntries([]);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  if (entries && entries.length === 0) return null;
+
+  return (
+    <Section id="progress-timeline" eyebrow="Progress Timeline" title="Built in public — every milestone documented.">
+      <p className="lp-timeline-teaser-intro">
+        Every design doc, plan, and report generated along the way — pulled straight from this project's own docs folders, in
+        chronological order. No separate blog to keep in sync.
+      </p>
+      <div className="lp-steps">
+        {(entries ?? [1, 2, 3]).map((entry) =>
+          typeof entry === 'number' ? (
+            <div aria-hidden="true" className="lp-step-card lp-timeline-teaser-card--loading" key={entry} />
+          ) : (
+            <a className="lp-step-card lp-timeline-teaser-card" href={`/blog/${entry.id}`} key={entry.id}>
+              <span className="lp-step-number">{formatTeaserDate(entry.date)}</span>
+              <History size={24} />
+              <h3>{entry.title}</h3>
+              <p>{renderInlineMarkdown(entry.summary)}</p>
+            </a>
+          ),
+        )}
+      </div>
+      <div className="lp-timeline-teaser-cta">
+        <a className="lp-secondary-button" href="/blog">
+          <Clock size={16} />
+          View the full timeline
+          <ArrowRight size={16} />
+        </a>
+      </div>
+    </Section>
+  );
+}
+
+function formatTeaserDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).toUpperCase();
+}
+
 function FinalCTA() {
   return (
     <section className="lp-final-cta section-reveal">
@@ -812,6 +877,7 @@ function Footer({ footerRef }: { footerRef: React.RefObject<HTMLElement | null> 
 function footerLinkHref(label: string) {
   if (label === 'Terms') return '/legal/terms';
   if (label === 'Privacy') return '/legal/privacy';
+  if (label === 'Changelog') return '/blog';
   return '/';
 }
 

@@ -1,7 +1,5 @@
 export type ThemeMode = 'dark' | 'light' | 'pearl';
 
-export const themeModes: ThemeMode[] = ['dark', 'light', 'pearl'];
-
 export function isThemeMode(value: string | null): value is ThemeMode {
   return value === 'dark' || value === 'light' || value === 'pearl';
 }

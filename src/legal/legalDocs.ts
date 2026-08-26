@@ -25,10 +25,6 @@ export const currentLegalVersions = {
   privacy: currentDocs.privacy.version,
 };
 
-export function getCurrentLegalDocument(kind: LegalDocKind) {
-  return currentDocs[kind];
-}
-
 export function getLegalDocumentByPath(path: string) {
   const match = /^\/legal\/(terms|privacy)(?:\/(v[0-9]+))?\/?$/.exec(path);
   if (!match) return null;

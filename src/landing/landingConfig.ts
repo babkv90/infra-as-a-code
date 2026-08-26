@@ -1,6 +1,5 @@
 import {
   Activity,
-  AlertTriangle,
   BadgeDollarSign,
   Boxes,
   BrainCircuit,
@@ -10,7 +9,6 @@ import {
   Database,
   GitBranch,
   KeyRound,
-  Layers3,
   LineChart,
   LockKeyhole,
   Network,
@@ -54,30 +52,7 @@ export type DiagramEdge = {
   bend?: number;
 };
 
-export const navItems = ['Product', 'Visual Builder', 'AWS Insights', 'Terraform', /* 'Pricing', */ 'Workflow'];
-
-export const problemCards: IconItem[] = [
-  {
-    title: 'Manual AWS setup is slow',
-    description: 'Creating Lambda, IAM, API Gateway, S3, queues, and monitoring by hand is repetitive and easy to misconfigure.',
-    icon: Zap,
-  },
-  {
-    title: 'Terraform is hard to reason about visually',
-    description: 'Infrastructure code is reviewable, but teams still need a clear diagram of what it creates and connects.',
-    icon: Code2,
-  },
-  {
-    title: 'Billing surprises happen',
-    description: 'Unused resources, idle services, and misconfigured infrastructure can increase AWS cost.',
-    icon: BadgeDollarSign,
-  },
-  {
-    title: 'Cloud visibility is scattered',
-    description: 'Inventory, billing, CloudWatch, CloudTrail, IAM, and deployment status are split across different operational views.',
-    icon: Layers3,
-  },
-];
+export const navItems = ['Product', 'Visual Builder', 'AWS Insights', 'Terraform', /* 'Pricing', */ 'Workflow', 'Blog'];
 
 export const solutionCards: IconItem[] = [
   {
@@ -262,7 +237,7 @@ export const pricingPlans = [
 
 export const footerColumns = {
   Product: ['Visual Builder', 'AWS Insights', 'Terraform Export', 'CI/CD Pipelines', 'Deployments'],
-  Resources: ['Workflow', 'AWS Connection', 'Terraform Guide', 'Support'],
+  Resources: ['Workflow', 'AWS Connection', 'Terraform Guide', 'Support', 'Changelog'],
   Company: ['About Developer', /* 'Pricing', */ 'Contact'],
   Legal: ['Privacy Policy', 'Terms of Service', 'Security'],
 };

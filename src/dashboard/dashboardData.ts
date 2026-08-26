@@ -1,9 +1,6 @@
 import {
   Activity,
-  AlertTriangle,
-  BadgeDollarSign,
   BrainCircuit,
-  CheckCircle2,
   CloudCog,
   Code2,
   Database,
@@ -11,10 +8,8 @@ import {
   KeyRound,
   LayoutDashboard,
   LifeBuoy,
-  LineChart,
   LockKeyhole,
   Rocket,
-  SearchCheck,
   Server,
   SlidersHorizontal,
   ShieldCheck,
@@ -61,14 +56,6 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'super-admin', label: 'Super Admin', icon: SlidersHorizontal },
   { id: 'ai-agent', label: 'AI Cloud Agent', icon: BrainCircuit, badge: 'AI' },
-];
-
-// Change dashboard KPI dummy data here.
-export const dashboardKpis = [
-  { label: 'Monthly spend', value: '$0.00', change: 'No live sync', icon: BadgeDollarSign, tone: 'cyan' },
-  { label: 'Active resources', value: '0', change: 'No live sync', icon: Server, tone: 'violet' },
-  { label: 'Estimated savings', value: '$0/mo', change: 'No live sync', icon: CheckCircle2, tone: 'emerald' },
-  { label: 'Security warnings', value: '0', change: 'No live sync', icon: AlertTriangle, tone: 'amber' },
 ];
 
 // Change AWS overview graph dummy data here.
@@ -135,45 +122,6 @@ export const connectedAccount = {
   syncStatus: 'No live sync yet',
 };
 
-export const dashboardFeatureCards = [
-  {
-    title: 'Visual Infrastructure Builder',
-    description: 'Drag AWS services onto the canvas, connect services, validate architecture, and export deployable plans.',
-    icon: Workflow,
-    page: 'builder' as DashboardPage,
-  },
-  {
-    title: 'Terraform Export',
-    description: 'Review generated HCL, split resources into modules, copy code, and prepare GitHub commits.',
-    icon: Code2,
-    page: 'terraform' as DashboardPage,
-  },
-  {
-    title: 'AI Cloud Agent',
-    description: 'Ask natural-language questions about billing, resources, failures, IAM risks, and optimization.',
-    icon: BrainCircuit,
-    page: 'ai-agent' as DashboardPage,
-  },
-  {
-    title: 'Live AWS and Cost Overview',
-    description: 'Track Lambda, EC2, S3, RDS, CloudWatch, cost, idle resources, and security signals in one overview.',
-    icon: LineChart,
-    page: 'overview' as DashboardPage,
-  },
-  {
-    title: 'One-click Deployment',
-    description: 'Preview a deployment plan, run policy checks, and promote Terraform changes to AWS.',
-    icon: Rocket,
-    page: 'deployments' as DashboardPage,
-  },
-  {
-    title: 'Security Review',
-    description: 'Detect public buckets, broad IAM policies, missing encryption, open ports, and secret exposure.',
-    icon: ShieldCheck,
-    page: 'security' as DashboardPage,
-  },
-];
-
 // Change resource inventory dummy data here.
 export const resourceInventory = [
   { service: 'Lambda', count: 0, health: 'No live sync', spend: '$0.00', icon: Zap },
@@ -186,6 +134,8 @@ export const resourceInventory = [
 export const activeDiagrams: { name: string; resources: number; status: string; updated: string }[] = [];
 
 export const agentActions = [
+  'Review this architecture',
+  "What's my riskiest resource?",
   'Summarize billing changes',
   'Find idle resources',
   'Review IAM blast radius',
@@ -198,14 +148,6 @@ export const agentActions = [
 export const terraformFiles: { name: string; status: string; lines: number }[] = [];
 
 export const terraformCode = 'No Terraform has been generated yet. Build a diagram first.';
-
-export const deploymentPipeline = [
-  { label: 'Diagram validated', status: 'pending', icon: SearchCheck },
-  { label: 'Terraform generated', status: 'pending', icon: Code2 },
-  { label: 'Security checks', status: 'pending', icon: ShieldCheck },
-  { label: 'Plan approval', status: 'pending', icon: GitBranch },
-  { label: 'Deploy to AWS', status: 'pending', icon: Rocket },
-];
 
 export const deployments: { app: string; env: string; status: string; resources: number; drift: string }[] = [];
 
@@ -321,6 +263,13 @@ export const commonDeploymentTemplates = [
     compatibility: 'Serverless web apps with authenticated APIs, CRUD backends, static frontends with async processing',
     infrastructure: 'CloudFront, S3 (static site + assets), Cognito, API Gateway, Lambda (GET/POST/Processing/Authorizer), IAM role, DynamoDB, CloudWatch, SNS',
     deploymentPath: 'Deploy the static frontend to S3/CloudFront, publish Lambda handlers behind API Gateway with a Cognito authorizer, and wire CloudWatch alarms to SNS for alerting.',
+  },
+  {
+    id: 'infraflow-agent-apprunner',
+    name: 'AI agent service on App Runner',
+    compatibility: "This app's own Python/FastAPI multi-agent service (services/agents) — a long-lived process, so it needs always-on compute rather than Lambda",
+    infrastructure: 'ECR repository, App Runner service (its ECR access role is created automatically — no separate IAM node needed)',
+    deploymentPath: 'Build and push the agent service image to ECR; App Runner picks it up from there. Bind OPENAI_API_KEY and AGENT_TOOL_SECRET as environment bindings on the App Runner node, then point the backend\'s AGENT_API_URL at the deployed service URL.',
   },
 ];
 
@@ -870,6 +819,27 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         { id: 'tpl-trd-frontend', kind: 'Module', label: 'Frontend / Presentation Layer', x: 40, y: 460, width: 360, height: 160 },
         { id: 'tpl-trd-auth-layer', kind: 'Module', label: 'Authentication Layer', x: 440, y: 460, width: 220, height: 160 },
       ],
+    ),
+    'infraflow-agent-apprunner': templateSnapshot(
+      [
+        {
+          id: 'tpl-agent-ecr',
+          serviceId: 'ecr',
+          label: 'Agent image repository',
+          x: 120,
+          y: 160,
+          config: { name: 'infraflow-agents', image_tag_mutability: 'MUTABLE', scan_on_push: 'true' },
+        },
+        {
+          id: 'tpl-agent-apprunner',
+          serviceId: 'apprunner',
+          label: 'Agent service',
+          x: 480,
+          y: 160,
+          config: { service_name: 'infraflow-agents', port: 8000, cpu: '0.25 vCPU', memory: '0.5 GB', image_tag: 'latest', auto_deployments_enabled: 'true', health_check_path: '/health' },
+        },
+      ],
+      [{ source: 'tpl-agent-ecr', target: 'tpl-agent-apprunner', label: 'provides image', protocol: 'ECR' }],
     ),
   };
 

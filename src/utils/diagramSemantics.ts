@@ -10,7 +10,7 @@ const containmentLabels = ['in vpc', 'placed in', 'inside subnet', 'instance of'
 const networkServiceIds = new Set(['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association', 'security-group']);
 const edgeServiceIds = new Set(['route53', 'cloudfront', 'waf']);
 const loadBalancingServiceIds = new Set(['alb', 'apigw', 'lb-listener', 'lb-target-group', 'lb-target-attachment']);
-const computeServiceIds = new Set(['ec2', 'lambda', 'ecs', 'eks', 'beanstalk']);
+const computeServiceIds = new Set(['ec2', 'lambda', 'ecs', 'eks', 'beanstalk', 'apprunner']);
 const dataServiceIds = new Set(['rds', 'docdb', 'docdb-instance', 'docdb-subnet-group', 'dynamodb', 'elasticache', 'redshift', 'efs', 'ebs', 's3']);
 const supportingServiceIds = new Set(['iam', 'kms', 'secrets', 'cognito', 'sqs', 'sns', 'eventbridge', 'kinesis', 'cloudwatch', 'xray', 'ecr', 'codebuild', 'codepipeline']);
 
@@ -186,13 +186,6 @@ function buildIsolatedPathWithCategories(
 
 export function hasSavedPositions(nodes: AwsNode[]): boolean {
   return nodes.some((node) => Boolean(node.data.visual) || Math.abs(node.position.x) > 1 || Math.abs(node.position.y) > 1);
-}
-
-export function essentialNetworkEdgeIds(nodes: AwsNode[], edges: AwsEdge[]): Set<string> {
-  const services = buildServiceIdLookup(nodes);
-  return new Set(
-    edges.filter((edge) => isEssentialNetworkEdgeWithCategory(edge, categorizeEdge(edge, services), services)).map((edge) => edge.id),
-  );
 }
 
 function isEssentialNetworkEdgeWithCategory(edge: AwsEdge, category: SemanticEdgeCategory, services: ServiceIdLookup): boolean {

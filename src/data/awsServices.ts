@@ -96,6 +96,20 @@ export const awsServices: AwsService[] = [
     { key: 'solution_stack_name', label: 'Solution stack', type: 'text' },
     { key: 'tier', label: 'Tier', type: 'text' },
   ]),
+  // Connect an ECR node as the image source (resolves image_uri automatically — see
+  // shared/resourceRegistry.json's edgeResolvable and exportTerraform.ts's 'apprunner' case, which
+  // also auto-creates the ECR access role App Runner needs; no separate IAM node required for that).
+  service('apprunner', 'App Runner', 'AppR', 'Compute', 'Container', '#e11d48', ['Image'], ['HTTP', 'Logs'], 'aws_apprunner_service', { service_name: '', image_uri: '', port: 8000, cpu: '0.25 vCPU', memory: '0.5 GB', image_tag: 'latest', auto_deployments_enabled: 'true', health_check_path: '/health' }, [
+    ...commonFields,
+    { key: 'service_name', label: 'Service name', type: 'text' },
+    { key: 'image_uri', label: 'Image URI (leave blank if connected to an ECR node)', type: 'text' },
+    { key: 'port', label: 'Container port', type: 'number' },
+    { key: 'cpu', label: 'CPU', type: 'select', options: ['0.25 vCPU', '0.5 vCPU', '1 vCPU', '2 vCPU', '4 vCPU'] },
+    { key: 'memory', label: 'Memory', type: 'select', options: ['0.5 GB', '1 GB', '2 GB', '3 GB', '4 GB', '6 GB', '8 GB', '10 GB', '12 GB'] },
+    { key: 'image_tag', label: 'Image tag', type: 'text' },
+    { key: 'auto_deployments_enabled', label: 'Auto deploy on new image push', type: 'select', options: booleanOptions },
+    { key: 'health_check_path', label: 'Health check path', type: 'text' },
+  ]),
   service('vpc', 'VPC', 'VPC', 'Networking', 'Globe2', '#2563eb', ['CIDR'], ['Subnets'], 'aws_vpc', { name: '', cidr_block: '', enable_dns_hostnames: '', enable_dns_support: '' }, [
     ...commonFields,
     nameField,

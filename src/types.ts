@@ -10,8 +10,6 @@ export type ServiceCategory =
   | 'DevOps'
   | 'Analytics';
 
-export type PortType = 'input' | 'output';
-
 export type AwsField = {
   key: string;
   label: string;

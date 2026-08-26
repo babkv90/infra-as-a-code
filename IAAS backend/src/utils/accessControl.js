@@ -45,6 +45,7 @@ const allServiceIds = [
   'codepipeline',
   'codebuild',
   'ecr',
+  'apprunner',
   'cloudwatch',
   'xray',
 ];
@@ -77,6 +78,7 @@ const intermediateServiceIds = [
   'lb-listener',
   'ecr',
   'ecs',
+  'apprunner',
   'iam',
   'secrets',
   'kms',

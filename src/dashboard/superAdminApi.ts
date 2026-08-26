@@ -185,13 +185,6 @@ export async function createChangeLogEntry(input: CreateChangeLogInput) {
   });
 }
 
-export async function updateChangeLogEntry(id: string, input: Partial<CreateChangeLogInput>) {
-  return superAdminRequest<{ entry: ChangeLogEntry }>(`/superadmin/changelog/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(input),
-  });
-}
-
 export async function getPerformanceSeries() {
   return superAdminRequest<{ series: PerformanceSeriesPoint[] }>('/superadmin/changelog/performance-series');
 }

@@ -359,6 +359,43 @@ ${sgLine}}`,
       ];
     case 'ecs':
       return ecsResourceBlocks(node, name, suffix, nodes, edges, names, config, uniqueName, label);
+    case 'apprunner': {
+      // App Runner needs its own service role to pull from a private ECR repo — distinct from any
+      // runtime/instance role the app itself might use. Fixed trust policy + a single AWS-managed
+      // policy regardless of which app is being deployed, so it's cheap to always create rather
+      // than requiring a dedicated IAM node on the canvas. Mirrors src/utils/exportTerraform.ts's
+      // 'apprunner' case — keep the two in step (see note atop deploymentGuards.js).
+      const ecrAccessRoleName = `${name}_ecr_access`;
+      return [
+        ...appRunnerEcrAccessRoleBlocks(ecrAccessRoleName, uniqueName),
+        `resource "aws_apprunner_service" "${name}" {
+  service_name = ${formatValue(configString(config, 'service_name') || uniqueName)}
+
+  source_configuration {
+    image_repository {
+      image_identifier      = ${appRunnerImageIdentifier(node, nodes, edges, names, config)}
+      image_repository_type = "ECR"
+
+      image_configuration {
+        port = ${formatValue(String(config.port ?? ''))}${appRunnerEnvironmentBlock(node, nodes)}
+      }
+    }
+
+    auto_deployments_enabled = ${formatBoolean(config.auto_deployments_enabled)}
+
+    authentication_configuration {
+      access_role_arn = aws_iam_role.${ecrAccessRoleName}.arn
+    }
+  }
+
+  instance_configuration {
+    cpu    = ${formatValue(configString(config, 'cpu'))}
+    memory = ${formatValue(configString(config, 'memory'))}
+  }
+${appRunnerHealthCheckBlock(config)}
+}`,
+      ];
+    }
     case 'rds': {
       const subnetRefs = connectedRefList(node, nodes, edges, names, 'subnet');
       const sgRefs = connectedRefList(node, nodes, edges, names, 'security-group');
@@ -1556,6 +1593,69 @@ function securityGroupIngressBlocks(portsValue, cidrsValue) {
 `,
     )
     .join('');
+}
+
+// Same bindings mechanism as lambdaEnvironmentBlock below, nested one level deeper to match
+// aws_apprunner_service's image_configuration block shape.
+function appRunnerEnvironmentBlock(node, allNodes) {
+  const envBindings = (node.data?.bindings ?? []).filter((binding) => binding.targetKind === 'env');
+  if (!envBindings.length) return '';
+
+  const entries = envBindings
+    .map((binding) => `          ${sanitizeEnvName(binding.targetPath)} = ${bindingExpression(binding, allNodes)}`)
+    .join('\n');
+
+  return `
+
+        runtime_environment_variables = {
+${entries}
+        }`;
+}
+
+function appRunnerHealthCheckBlock(config) {
+  const path = configString(config, 'health_check_path');
+  if (!path) return '';
+  return `
+  health_check_configuration {
+    protocol = "HTTP"
+    path     = ${formatValue(path)}
+  }`;
+}
+
+// Prefers an explicit image_uri (an existing/public image); otherwise builds one from a connected
+// ECR node's repository_url plus the image_tag field.
+function appRunnerImageIdentifier(node, nodes, edges, names, config) {
+  const explicit = configString(config, 'image_uri');
+  if (explicit) return formatMaybeExpression(explicit);
+
+  const ecrRepositoryUrlRef = connectedRef(node, nodes, edges, names, 'ecr', 'repository_url');
+  if (!ecrRepositoryUrlRef) return formatValue('');
+
+  const tag = configString(config, 'image_tag') || 'latest';
+  return `"\${${ecrRepositoryUrlRef}}:${escapeString(tag)}"`;
+}
+
+// App Runner's own service role for pulling a private ECR image — a fixed trust policy (App
+// Runner's build service principal) plus a single AWS-managed policy, the same for every
+// App Runner + ECR pairing.
+function appRunnerEcrAccessRoleBlocks(roleResourceName, uniqueName) {
+  return [
+    `resource "aws_iam_role" "${roleResourceName}" {
+  name = ${formatValue(`${uniqueName}-ecr-access`.slice(0, 64))}
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "build.apprunner.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}`,
+    `resource "aws_iam_role_policy_attachment" "${roleResourceName}_policy" {
+  role       = aws_iam_role.${roleResourceName}.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
+}`,
+  ];
 }
 
 function lambdaEnvironmentBlock(node, allNodes) {

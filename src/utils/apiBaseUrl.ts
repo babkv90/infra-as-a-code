@@ -1,6 +1,5 @@
 const LOCAL_API_BASE_URL = 'http://127.0.0.1:4001/api/v1';
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? LOCAL_API_BASE_URL : '';
-const LEGACY_API_GATEWAY_HOSTS: string[] = [];
 const LEGACY_API_GATEWAY_STAGE_NAMES = ['iaasNodestage'];
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.INFRAFLOW_API_BASE_URL)?.trim();

@@ -22,7 +22,6 @@ import {
   LayoutGrid,
   ListChecks,
   LogOut,
-  Maximize2,
   Minimize2,
   Moon,
   MoreVertical,
@@ -38,7 +37,6 @@ import {
   Sun,
   Trash2,
   Upload,
-  Workflow,
   X,
   Zap,
   XCircle,
@@ -146,7 +144,6 @@ import {
   type ResourceVerificationResult,
 } from '../utils/deploymentApi';
 import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
-import { isSecretPlaceholder } from '../utils/secretPlaceholder';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseApplicationPipelines, hasCredits, isSuperAdmin, serviceAccessTierForUser } from '../utils/accessControl';
 import type { AuthUser } from '../auth/authClient';
@@ -527,7 +524,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             onAwsChanged: refreshAwsData,
             onSyncAws: syncActiveAwsAccount,
             isSyncingAws,
-          }, theme, onToggleTheme, goToResourceInfo)}
+          }, theme)}
         </div>
         {showScrollHint && <ScrollHintIcon />}
       </section>
@@ -822,12 +819,10 @@ function renderPage(
   setActivePage: (page: DashboardPage) => void,
   awsContext: DashboardAwsContext,
   theme: ThemeMode,
-  onToggleTheme: () => void,
-  onViewResourceInfo: (deploymentId: string) => void,
 ) {
   switch (activePage) {
     case 'builder':
-      return <VisualBuilderPage theme={theme} onToggleTheme={onToggleTheme} />;
+      return <VisualBuilderPage theme={theme} />;
     case 'terraform':
       return <TerraformPage />;
     case 'ai-agent':
@@ -838,7 +833,6 @@ function renderPage(
           insights={awsContext.awsInsights}
           isSyncingAws={awsContext.isSyncingAws}
           onSyncAws={awsContext.onSyncAws}
-          onViewResourceInfo={onViewResourceInfo}
         />
       );
     case 'resource-info':
@@ -1254,7 +1248,6 @@ function buildAwsInsightMetrics(insights?: AwsInsights): AwsInsightMetric[] {
 }
 
 function buildAwsInsightMiniCharts(insights?: AwsInsights, lambdaRealtimeMetrics?: LambdaRealtimeMetrics, billingRealtimeMetrics?: BillingRealtimeMetrics): AwsInsightMiniChart[] {
-  const resources = insights?.resources ?? {};
   const dailyBillingSource = billingRealtimeMetrics?.dailyTrend?.length ? billingRealtimeMetrics.dailyTrend : insights?.billing.dailyTrend ?? [];
   const dailyBillingTrend = dailyBillingSource.map((item) => ({
     label: item.label,
@@ -1455,7 +1448,7 @@ function formatOverviewChartValue(title: string, value: number) {
   return `${value}%`;
 }
 
-function VisualBuilderPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
   const terraformFileRef = useRef<HTMLInputElement>(null);
   const builderShellRef = useRef<HTMLDivElement>(null);
   const flow = useReactFlow();
@@ -2071,12 +2064,10 @@ function DeploymentsPage({
   insights,
   isSyncingAws,
   onSyncAws,
-  onViewResourceInfo,
 }: {
   insights?: AwsInsights;
   isSyncingAws: boolean;
   onSyncAws: () => Promise<void>;
-  onViewResourceInfo: (deploymentId: string) => void;
 }) {
   const [deploymentRecords, setDeploymentRecords] = useState<DeploymentRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'successful' | 'pending' | 'error'>('all');
@@ -2861,34 +2852,32 @@ const pipelineAppTypes = [
 
 function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const user = getStoredUser();
-  const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
+  const [deployments] = useState<DeploymentRecord[]>([]);
   const [pipelines, setPipelines] = useState<ApplicationPipelineRecord[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState('');
   const [selectedDeploymentId, setSelectedDeploymentId] = useState('');
-  const [name, setName] = useState('Production application pipeline');
+  const [, setName] = useState('Production application pipeline');
   const [appType, setAppType] = useState('react-app');
-  const [environment, setEnvironment] = useState<'development' | 'test' | 'staging' | 'production'>('development');
+  const [, setEnvironment] = useState<'development' | 'test' | 'staging' | 'production'>('development');
   const [branch, setBranch] = useState('main');
   const [githubOwner, setGithubOwner] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
   const [githubConnection, setGithubConnection] = useState<GithubConnection>(readCachedGithubConnection);
   const [githubRepos, setGithubRepos] = useState<GithubRepository[]>(readCachedGithubRepositories);
-  const [githubBranches, setGithubBranches] = useState<GithubBranch[]>([]);
+  const [, setGithubBranches] = useState<GithubBranch[]>([]);
   const [selectedGithubRepo, setSelectedGithubRepo] = useState('');
-  const [installCommand, setInstallCommand] = useState('npm ci');
-  const [testCommand, setTestCommand] = useState('npm test -- --watch=false');
-  const [buildCommand, setBuildCommand] = useState('npm run build');
-  const [startCommand, setStartCommand] = useState('npm start');
-  const [targetRegion, setTargetRegion] = useState('ap-south-1');
-  const [lambdaFunctionName, setLambdaFunctionName] = useState('');
+  const [, setInstallCommand] = useState('npm ci');
+  const [, setTestCommand] = useState('npm test -- --watch=false');
+  const [, setBuildCommand] = useState('npm run build');
+  const [, setStartCommand] = useState('npm start');
+  const [, setTargetRegion] = useState('ap-south-1');
+  const [, setLambdaFunctionName] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGithubLoading, setIsGithubLoading] = useState(false);
-  const [isGithubBranchesLoading, setIsGithubBranchesLoading] = useState(false);
+  const [, setIsGithubBranchesLoading] = useState(false);
   const [isSyncingGithub, setIsSyncingGithub] = useState(false);
-  const [githubAccess, setGithubAccess] = useState<GithubRepositoryAccess>();
-  const [isCheckingGithubAccess, setIsCheckingGithubAccess] = useState(false);
   const [deletingPipelineId, setDeletingPipelineId] = useState('');
   const [pendingDeletePipeline, setPendingDeletePipeline] = useState<ApplicationPipelineRecord | null>(null);
   const [pendingBulkDeletePipelines, setPendingBulkDeletePipelines] = useState<ApplicationPipelineRecord[]>([]);
@@ -2897,9 +2886,8 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const [pipelineSyncFilter, setPipelineSyncFilter] = useState<'all' | 'synced' | 'pending'>('all');
   const [pipelineTargetFilter, setPipelineTargetFilter] = useState('all');
   const [pipelineRoleFilter, setPipelineRoleFilter] = useState<'all' | 'provisioned' | 'pending' | 'failed'>('all');
-  const [activePreviewTab, setActivePreviewTab] = useState<'overview' | 'workflow' | 'files' | 'activity'>('overview');
+  const [, setActivePreviewTab] = useState<'overview' | 'workflow' | 'files' | 'activity'>('overview');
   const [selectedFilePath, setSelectedFilePath] = useState('');
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<ApplicationDeploymentStatus>();
   const [isDeployingApplication, setIsDeployingApplication] = useState(false);
   const deployingApplicationRef = useRef(false);
@@ -2915,33 +2903,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
   const githubPopupRef = useRef<Window | null>(null);
   const githubPollRef = useRef<number | undefined>(undefined);
   const selectedPipeline = pipelines.find((pipeline) => pipeline._id === selectedPipelineId) ?? pipelines[0];
-  const selectedGithubRepository = githubRepos.find((repo) => repo.fullName === selectedGithubRepo);
-  const selectedFile =
-    selectedPipeline?.generatedFiles.find((file) => file.path === selectedFilePath) ??
-    selectedPipeline?.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml')) ??
-    selectedPipeline?.generatedFiles[0];
-  const workflowFile =
-    selectedPipeline?.generatedFiles.find((file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml')) ?? selectedFile;
   const selectedDeployment = deployments.find((deployment) => deployment._id === selectedDeploymentId);
-  const validationChecks = buildPipelineValidationChecks({
-    selectedPipeline,
-    selectedDeployment,
-    githubConnection,
-    githubOwner,
-    githubRepo,
-    branch,
-    selectedGithubRepository,
-  });
-  const hasValidationErrors = validationChecks.some((check) => check.status === 'error');
-  const hasValidationWarnings = validationChecks.some((check) => check.status === 'warning');
-  const validationLabel = hasValidationErrors ? 'Blocked' : hasValidationWarnings ? 'Warnings' : 'Ready';
-  const generatedFileCount = selectedPipeline?.generatedFiles.length ?? 0;
-  const previewTabs: Array<{ id: typeof activePreviewTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-    { id: 'overview', label: 'Overview', icon: ShieldCheck },
-    { id: 'workflow', label: 'Workflow', icon: GitBranch },
-    { id: 'files', label: 'Generated Files', icon: FilePlus2 },
-    { id: 'activity', label: 'Activity', icon: Activity },
-  ];
   const syncedPipelineCount = pipelines.filter((pipeline) => pipeline.repository.lastSyncedAt).length;
   const lambdaPipelineCount = pipelines.filter((pipeline) => pipeline.target.type === 'lambda').length;
   const provisionedRoleCount = pipelines.filter((pipeline) => pipeline.awsDeployRole?.status === 'provisioned').length;
@@ -3182,39 +3144,6 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     }
   }, [deploymentResultRunId, deploymentStatus]);
 
-  async function generatePipeline() {
-    setMessage('');
-    setError('');
-    try {
-      const repositoryUrl = githubOwner && githubRepo ? `https://github.com/${githubOwner}/${githubRepo}` : '';
-      const payload = {
-        name,
-        appType,
-        environment,
-        deploymentId: selectedDeploymentId || undefined,
-        repository: { url: repositoryUrl, branch },
-        commands: {
-          install: installCommand,
-          test: testCommand,
-          build: buildCommand,
-          start: startCommand,
-        },
-        target: {
-          region: targetRegion,
-          lambdaFunctionName: appType === 'serverless-api' ? lambdaFunctionName : undefined,
-        },
-      };
-      const pipeline = selectedPipeline
-        ? await updateApplicationPipeline(selectedPipeline._id, payload)
-        : await createApplicationPipeline(payload);
-      await refreshPipelineData();
-      setSelectedPipelineId(pipeline._id);
-      setMessage(selectedPipeline ? 'Pipeline updated. Sync these files, then deploy with workflow dispatch.' : 'Pipeline generated. Sync these files, then deploy with workflow dispatch.');
-    } catch (pipelineError) {
-      setError(pipelineError instanceof Error ? pipelineError.message : 'Unable to generate application pipeline.');
-    }
-  }
-
   function startNewPipeline() {
     setSelectedPipelineId('');
     setName('Production application pipeline');
@@ -3236,11 +3165,6 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
     setActivePreviewTab('overview');
     setMessage('');
     setError('');
-  }
-
-  function copyFile(file: ApplicationPipelineRecord['generatedFiles'][number]) {
-    void navigator.clipboard?.writeText(file.content);
-    setMessage(`${file.path} copied.`);
   }
 
   function chooseGithubRepository(fullName: string, repoSource = githubRepos) {
@@ -3381,88 +3305,6 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
       setMessage('GitHub disconnected.');
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect GitHub.');
-    }
-  }
-
-  async function syncSelectedPipeline() {
-    if (!selectedPipeline) return;
-    if (!githubConnection.connected) {
-      setError('Connect GitHub before syncing generated files.');
-      return;
-    }
-    if (!githubOwner || !githubRepo) {
-      setError('Choose a GitHub repository before syncing generated files.');
-      return;
-    }
-    setMessage('');
-    setError('');
-    setIsSyncingGithub(true);
-    try {
-      const result = await syncPipelineToGithub(selectedPipeline._id, {
-        owner: githubOwner,
-        repo: githubRepo,
-        branch,
-      });
-      await refreshPipelineData();
-      setSelectedPipelineId(result.pipeline._id);
-      const oidcSuffix =
-        result.oidc?.status === 'provisioned'
-          ? ' AWS deploy role provisioned automatically.'
-          : result.oidc?.status === 'failed'
-            ? ` AWS deploy role setup failed: ${result.oidc.error}`
-            : result.oidc?.status === 'skipped'
-              ? ` AWS deploy role not auto-provisioned: ${result.oidc.error}`
-              : '';
-      setMessage(`Synced ${result.sync.files.length} files to GitHub. Latest commit ${result.sync.commitSha.slice(0, 7)}.${oidcSuffix}`);
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : 'Unable to sync repository.');
-    } finally {
-      setIsSyncingGithub(false);
-    }
-  }
-
-  async function deploySelectedApplication() {
-    if (!selectedPipeline) return;
-    if (deployingApplicationRef.current) return;
-    if (readRunningAppPipelineIds().includes(selectedPipeline._id)) {
-      setError('Deployment is already running for this pipeline.');
-      return;
-    }
-    if (!githubConnection.connected) {
-      setError('Connect GitHub before deploying the application.');
-      return;
-    }
-    if (!githubOwner || !githubRepo) {
-      setError('Choose a GitHub repository before deploying the application.');
-      return;
-    }
-
-    setMessage('');
-    setError('');
-    if (!hasCredits(user)) {
-      setError(await requestCreditsInsteadOf(`Requesting credits to deploy application pipeline "${selectedPipeline.name}".`));
-      return;
-    }
-    markAppPipelineDeploymentRunning(selectedPipeline._id);
-    deployingApplicationRef.current = true;
-    setIsDeployingApplication(true);
-    setActivePreviewTab('activity');
-    try {
-      const status = await deployApplicationPipeline(selectedPipeline._id, { owner: githubOwner, repo: githubRepo, branch });
-      setDeploymentStatus(status);
-      syncAppPipelineDeploymentRunning(selectedPipeline._id, status);
-      setRunningPipelineIds(readRunningAppPipelineIds());
-      setMessage(status.message ?? 'Deployment workflow started.');
-      window.dispatchEvent(new CustomEvent(liveDeploymentStartedEvent, { detail: { type: 'app', pipelineId: selectedPipeline._id } }));
-      if (status.run?.status !== 'completed') {
-        window.setTimeout(() => void refreshApplicationDeploymentStatus({ silent: true }), 2200);
-      }
-    } catch (deployError) {
-      clearAppPipelineDeploymentRunning(selectedPipeline._id);
-      setError(deployError instanceof Error ? deployError.message : 'Unable to start application deployment.');
-    } finally {
-      deployingApplicationRef.current = false;
-      setIsDeployingApplication(false);
     }
   }
 
@@ -5663,185 +5505,6 @@ function getEditorLanguage(pathName = '') {
   return 'text';
 }
 
-function DeploymentTableDetails({
-  deployment,
-  insights,
-  onViewResourceInfo,
-}: {
-  deployment: DeploymentRecord;
-  insights?: AwsInsights;
-  onViewResourceInfo: (deploymentId: string) => void;
-}) {
-  const nodes = deployment.diagram?.nodes ?? [];
-  const services = Array.from(new Set(nodes.map((node) => node.data?.serviceName ?? node.data?.label).filter((label): label is string => Boolean(label))));
-  const outputKeys = Object.keys(deployment.outputs ?? {});
-  const latestLogs = deployment.logs.slice(-4);
-  const resourceMetrics = buildDeploymentResourceMetrics(deployment, insights);
-  const summaryRows: Array<[string, string]> = [
-    ['Diagram', deployment.diagram?.name ?? deployment.name],
-    ['Status', deploymentStatusLabel(deployment.status)],
-    ['Region', deployment.diagram?.activeRegion ?? 'Not captured'],
-    ['Resources', String(deployment.resourceCount ?? nodes.length ?? 0)],
-    ['Connections', String(deployment.connectionCount ?? deployment.diagram?.edges?.length ?? 0)],
-    ['Services', services.length ? services.join(', ') : 'No diagram snapshot saved for this deployment.'],
-  ];
-  const outputRows = Object.entries(deployment.outputs ?? {});
-
-  return (
-    <div className="dash-deploy-table-detail">
-      <div className="dash-deploy-detail-actions">
-        <button className="dash-secondary-action" disabled={!nodes.length} onClick={() => onViewResourceInfo(deployment._id)} type="button">
-          <Eye size={14} />
-          View resource info
-        </button>
-      </div>
-
-      <DeploymentDetailSection meta={`${summaryRows.length} fields`} title="Diagram summary">
-        <DeploymentKeyValueTable rows={summaryRows} />
-      </DeploymentDetailSection>
-
-      <DeploymentDetailSection meta={`${outputKeys.length} outputs`} title="Terraform outputs">
-        {outputRows.length ? (
-          <div className="dash-deploy-detail-table-wrap">
-            <table className="dash-deploy-detail-table">
-              <thead>
-                <tr>
-                  <th>Output</th>
-                  <th>Type</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outputRows.map(([key, value]) => (
-                  <tr key={key}>
-                    <td>
-                      <strong>{key}</strong>
-                    </td>
-                    <td>{deploymentOutputType(value)}</td>
-                    <td>
-                      <code>{formatDeploymentOutputValue(value)}</code>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>No resource outputs captured yet.</p>
-        )}
-      </DeploymentDetailSection>
-
-      <DeploymentDetailSection className="dash-deploy-live-section" meta={`${resourceMetrics.length} resources`} title="Live usage and billing">
-        {resourceMetrics.length ? (
-          <div className="dash-deploy-detail-table-wrap">
-            <table className="dash-deploy-detail-table dash-deploy-live-table">
-              <thead>
-                <tr>
-                  <th>Resource</th>
-                  <th>Service</th>
-                  <th>Usage</th>
-                  <th>Health</th>
-                  <th>Month spend</th>
-                  <th>Bill share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resourceMetrics.map((metric) => (
-                  <tr key={metric.key}>
-                    <td>
-                      <strong>{metric.label}</strong>
-                      <span>{metric.resourceId}</span>
-                    </td>
-                    <td>{metric.service}</td>
-                    <td>{metric.usage}</td>
-                    <td>
-                      <em>{metric.health}</em>
-                    </td>
-                    <td>${metric.spend.toFixed(2)}</td>
-                    <td>{metric.billShare}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>Sync AWS usage and billing to show real-time resource parameters for this deployed diagram.</p>
-        )}
-      </DeploymentDetailSection>
-
-      <DeploymentDetailSection meta={`${latestLogs.length} entries`} title="Recent logs">
-        {latestLogs.length ? (
-          <div className="dash-deploy-detail-table-wrap">
-            <table className="dash-deploy-detail-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Level</th>
-                  <th>Message</th>
-                </tr>
-              </thead>
-              <tbody>
-                {latestLogs.map((log, index) => (
-                  <tr key={`${log.at ?? index}-${log.message}`}>
-                    <td>{log.at ? new Date(log.at).toLocaleString() : 'Recent'}</td>
-                    <td>
-                      <em className={`dash-deploy-log-pill dash-deploy-log--${deploymentLogLevel(log.level, log.message)}`}>
-                        {deploymentLogLevel(log.level, log.message)}
-                      </em>
-                    </td>
-                    <td>{log.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>No logs recorded yet.</p>
-        )}
-      </DeploymentDetailSection>
-    </div>
-  );
-}
-
-function DeploymentDetailSection({
-  children,
-  className = '',
-  meta,
-  title,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  meta: string;
-  title: string;
-}) {
-  return (
-    <details className={`dash-deploy-detail-section ${className}`} open>
-      <summary>
-        <strong>{title}</strong>
-        <span>{meta}</span>
-      </summary>
-      <div className="dash-deploy-detail-section__body">{children}</div>
-    </details>
-  );
-}
-
-function DeploymentKeyValueTable({ rows }: { rows: Array<[string, string]> }) {
-  return (
-    <div className="dash-deploy-detail-table-wrap">
-      <table className="dash-deploy-detail-table dash-deploy-detail-table--key-value">
-        <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label}>
-              <th>{label}</th>
-              <td>{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 type DeploymentResourceMetric = {
   key: string;
   label: string;
@@ -5931,6 +5594,7 @@ function canonicalAwsService(service: string) {
   if (value.includes('api gateway') || value.includes('apigw')) return 'API Gateway';
   if (value.includes('ecs')) return 'ECS';
   if (value.includes('eks')) return 'EKS';
+  if (value.includes('app runner') || value.includes('apprunner')) return 'App Runner';
   if (value.includes('iam')) return 'IAM';
   if (value.includes('waf')) return 'WAF';
   if (value.includes('kms')) return 'KMS';
@@ -5953,27 +5617,6 @@ function pluralizeResource(service: string, count: number) {
     IAM: 'identity',
   }[service] ?? 'resource';
   return count === 1 ? singular : `${singular}s`;
-}
-
-function deploymentOutputType(value: unknown) {
-  if (Array.isArray(value)) return 'array';
-  if (value === null) return 'null';
-  return typeof value;
-}
-
-function formatDeploymentOutputValue(value: unknown) {
-  if (value === null || value === undefined) return 'Not returned';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-
-  try {
-    // Sensitive fields nested in here (SSH keys, DB endpoints) arrive as a { __secretPlaceholder }
-    // marker, never the real value — see the backend's secretRedaction.js. Render those as a plain
-    // label instead of dumping the marker's own shape as JSON; view Resource Info to reveal them.
-    return JSON.stringify(value, (_key, nested) => (isSecretPlaceholder(nested) ? 'Hidden — view in Resource Info to reveal' : nested));
-  } catch {
-    return String(value);
-  }
 }
 
 function deploymentStatusGroup(status: DeploymentRecord['status']): 'successful' | 'pending' | 'error' {
@@ -6624,36 +6267,6 @@ function ResourceTable({ insights }: { insights?: AwsInsights }) {
   );
 }
 
-function getDashboardKpiDetail(kpi: { label: string; value: string; change: string }): RuntimeLabDetail {
-  const examples: Record<string, string> = {
-    'Monthly spend':
-      'A platform owner connects AWS and immediately sees whether current month spend is stable. If the value rises after a deployment, they can inspect the Overview cost section to see which service caused the increase.',
-    'Active resources':
-      'A DevOps user imports or syncs AWS resources and checks whether the dashboard inventory matches the expected diagram. A sudden count increase can indicate drift or manually created resources.',
-    'Estimated savings':
-      'A team can use this value before a sprint planning meeting to decide whether idle EC2, old snapshots, over-provisioned RDS, or unused load balancers should be cleaned up first.',
-    'Security warnings':
-      'A security reviewer can use this value as the first signal before opening the Security Review page to inspect public exposure, broad IAM permissions, missing encryption, or risky networking.',
-  };
-
-  return {
-    title: kpi.label,
-    subtitle: `Dashboard metric: ${kpi.value}`,
-    process:
-      'A KPI card compresses a larger backend process into one readable number. React renders the card, the Node API provides either demo values or live AWS insight values, and MongoDB stores connected account and diagram context that makes the metric useful.',
-    realTimeExample:
-      examples[kpi.label] ??
-      'A user scans this card to understand current platform state, then opens the related dashboard page for deeper AWS, Terraform, deployment, or security action.',
-    steps: [
-      'The dashboard asks the backend for AWS insights and saved application state.',
-      'The backend normalizes AWS billing, inventory, security, and recommendation data.',
-      'React maps the normalized value into a compact KPI card.',
-      'This popup explains what the number means and how a real operator should use it.',
-    ],
-    codePath: 'src/dashboard/DashboardShell.tsx -> IAAS backend AWS insight routes -> MongoDB account/diagram data',
-  };
-}
-
 function getResourceCardDetail(resource: { service: string; count: number; health: string; spend: string }): RuntimeLabDetail {
   return {
     title: `${resource.service} resources`,
@@ -6738,32 +6351,6 @@ function RecentAwsEvents({ insights }: { insights?: AwsInsights }) {
           <em>{event.at ? new Date(event.at).toLocaleString() : 'Recent'}</em>
         </div>
       ))}
-    </div>
-  );
-}
-
-function DashboardChart() {
-  return (
-    <div className="dash-chart">
-      <div className="dash-chart-line" />
-      <div className="dash-chart-bars">
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className="dash-chart-labels">
-        <span>Mon</span>
-        <span>Tue</span>
-        <span>Wed</span>
-        <span>Thu</span>
-        <span>Fri</span>
-        <span>Sat</span>
-        <span>Sun</span>
-      </div>
     </div>
   );
 }

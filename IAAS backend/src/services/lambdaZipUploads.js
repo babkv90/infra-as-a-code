@@ -36,10 +36,6 @@ export async function getLambdaZipUploadMetadata(uploadId) {
   return JSON.parse(raw.toString('utf8'));
 }
 
-export function lambdaZipStorageKey(uploadId) {
-  return zipKey(uploadId);
-}
-
 // Enumerates by the .zip files themselves, not their .json sidecars — uploads made before the
 // sidecar existed (or any that lost theirs) are still real disk usage and still need to be found by
 // lambdaZipCleanup.js, even though getLambdaZipUploadMetadata will return null for them.

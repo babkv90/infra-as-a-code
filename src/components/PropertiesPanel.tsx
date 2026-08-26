@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { listAccountIamRoles, listAwsAccounts, type AwsAccountRecord, type IamRoleSummary } from '../dashboard/awsApi';
 import { awsServices, serviceById } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
-import type { AwsEdge, AwsEdgeData, AwsNode, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
+import type { AwsEdge, AwsNode, EdgeConnectionType, NodeBindingSourceKind, NodeBindingTargetKind } from '../types';
 import { connectionRule } from '../utils/connectionRules';
 import { uploadLambdaZip } from '../utils/deploymentApi';
 import { exportTerraform } from '../utils/exportTerraform';

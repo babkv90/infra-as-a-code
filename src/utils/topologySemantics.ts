@@ -54,10 +54,10 @@ export function canContainNode(parent: AwsNode, child: AwsNode): boolean {
 
   if (parent.data.groupKind === 'Security Group') return serviceId === 'security-group';
   if (parent.data.groupKind === 'Public Subnet' || parent.data.groupKind === 'Private Subnet') {
-    return ['ec2', 'ecs', 'eks', 'lambda', 'rds', 'docdb', 'docdb-instance', 'elasticache', 'nat', 'alb'].includes(serviceId ?? '');
+    return ['ec2', 'ecs', 'eks', 'lambda', 'apprunner', 'rds', 'docdb', 'docdb-instance', 'elasticache', 'nat', 'alb'].includes(serviceId ?? '');
   }
   if (parent.data.groupKind === 'VPC') {
-    return ['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association', 'security-group', 'alb', 'lb-target-group', 'ec2', 'ecs', 'eks', 'lambda', 'rds', 'docdb', 'docdb-instance', 'elasticache'].includes(serviceId ?? '');
+    return ['vpc', 'subnet', 'igw', 'nat', 'route-table', 'route', 'route-association', 'security-group', 'alb', 'lb-target-group', 'ec2', 'ecs', 'eks', 'lambda', 'apprunner', 'rds', 'docdb', 'docdb-instance', 'elasticache'].includes(serviceId ?? '');
   }
 
   return parent.data.groupKind === 'Region' || parent.data.groupKind === 'Terraform stack' || parent.data.groupKind === 'Module';
