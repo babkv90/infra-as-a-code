@@ -1,12 +1,15 @@
-"""The M1 LangGraph shape: ground -> supervisor -> Send[routed specialists] (parallel) ->
-synthesize -> END. See infraflow-multi-agent-plan.pdf §1.3; Redis/checkpointer/interrupt() are
-M2 concerns (human-approval pause/resume) and aren't needed for this in-memory, no-pause graph.
+"""The LangGraph shape: ground -> supervisor -> Send[routed specialists] (parallel) -> synthesize
+-> changeplan -> END. See infraflow-multi-agent-plan.pdf §1.3. changeplan (M2) only *proposes* a
+ChangePlan for human review — it never applies anything. Redis/checkpointer/interrupt() (pausing a
+run mid-graph for human approval) are still not built and aren't needed for this in-memory,
+no-pause graph.
 """
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from app.agents import architect, cost, security, supervisor, synthesize, terraform
+from app.agents import architect, changeplan, cost, security, supervisor, synthesize, terraform
+from app.changeplan import apply_change_plan_gate
 from app.dsl import build_dsl
 from app.evidence import apply_evidence_gate
 from app.gateway import GroundingBundle, fetch_grounding
@@ -77,10 +80,20 @@ async def synthesize_node(state: RunState) -> dict:
     return {"final_findings": final_findings, "final_content": content}
 
 
+async def changeplan_node(state: RunState) -> dict:
+    """Runs after synthesize: proposes a ChangePlan (M2) from the question, diagram, and the
+    findings that survived the evidence gate, then drops any item that cites a node/edge id or
+    service_id that isn't real (app/changeplan.py). Purely a proposal — nothing here can mutate a
+    diagram; the result is only ever surfaced for a human to read."""
+    bundle = GroundingBundle(state["grounding"])
+    plan = await changeplan.propose(state["question"], state["dsl"], state.get("final_findings", []), state["history"])
+    return {"change_plan": apply_change_plan_gate(plan, bundle)}
+
+
 def build_graph():
     """Wires the nodes above into the ground -> supervisor -> Send[specialists] -> synthesize ->
-    END shape and compiles it. Called once at import time in app/runner.py; the compiled graph is
-    reused for every run rather than rebuilt per-request."""
+    changeplan -> END shape and compiles it. Called once at import time in app/runner.py; the
+    compiled graph is reused for every run rather than rebuilt per-request."""
     builder = StateGraph(RunState)
     builder.add_node("ground", ground_node)
     builder.add_node("supervisor", supervisor_node)
@@ -89,12 +102,14 @@ def build_graph():
     builder.add_node("cost", cost_node)
     builder.add_node("security", security_node)
     builder.add_node("synthesize", synthesize_node)
+    builder.add_node("changeplan", changeplan_node)
 
     builder.add_edge(START, "ground")
     builder.add_edge("ground", "supervisor")
     builder.add_conditional_edges("supervisor", fan_out_router, SPECIALIST_NODES)
     for node in SPECIALIST_NODES:
         builder.add_edge(node, "synthesize")
-    builder.add_edge("synthesize", END)
+    builder.add_edge("synthesize", "changeplan")
+    builder.add_edge("changeplan", END)
 
     return builder.compile()

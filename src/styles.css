@@ -10394,6 +10394,108 @@ button.dash-kpi-card {
   }
 }
 
+/* AgentChangePlanPanel — a completed run's proposed, read-only ChangePlan (M2). Reuses the same
+   tone vocabulary as .deployment-step--ready/warning/blocked instead of inventing a new one. */
+.agent-changeplan {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.agent-changeplan__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-changeplan__header strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.agent-changeplan__copy {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agent-changeplan__summary {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.agent-changeplan__items {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-changeplan__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.34);
+}
+
+.agent-changeplan__item--ready svg {
+  color: #22c55e;
+}
+
+.agent-changeplan__item--warning svg {
+  color: #f59e0b;
+}
+
+.agent-changeplan__item--blocked svg {
+  color: #ef4444;
+}
+
+.agent-changeplan__item-body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.agent-changeplan__item-body strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.agent-changeplan__item-body strong em {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.agent-changeplan__item-body span {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.agent-changeplan__note {
+  margin: 0;
+  color: #64748b;
+  font-size: 10px;
+}
+
 .dash-agent-actions button {
   display: flex;
   align-items: center;

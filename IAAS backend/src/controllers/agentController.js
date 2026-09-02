@@ -96,6 +96,7 @@ export const getRunStatus = asyncHandler(async (req, res) => {
       route: run.route,
       steps: run.steps,
       findings: run.findings,
+      changePlan: run.changePlan,
       conversation,
     },
   });

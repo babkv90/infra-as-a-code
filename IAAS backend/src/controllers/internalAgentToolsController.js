@@ -124,7 +124,7 @@ export const postRunComplete = asyncHandler(async (req, res) => {
 
   const run = await AgentRun.findOneAndUpdate(
     { _id: req.params.runId, workspace: req.agent.workspaceId },
-    { $set: { status, findings: metadata?.findings ?? [] } },
+    { $set: { status, findings: metadata?.findings ?? [], changePlan: metadata?.changePlan ?? null } },
   );
   if (!run) throw new ApiError(404, 'Agent run not found');
 

@@ -79,5 +79,12 @@ async def _stream_and_report(run_id: str, bearer_token: str, initial_state: RunS
             elif node_name == "synthesize":
                 final_content = delta.get("final_content", "")
                 final_metadata = {"findings": [f.model_dump() for f in delta.get("final_findings", [])]}
+            elif node_name == "changeplan":
+                plan = delta.get("change_plan")
+                await post_run_step(run_id, bearer_token, {
+                    "type": "changeplan.ready",
+                    "itemCount": len(plan.items) if plan else 0,
+                })
+                final_metadata["changePlan"] = plan.model_dump(by_alias=True) if plan else None
 
     await post_run_complete(run_id, bearer_token, final_content, final_metadata)

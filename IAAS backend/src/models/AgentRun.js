@@ -13,6 +13,9 @@ const agentRunSchema = new mongoose.Schema(
     route: { type: [String], default: [] },
     steps: { type: [mongoose.Schema.Types.Mixed], default: [] },
     findings: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    // A proposed, read-only ChangePlan (M2) — never applied automatically. See
+    // services/agents/app/changeplan.py for how it's generated and mechanically validated.
+    changePlan: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );

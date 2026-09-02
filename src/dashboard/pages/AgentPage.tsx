@@ -9,6 +9,7 @@ import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
 import { canUseAiAgent } from '../../utils/accessControl';
 import { createAgentConversation, getAgentRunStatus, sendAgentMessage, type AgentConversation } from '../agentApi';
+import { AgentChangePlanPanel } from '../components/AgentChangePlanPanel';
 import { AgentRunTimeline } from '../components/AgentRunTimeline';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { agentActions } from '../dashboardData';
@@ -159,6 +160,7 @@ export function AgentPage() {
                   <EmptyState>Ask the AI Cloud Agent a question about your architecture, cost, or security.</EmptyState>
                 )}
                 {runStatus && <AgentRunTimeline route={runStatus.route} status={runStatus.status} steps={runStatus.steps} />}
+                {runStatus?.status === 'completed' && <AgentChangePlanPanel plan={runStatus.changePlan} />}
                 <div ref={chatEndRef} />
               </div>
               <form className="dash-chat-input" onSubmit={handleSubmit}>

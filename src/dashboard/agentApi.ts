@@ -36,13 +36,14 @@ export type AgentConversation = {
 // One entry per graph-node transition the run went through — see services/agents/app/runner.py,
 // which is the only thing that ever produces these.
 export type AgentStepEvent = {
-  type: 'grounding.ready' | 'route.decided' | 'agent.finished';
+  type: 'grounding.ready' | 'route.decided' | 'agent.finished' | 'changeplan.ready';
   at?: string;
   route?: AgentName[];
   reason?: string;
   agent?: AgentName;
   summary?: string;
   findingsCount?: number;
+  itemCount?: number;
 };
 
 export type AgentFinding = {
@@ -53,11 +54,30 @@ export type AgentFinding = {
   evidence: Array<{ kind: 'node' | 'terraform_block'; ref: string }>;
 };
 
+// A proposed, read-only set of diagram edits (M2) — see services/agents/app/changeplan.py. Never
+// applied automatically; this is only ever rendered for a human to review.
+export type ChangeOp = 'add_node' | 'update_node' | 'remove_node' | 'add_edge' | 'update_edge' | 'remove_edge';
+
+export type ChangeItem = {
+  op: ChangeOp;
+  target?: string | null;
+  serviceId?: string | null;
+  data?: Record<string, unknown>;
+  rationale: string;
+  evidence: Array<{ kind: 'node' | 'terraform_block'; ref: string }>;
+};
+
+export type ChangePlan = {
+  summary: string;
+  items: ChangeItem[];
+};
+
 export type AgentRunStatus = {
   status: 'running' | 'completed' | 'failed';
   route: AgentName[];
   steps: AgentStepEvent[];
   findings: AgentFinding[];
+  changePlan: ChangePlan | null;
   conversation: AgentConversation;
 };
 
