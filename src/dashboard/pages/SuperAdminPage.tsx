@@ -1,20 +1,22 @@
-import { BadgeDollarSign, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow, X } from 'lucide-react';
+import { BadgeDollarSign, BookOpen, BrainCircuit, GitCommitVertical, ListChecks, RefreshCw, Rocket, Search, UserCheck, Users, Workflow, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
 import { BacklogTab } from '../components/BacklogTab';
 import { ChangeLogTab } from '../components/ChangeLogTab';
+import { KnowledgeBaseTab } from '../components/KnowledgeBaseTab';
 import { EmptyState, Panel, TableSkeleton } from '../components/DashPrimitives';
 import { getSuperAdminOverview, grantSuperAdminCredits, updateSuperAdminUserRole, type SuperAdminOverview, type SuperAdminUser } from '../superAdminApi';
 
 const ADMIN_ROLE_OPTIONS = ['viewer', 'devops', 'architect', 'admin', 'owner', 'superadmin'];
 const ADMIN_STATUS_OPTIONS = ['active', 'invited', 'disabled'];
 
-type AdminTab = 'users' | 'changelog' | 'backlog';
+type AdminTab = 'users' | 'changelog' | 'backlog' | 'knowledge';
 const ADMIN_TABS: Array<{ id: AdminTab; label: string; icon: typeof Users }> = [
   { id: 'users', label: 'Users & Access', icon: Users },
   { id: 'changelog', label: 'Change Log', icon: GitCommitVertical },
   { id: 'backlog', label: 'Technical Backlog', icon: ListChecks },
+  { id: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
 ];
 
 export function SuperAdminPage() {
@@ -160,6 +162,7 @@ export function SuperAdminPage() {
 
       {activeTab === 'changelog' && <ChangeLogTab />}
       {activeTab === 'backlog' && <BacklogTab />}
+      {activeTab === 'knowledge' && <KnowledgeBaseTab />}
 
       {activeTab === 'users' && (
       <>

@@ -275,8 +275,8 @@ export const commonDeploymentTemplates = [
     id: 'infraflow-agent-lambda',
     name: 'AI agent service on Lambda (zip)',
     compatibility: "This app's own Python/FastAPI multi-agent service (services/agents), packaged as a zip Lambda and invoked asynchronously by the backend — one invocation runs the whole graph. Sized for portfolio traffic: Lambda free tier, scales to zero.",
-    infrastructure: 'Lambda function (python3.12 zip), IAM execution role, SQS dead-letter queue',
-    deploymentPath: "Build the zip with services/agents/deploy/build.sh, load this template, upload agent-lambda.zip into the Lambda node's Deployment zip field, then Deploy. After deploy, run services/agents/deploy/configure-production.sh to set the env vars (OPENAI_API_KEY, AGENT_TOOL_SECRET, EXPRESS_INTERNAL_URL) and the on-failure DLQ wiring the Lambda node can't express, then set AGENT_INVOKE_MODE=lambda + AGENT_LAMBDA_FUNCTION on the backend. Full steps: services/agents/deploy/README.md.",
+    infrastructure: 'Lambda function (python3.12 zip), IAM execution role, SQS dead-letter queue. Knowledge base (Postgres + pgvector) is provisioned separately via services/agents/deploy/rds.tf.',
+    deploymentPath: "Build the zip with services/agents/deploy/build.sh, load this template, upload agent-lambda.zip into the Lambda node's Deployment zip field, then Deploy. After deploy, run services/agents/deploy/configure-production.sh to set the env vars (OPENAI_API_KEY, AGENT_TOOL_SECRET, EXPRESS_INTERNAL_URL, optional DATABASE_URL) and the on-failure DLQ wiring the Lambda node can't express, then set AGENT_INVOKE_MODE=lambda + AGENT_LAMBDA_FUNCTION on the backend. For the superadmin Knowledge Base, terraform apply services/agents/deploy/rds.tf first and pass its database_url output. Full steps: services/agents/deploy/README.md.",
   },
 ];
 

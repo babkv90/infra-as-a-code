@@ -1,7 +1,7 @@
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { Diagram } from '../models/Diagram.js';
 import { env } from '../config/env.js';
-import { mintAgentToken } from '../services/agentIdentity.js';
+import { mintAgentToken, mintRagAdminToken } from '../services/agentIdentity.js';
 import { makeEnvCredentials } from '../services/awsRoleCredentials.js';
 
 // Only needs to wait for the run to be *accepted* (HTTP mode) or *queued* (Lambda mode), not
@@ -110,4 +110,93 @@ async function startViaHttp(token, payload) {
 async function mostRecentDiagramId(workspaceId) {
   const diagram = await Diagram.findOne({ workspace: workspaceId }).sort({ updatedAt: -1 }).select('_id').lean();
   return diagram?._id?.toString();
+}
+
+// --- Knowledge base (superadmin) ---------------------------------------------------------------
+//
+// Ingestion embeds every chunk of a document, so give it far longer than a run-start's 10s.
+const RAG_TIMEOUT_MS = 90_000;
+
+/** GET the knowledge-base document list. -> { ok, documents } | { ok: false, error } */
+export async function ragListDocuments({ userId, workspaceId }) {
+  const token = mintRagAdminToken({ userId, workspaceId });
+  return env.AGENT_INVOKE_MODE === 'lambda'
+    ? invokeRagLambda('rag.list', token, {})
+    : ragHttp('GET', '/rag/documents', token);
+}
+
+/** Ingest one uploaded document. -> { ok, document } | { ok: false, error, status } */
+export async function ragIngestDocument({ userId, workspaceId, filename, contentType, buffer }) {
+  const token = mintRagAdminToken({ userId, workspaceId });
+  if (env.AGENT_INVOKE_MODE === 'lambda') {
+    return invokeRagLambda('rag.ingest', token, {
+      filename,
+      contentType: contentType ?? '',
+      contentB64: Buffer.from(buffer).toString('base64'),
+    });
+  }
+  const form = new FormData();
+  form.append('file', new Blob([buffer], { type: contentType || 'application/octet-stream' }), filename || 'upload');
+  return ragHttp('POST', '/rag/documents', token, { body: form });
+}
+
+/** Delete one document (and its chunks, via ON DELETE CASCADE). -> { ok, deleted } | { ok: false, error } */
+export async function ragDeleteDocument({ userId, workspaceId, documentId }) {
+  const token = mintRagAdminToken({ userId, workspaceId });
+  return env.AGENT_INVOKE_MODE === 'lambda'
+    ? invokeRagLambda('rag.delete', token, { documentId })
+    : ragHttp('DELETE', `/rag/documents/${encodeURIComponent(documentId)}`, token);
+}
+
+async function invokeRagLambda(op, token, extra) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RAG_TIMEOUT_MS);
+  try {
+    const response = await lambdaClient().send(
+      new InvokeCommand({
+        FunctionName: env.AGENT_LAMBDA_FUNCTION,
+        InvocationType: 'RequestResponse',
+        Payload: Buffer.from(JSON.stringify({ op, token, ...extra })),
+      }),
+      { abortSignal: controller.signal },
+    );
+
+    if (response.FunctionError) {
+      const raw = response.Payload ? Buffer.from(response.Payload).toString('utf8') : '';
+      return { ok: false, error: `Agent Lambda raised an error (${response.FunctionError}): ${raw.slice(0, 500)}` };
+    }
+    const parsed = response.Payload ? JSON.parse(Buffer.from(response.Payload).toString('utf8')) : {};
+    if (parsed.ok === false) {
+      return { ok: false, error: parsed.message || parsed.error || 'Knowledge base operation failed.', status: parsed.error === 'ingest_rejected' ? 422 : 502 };
+    }
+    return { ok: true, ...parsed };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Unknown Lambda invoke error';
+    return { ok: false, error: `Could not reach the agent Lambda (${env.AGENT_LAMBDA_FUNCTION}) for ${op}: ${detail}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ragHttp(method, path, token, { body } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RAG_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${env.AGENT_API_URL.replace(/\/$/, '')}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+      signal: controller.signal,
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      return { ok: false, error: typeof result?.detail === 'string' ? result.detail : `Agent service returned ${response.status}.`, status: response.status === 422 ? 422 : 502 };
+    }
+    return { ok: true, ...(result ?? {}) };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Unknown agent service error';
+    return { ok: false, error: `The agent service at ${env.AGENT_API_URL} is not reachable: ${detail}` };
+  } finally {
+    clearTimeout(timer);
+  }
 }

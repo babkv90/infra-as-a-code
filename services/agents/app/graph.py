@@ -13,6 +13,7 @@ from app.changeplan import apply_change_plan_gate
 from app.dsl import build_dsl
 from app.evidence import apply_evidence_gate
 from app.gateway import GroundingBundle, fetch_grounding
+from app.rag.service import format_knowledge_block, retrieve_context
 from app.state import RunState
 
 SPECIALIST_NODES = ["architect", "terraform", "cost", "security"]
@@ -24,10 +25,18 @@ SPECIALIST_NODES = ["architect", "terraform", "cost", "security"]
 # than overwrite each other).
 
 async def ground_node(state: RunState) -> dict:
-    """Entry node: fetches the diagram/Terraform/validation bundle from Express in one call and
-    projects it into the compact text DSL every downstream LLM prompt is built from."""
+    """Entry node: fetches the diagram/Terraform/validation bundle from Express and projects it into
+    the compact text DSL every downstream LLM prompt is built from, then appends the top-k chunks
+    retrieved from the superadmin knowledge base (app/rag/) for this question. retrieve_context
+    returns [] rather than raising when RAG is disabled or unreachable, so this node never breaks a
+    run over the knowledge base."""
     bundle = await fetch_grounding(state["diagram_id"], state["bearer_token"], include=["awsInsights"])
-    return {"grounding": bundle.raw, "dsl": build_dsl(bundle)}
+    knowledge = await retrieve_context(state["question"])
+    dsl = build_dsl(bundle)
+    knowledge_block = format_knowledge_block(knowledge)
+    if knowledge_block:
+        dsl = f"{dsl}\n\n{knowledge_block}"
+    return {"grounding": bundle.raw, "dsl": dsl, "knowledge": knowledge}
 
 
 async def supervisor_node(state: RunState) -> dict:

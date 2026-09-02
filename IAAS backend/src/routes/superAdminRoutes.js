@@ -22,8 +22,10 @@ import {
   updateAnyUserRole,
   updateSuperAdminRoleSchema,
 } from '../controllers/superAdminController.js';
+import { deleteKnowledgeDocument, listKnowledgeDocuments, uploadKnowledgeDocument } from '../controllers/ragController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authorize } from '../middleware/authorize.js';
+import { knowledgeDocumentUpload } from '../middleware/knowledgeUpload.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 
 export const superAdminRouter = Router();
@@ -44,3 +46,9 @@ superAdminRouter.patch('/changelog/:id', authorize(roles.SUPER_ADMIN), validateR
 superAdminRouter.get('/backlog', authorize(roles.SUPER_ADMIN), listBacklog);
 superAdminRouter.post('/backlog', authorize(roles.SUPER_ADMIN), validateRequest(createBacklogSchema), createBacklog);
 superAdminRouter.patch('/backlog/:id', authorize(roles.SUPER_ADMIN), validateRequest(updateBacklogSchema), updateBacklog);
+
+// Knowledge Base — documents the AI agent retrieves from on every run. Vectors live in the Python
+// agent service's Postgres/pgvector; these routes only broker the upload/list/delete.
+superAdminRouter.get('/knowledge/documents', authorize(roles.SUPER_ADMIN), listKnowledgeDocuments);
+superAdminRouter.post('/knowledge/documents', authorize(roles.SUPER_ADMIN), knowledgeDocumentUpload('file'), uploadKnowledgeDocument);
+superAdminRouter.delete('/knowledge/documents/:id', authorize(roles.SUPER_ADMIN), deleteKnowledgeDocument);

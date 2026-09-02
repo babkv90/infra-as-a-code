@@ -65,6 +65,7 @@ class RunState(TypedDict, total=False):
     bearer_token: str
     grounding: dict  # serialized GroundingBundle-ish dict, see gateway.py
     dsl: str
+    knowledge: list[dict]  # top-k knowledge-base chunks retrieved for this question (app/rag/); [] when RAG is off
     route: list[AgentName]
     route_reason: str
     results: Annotated[list[SpecialistResult], add]

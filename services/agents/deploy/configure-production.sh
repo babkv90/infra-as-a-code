@@ -16,6 +16,7 @@
 # Secrets come from the environment, never flags, so they stay out of shell history:
 #   export OPENAI_API_KEY=sk-...
 #   export AGENT_TOOL_SECRET=<same value as the production backend's AGENT_TOOL_SECRET>
+#   export DATABASE_URL=postgresql://user:pass@host:5432/db   # optional; enables the knowledge base
 #
 #   services/agents/deploy/configure-production.sh \
 #     --function infraflow-agents-prod \
@@ -24,6 +25,11 @@
 #     --dlq-arn arn:aws:sqs:us-east-1:123456789012:infraflow-agents-dlq \
 #     --express-url https://api.example.com/api/v1 \
 #     [--model gpt-4o-mini]
+#
+# DATABASE_URL points at a Postgres 14+ with the `vector` extension (RDS db.t4g.micro is enough).
+# Run once against it first:  CREATE EXTENSION IF NOT EXISTS vector;  (the service also attempts
+# this on first use, but only if its role may create extensions). If the Lambda reaches RDS over
+# the public internet, keep the RDS security group tight and the connection string on sslmode=require.
 set -euo pipefail
 
 FUNCTION="" ; REGION="" ; ROLE_NAME="" ; DLQ_ARN="" ; EXPRESS_URL="" ; MODEL="gpt-4o-mini"
@@ -56,13 +62,30 @@ AWS=(aws --region "${REGION}")
 LOG_GROUP="/aws/lambda/${FUNCTION}"
 
 echo "==> 1/5  Environment variables + timeout/memory on ${FUNCTION}"
+# Built as JSON (not the Variables={k=v,...} shorthand) so a secret containing , or = can't corrupt it.
+ENV_JSON="$(mktemp)"
+python - "$OPENAI_API_KEY" "$MODEL" "$AGENT_TOOL_SECRET" "$EXPRESS_URL" "${DATABASE_URL:-}" > "$ENV_JSON" <<'PY'
+import json, sys
+key, model, secret, express, database_url = sys.argv[1:6]
+vars = {
+    "OPENAI_API_KEY": key,
+    "OPENAI_AGENT_MODEL": model,
+    "AGENT_TOOL_SECRET": secret,
+    "EXPRESS_INTERNAL_URL": express,
+}
+if database_url:
+    vars["DATABASE_URL"] = database_url
+print(json.dumps({"Variables": vars}))
+PY
 "${AWS[@]}" lambda update-function-configuration \
   --function-name "${FUNCTION}" \
-  --timeout 120 \
+  --timeout 180 \
   --memory-size 1024 \
-  --environment "Variables={OPENAI_API_KEY=${OPENAI_API_KEY},OPENAI_AGENT_MODEL=${MODEL},AGENT_TOOL_SECRET=${AGENT_TOOL_SECRET},EXPRESS_INTERNAL_URL=${EXPRESS_URL}}" \
+  --environment "file://${ENV_JSON}" \
   >/dev/null
+rm -f "$ENV_JSON"
 "${AWS[@]}" lambda wait function-updated --function-name "${FUNCTION}"
+[ -n "${DATABASE_URL:-}" ] && echo "    knowledge base enabled (DATABASE_URL set)" || echo "    knowledge base disabled (no DATABASE_URL)"
 
 echo "==> 2/5  Async invoke config (1 retry, 300s max age, on-failure -> DLQ)"
 "${AWS[@]}" lambda put-function-event-invoke-config \

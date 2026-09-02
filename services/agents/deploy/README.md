@@ -12,6 +12,31 @@ trade-off analysis.
 
 ---
 
+## Knowledge base (RAG) — optional but needed for the superadmin Knowledge Base UI
+
+The agent retrieves from a **Postgres + pgvector** corpus that a super admin uploads to. This is a
+**separate cost** — Atlas Vector Search would have been ~$0, pgvector needs a real database:
+
+| Option | ~Monthly |
+|---|---|
+| RDS Postgres `db.t4g.micro`, publicly accessible, SG-locked, `sslmode=require` | ~$13 |
+| Aurora Serverless v2 (min 0.5 ACU) | ~$43 |
+| + Lambda in a VPC to reach RDS privately → NAT gateway for OpenAI egress | +~$32 |
+
+Cheapest sane path: **`db.t4g.micro`, public, tight security group, SSL**. Then:
+
+```
+# once, against the new database:
+psql "$DATABASE_URL" -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+```
+
+The service creates its own tables + HNSW index on first use. Set `DATABASE_URL` in step 2 (below);
+leave it empty and the knowledge base is simply disabled — runs and the rest of the deploy are
+unaffected. Lambda timeout is raised to 180s by `configure-production.sh` to cover embedding a
+large PDF on ingest.
+
+---
+
 ## 0. Build the zip
 
 ```
@@ -83,6 +108,7 @@ role's runtime permissions (Logs + `sqs:SendMessage`). All idempotent.
 ```
 export OPENAI_API_KEY=sk-...
 export AGENT_TOOL_SECRET=<the SAME value the production backend uses for AGENT_TOOL_SECRET>
+export DATABASE_URL='postgresql://user:pass@host:5432/db?sslmode=require'   # omit to disable RAG
 
 services/agents/deploy/configure-production.sh \
   --function     infraflow-agents-prod \
@@ -92,6 +118,10 @@ services/agents/deploy/configure-production.sh \
   --express-url  https://<your-backend-api-gateway>/api/v1 \
   --model        gpt-4o-mini
 ```
+
+If you set `DATABASE_URL`, also add `secretsmanager`/RDS network access as needed and, if the RDS
+isn't publicly reachable, `--vpc-config` on the function (subnets + a security group that can reach
+5432) plus a NAT path for OpenAI — see the RAG cost table above.
 
 The script ends with a smoke invoke that should print
 `{"ok": false, "error": "invalid_agent_token"}` — that's success (it rejected a fake token, meaning

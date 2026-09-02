@@ -1,4 +1,5 @@
 fastapi==0.115.6
+python-multipart==0.0.20
 uvicorn[standard]==0.34.0
 langgraph==0.2.62
 pydantic==2.10.4
@@ -7,6 +8,12 @@ httpx==0.28.1
 openai==1.59.6
 python-jose[cryptography]==3.3.0
 python-dotenv==1.0.1
+
+# RAG: the superadmin knowledge base lives in Postgres + pgvector, and this service owns
+# ingestion/embedding/retrieval for it (see app/rag/). asyncpg is a Postgres driver, not a cloud
+# or Mongo SDK, so it doesn't cross the line test_no_cloud_sdk.py enforces.
+asyncpg==0.30.0
+pypdf==5.1.0
 
 # Deliberately not included here: any AWS SDK or Mongo driver package. This service holds the
 # reasoning, never the keys — see infraflow-multi-agent-plan.pdf §0 and tests/test_no_cloud_sdk.py.

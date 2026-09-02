@@ -14,10 +14,12 @@
 #      document (see IAAS backend/src/controllers/agentController.js).
 from fastapi import FastAPI
 
+from app.api.routes_rag import router as rag_router
 from app.api.routes_runs import router as runs_router
 
 app = FastAPI(title="infraflow-agents", version="0.1.0")
 app.include_router(runs_router)
+app.include_router(rag_router)
 
 
 @app.get("/health")

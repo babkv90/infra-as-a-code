@@ -1,4 +1,4 @@
-import { apiRequest as sharedApiRequest } from '../utils/apiClient';
+import { apiFormRequest, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
 const superAdminRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Super admin request failed');
 
@@ -205,4 +205,32 @@ export async function updateBacklogItem(id: string, input: Partial<CreateBacklog
     method: 'PATCH',
     body: JSON.stringify(input),
   });
+}
+
+// ---- Knowledge Base (AI agent retrieval corpus) ----
+
+export type KnowledgeDocument = {
+  id: string;
+  filename: string;
+  byteSize: number;
+  contentType: string;
+  chunkCount: number;
+  status: 'processing' | 'ready' | 'failed';
+  error?: string | null;
+  uploadedBy?: string;
+  createdAt: string;
+};
+
+export async function listKnowledgeDocuments() {
+  return superAdminRequest<KnowledgeDocument[]>('/superadmin/knowledge/documents');
+}
+
+export async function uploadKnowledgeDocument(file: File) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return apiFormRequest<KnowledgeDocument>('/superadmin/knowledge/documents', form, 'Knowledge document upload failed');
+}
+
+export async function deleteKnowledgeDocument(id: string) {
+  return superAdminRequest<{ deleted: boolean }>(`/superadmin/knowledge/documents/${id}`, { method: 'DELETE' });
 }
