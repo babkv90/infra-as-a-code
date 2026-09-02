@@ -30,6 +30,12 @@ copy .env.example .env
 .venv\Scripts\pytest
 ```
 
+## Deploying to production
+
+Runs as an async-invoked zip Lambda — build script, visual-builder node recipe, and post-deploy
+steps in [`deploy/README.md`](deploy/README.md). The Express side switches over with
+`AGENT_INVOKE_MODE=lambda` (see `IAAS backend/.env.example`).
+
 ## Regenerating the AWS service schema
 
 `app/tools/schemas/aws_services.json` is generated from the frontend's `src/data/awsServices.ts`

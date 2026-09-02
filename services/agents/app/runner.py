@@ -19,10 +19,24 @@ def execute_run(run_id: str, bearer_token: str, diagram_id: str, question: str, 
     """Fire-and-forget: schedules the run and returns immediately. Keeps a strong reference to the
     task in a module-level set (discarded on completion) so it can't be garbage-collected mid-run —
     a well-known asyncio footgun for tasks nothing else awaits.
+
+    This is the uvicorn/long-running-container path (app/main.py -> routes_runs.start_run). The
+    Lambda path uses execute_run_sync() instead — see its docstring for why.
     """
     task = asyncio.create_task(_run(run_id, bearer_token, diagram_id, question, history))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+async def execute_run_sync(run_id: str, bearer_token: str, diagram_id: str, question: str, history: list[dict]) -> None:
+    """Await the whole run to completion. For the Lambda entrypoint (app/lambda_handler.py): Lambda
+    freezes the execution environment the instant the handler returns, so a fire-and-forget
+    create_task like execute_run() uses would simply never run. _run() already owns the wall-clock
+    budget (MAX_WALL_SECONDS) and always posts a terminal status back to Express, so this only has
+    to wait for it — any exception here means _run itself couldn't even report, and is left to
+    propagate to Lambda's async-invoke retry + dead-letter queue.
+    """
+    await _run(run_id, bearer_token, diagram_id, question, history)
 
 
 async def _run(run_id: str, bearer_token: str, diagram_id: str, question: str, history: list[dict]) -> None:

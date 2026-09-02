@@ -107,6 +107,17 @@ export const env = {
   // The Python/FastAPI multi-agent service (services/agents). Distinct port from RAG_API_URL above
   // — that service is unrelated and unused by the agent flow as of M0.
   AGENT_API_URL: readString('AGENT_API_URL', 'http://127.0.0.1:8001'),
+  // How startAgentRun() (utils/agentBridge.js) reaches that service.
+  //   'http'   (default) — POST /runs/start on AGENT_API_URL. Local dev, or the service running as
+  //                         a long-lived container.
+  //   'lambda'           — invoke AGENT_LAMBDA_FUNCTION asynchronously (InvocationType=Event). The
+  //                         production deployment: the service is a zip Lambda that runs the whole
+  //                         graph inside one invocation (services/agents/app/lambda_handler.py).
+  AGENT_INVOKE_MODE: readString('AGENT_INVOKE_MODE', 'http'),
+  // Only used when AGENT_INVOKE_MODE=lambda: the agent Lambda's name or ARN, and the region it
+  // lives in (falls back to the platform's own AWS_REGION, then us-east-1).
+  AGENT_LAMBDA_FUNCTION: readString('AGENT_LAMBDA_FUNCTION'),
+  AGENT_LAMBDA_REGION: readString('AGENT_LAMBDA_REGION') || readString('AWS_REGION', 'us-east-1'),
   // Signs the short-lived machine JWT Express mints per agent run (agentIdentity.js) and that the
   // Python service verifies before trusting a call, and that requireAgentScope.js verifies on every
   // /internal/agent-tools/* request. Deliberately its own secret, not shared with JWT_ACCESS_SECRET
@@ -203,6 +214,10 @@ if (env.GITHUB_TOKEN_ENCRYPTION_KEY === 'dev-github-token-encryption-key-change-
 
 if (env.STORAGE_MODE === 's3' && !env.STORAGE_S3_BUCKET) {
   throw new Error('STORAGE_S3_BUCKET is required when STORAGE_MODE=s3.');
+}
+
+if (env.AGENT_INVOKE_MODE === 'lambda' && !env.AGENT_LAMBDA_FUNCTION) {
+  throw new Error('AGENT_LAMBDA_FUNCTION (the agent Lambda name or ARN) is required when AGENT_INVOKE_MODE=lambda.');
 }
 
 if (env.DEPLOYMENT_EXECUTOR === 'github-actions') {

@@ -1,8 +1,26 @@
+import asyncio
 import json
+import logging
 
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AsyncOpenAI,
+    InternalServerError,
+    RateLimitError,
+)
 
 from app.config import settings
+
+logger = logging.getLogger("agents.llm")
+
+# Transient OpenAI failures — a 429, a 5xx, a dropped connection, a timeout — are the single most
+# common cause of a run failing in practice, and they usually clear within a second or two. Retry
+# a few times with exponential backoff before giving up; anything else (a 400, an auth error, a
+# bad request) is not retryable and propagates immediately.
+_RETRYABLE_OPENAI_ERRORS = (RateLimitError, APITimeoutError, APIConnectionError, InternalServerError)
+_LLM_MAX_ATTEMPTS = 3
+_LLM_BACKOFF_BASE_SECONDS = 0.75
 
 # Shared JSON output contract every specialist's system prompt ends with — one call produces both
 # the chat-readable answer and the structured, evidence-carrying findings the evidence gate checks.
@@ -54,13 +72,29 @@ async def call_llm(system_prompt: str, user_content: str, history: list[dict] | 
             messages.append({"role": turn["role"], "content": turn["content"]})
     messages.append({"role": "user", "content": user_content})
 
-    completion = await _get_client().chat.completions.create(
-        model=model or settings.openai_agent_model,
-        messages=messages,
-        temperature=0.2,
-        response_format={"type": "json_object"} if json_mode else {"type": "text"},
-    )
-    return completion.choices[0].message.content or ""
+    request_kwargs = {
+        "model": model or settings.openai_agent_model,
+        "messages": messages,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"} if json_mode else {"type": "text"},
+    }
+
+    last_error: Exception | None = None
+    for attempt in range(_LLM_MAX_ATTEMPTS):
+        try:
+            completion = await _get_client().chat.completions.create(**request_kwargs)
+            return completion.choices[0].message.content or ""
+        except _RETRYABLE_OPENAI_ERRORS as exc:
+            last_error = exc
+            if attempt < _LLM_MAX_ATTEMPTS - 1:
+                delay = _LLM_BACKOFF_BASE_SECONDS * (2**attempt)
+                logger.warning(
+                    "OpenAI call failed (%s), retrying in %.1fs [attempt %d/%d]",
+                    type(exc).__name__, delay, attempt + 1, _LLM_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(delay)
+
+    raise last_error  # type: ignore[misc]  # unreachable with last_error None — the loop either returns or sets it
 
 
 async def call_llm_json(system_prompt: str, user_content: str) -> dict:
