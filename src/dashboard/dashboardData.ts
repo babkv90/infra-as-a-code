@@ -271,6 +271,13 @@ export const commonDeploymentTemplates = [
     infrastructure: 'ECR repository, App Runner service (its ECR access role is created automatically — no separate IAM node needed)',
     deploymentPath: 'Build and push the agent service image to ECR; App Runner picks it up from there. Bind OPENAI_API_KEY and AGENT_TOOL_SECRET as environment bindings on the App Runner node, then point the backend\'s AGENT_API_URL at the deployed service URL.',
   },
+  {
+    id: 'infraflow-agent-lambda',
+    name: 'AI agent service on Lambda (zip)',
+    compatibility: "This app's own Python/FastAPI multi-agent service (services/agents), packaged as a zip Lambda and invoked asynchronously by the backend — one invocation runs the whole graph. Sized for portfolio traffic: Lambda free tier, scales to zero.",
+    infrastructure: 'Lambda function (python3.12 zip), IAM execution role, SQS dead-letter queue',
+    deploymentPath: "Build the zip with services/agents/deploy/build.sh, load this template, upload agent-lambda.zip into the Lambda node's Deployment zip field, then Deploy. After deploy, run services/agents/deploy/configure-production.sh to set the env vars (OPENAI_API_KEY, AGENT_TOOL_SECRET, EXPRESS_INTERNAL_URL) and the on-failure DLQ wiring the Lambda node can't express, then set AGENT_INVOKE_MODE=lambda + AGENT_LAMBDA_FUNCTION on the backend. Full steps: services/agents/deploy/README.md.",
+  },
 ];
 
 export type CommonInfraTemplate = (typeof commonDeploymentTemplates)[number] & {
@@ -840,6 +847,45 @@ export const commonInfraTemplates: CommonInfraTemplate[] = commonDeploymentTempl
         },
       ],
       [{ source: 'tpl-agent-ecr', target: 'tpl-agent-apprunner', label: 'provides image', protocol: 'ECR' }],
+    ),
+    'infraflow-agent-lambda': templateSnapshot(
+      [
+        {
+          id: 'tpl-agentfn-iam',
+          serviceId: 'iam',
+          label: 'Agent execution role',
+          x: 120,
+          y: 300,
+          config: { name: 'infraflow-agents-exec' },
+        },
+        {
+          id: 'tpl-agentfn-lambda',
+          serviceId: 'lambda',
+          label: 'Agent service (graph runner)',
+          x: 440,
+          y: 160,
+          config: {
+            function_name: 'infraflow-agents-prod',
+            runtime: 'python3.12',
+            handler: 'app.lambda_handler.handler',
+            memory_size: 1024,
+            timeout: 120,
+            filename: 'agent-lambda.zip',
+          },
+        },
+        {
+          id: 'tpl-agentfn-dlq',
+          serviceId: 'sqs',
+          label: 'Failed-run dead-letter queue',
+          x: 780,
+          y: 160,
+          config: { name: 'infraflow-agents-dlq', fifo_queue: 'false', message_retention_seconds: 1209600, visibility_timeout_seconds: 60 },
+        },
+      ],
+      [
+        { source: 'tpl-agentfn-iam', target: 'tpl-agentfn-lambda', label: 'execution role', connectionType: 'security', protocol: 'IAM' },
+        { source: 'tpl-agentfn-lambda', target: 'tpl-agentfn-dlq', label: 'on-failure dead-letter', connectionType: 'event', protocol: 'SQS' },
+      ],
     ),
   };
 
