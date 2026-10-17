@@ -8,7 +8,8 @@
     "dev": "nodemon --exec \"node --import tsx/esm src/server.js\"",
     "start": "node --import tsx/esm src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/lambda.js && node --check lambda.js"
+    "check": "node --check src/server.js && node --check src/lambda.js && node --check lambda.js",
+    "bundle:lambda": "node scripts/bundle-lambda.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-apigatewayv2": "^3.1063.0",
@@ -50,6 +51,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "nodemon": "^3.1.9"
   }
 }

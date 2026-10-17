@@ -13,3 +13,5 @@ dist
 bin/
 .terraform-runs/
 uploads/
+.lambda-build/
+lambda.zip

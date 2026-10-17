@@ -106,6 +106,14 @@ jobs:
           VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
         run: npm run build --if-present
 
+      # The backend imports the frontend's own TypeScript (src/utils/*.ts), which plain Node can't
+      # load and which isn't inside this directory. esbuild compiles everything into one file in
+      # .lambda-build/ (see IAAS backend/scripts/bundle-lambda.mjs) — runs before the dev-dependency
+      # prune because esbuild is a devDependency.
+      - name: Bundle Lambda package
+        working-directory: ${{ env.LAMBDA_APP_DIR }}
+        run: npm run bundle:lambda
+
       - name: Verify AWS deploy role secret
         run: |
           if [ -z "${{ secrets.AWS_DEPLOY_ROLE_ARN }}" ]; then
@@ -218,19 +226,14 @@ jobs:
       - name: Package Lambda artifact
         working-directory: ${{ env.LAMBDA_APP_DIR }}
         run: |
-          rm -rf shared
-          if [ -d "../shared" ]; then
-            cp -R ../shared shared
-          elif [ -d "../../shared" ]; then
-            cp -R ../../shared shared
-          elif [ -d "$GITHUB_WORKSPACE/shared" ]; then
-            cp -R "$GITHUB_WORKSPACE/shared" shared
-          else
-            echo "::error::Missing shared/resourceRegistry.json. Lambda packaging requires the repository shared/ directory."
-            exit 1
-          fi
-          test -f shared/resourceRegistry.json
-          zip -r lambda.zip . -x ".git/*" ".github/*" ".env" ".env.*" "coverage/*" "node_modules/.cache/*" "lambda.zip"
+          # Zip the bundle, not this directory: its node_modules alone exceed Lambda's 70 MB
+          # direct-upload limit. bundle-lambda.mjs already copied shared/ and the reference PDFs.
+          test -f .lambda-build/lambda.js
+          test -f .lambda-build/src/bundle/lambda.mjs
+          test -f .lambda-build/shared/resourceRegistry.json
+          rm -f lambda.zip
+          (cd .lambda-build && zip -qr ../lambda.zip .)
+          ls -lh lambda.zip
 
       - name: Deploy Lambda function
         run: aws lambda update-function-code --function-name ${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"${{ env.LAMBDA_APP_DIR }}/lambda.zip"
