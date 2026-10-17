@@ -36,7 +36,19 @@ export type AgentConversation = {
 // One entry per graph-node transition the run went through — see services/agents/app/runner.py,
 // which is the only thing that ever produces these.
 export type AgentStepEvent = {
-  type: 'grounding.ready' | 'route.decided' | 'agent.finished' | 'changeplan.ready';
+  type:
+    | 'grounding.ready'
+    | 'route.decided'
+    | 'agent.finished'
+    | 'changeplan.ready'
+    // plan_fix runs — see IAAS backend/src/services/agentPlanFix.js and services/agents/app/planfix
+    | 'fix.started'
+    | 'fix.note'
+    | 'fix.changes'
+    | 'plan.started'
+    | 'plan.finished'
+    | 'fix.finished'
+    | 'fix.failed';
   at?: string;
   route?: AgentName[];
   reason?: string;
@@ -44,6 +56,58 @@ export type AgentStepEvent = {
   summary?: string;
   findingsCount?: number;
   itemCount?: number;
+  text?: string;
+  applied?: number;
+  rejected?: number;
+  revision?: number;
+  index?: number;
+  status?: PlanRunStatus;
+  errorCount?: number;
+  firstError?: string | null;
+  changeSummary?: PlanChangeSummary | null;
+  outcome?: PlanFixOutcome;
+};
+
+export type PlanRunStatus = 'running' | 'passed' | 'failed' | 'error';
+export type PlanFixOutcome = 'passed' | 'gave_up';
+export type PlanChangeSummary = { add: number; change: number; remove: number };
+
+export type PlanDiagnostic = {
+  summary: string;
+  detail?: string;
+  address?: string;
+  line?: number;
+  nodeId?: string;
+};
+
+export type PlanRun = {
+  index: number;
+  revision: number;
+  status: PlanRunStatus;
+  executor: 'local' | 'github-actions';
+  diagnostics: PlanDiagnostic[];
+  errorCount: number;
+  changeSummary: PlanChangeSummary | null;
+  error: string | null;
+  githubRunUrl: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+export type AppliedPlanFixChange = Omit<ChangeItem, 'evidence'> & { revision: number; createdId?: string };
+
+// What the browser sees of a plan_fix run — the draft itself and the agent's transcript stay
+// server-side; only a user's applyPlanFix call ever writes the draft to the real diagram.
+export type PlanFixView = {
+  diagramId: string;
+  diagramName: string;
+  revision: number;
+  outcome: PlanFixOutcome | null;
+  summary: string;
+  appliedChanges: AppliedPlanFixChange[];
+  planRuns: PlanRun[];
+  limits: { maxPlanRuns: number; maxChangeItems: number; maxAgentTurns: number };
+  appliedToDiagramAt: string | null;
 };
 
 export type AgentFinding = {
@@ -73,7 +137,9 @@ export type ChangePlan = {
 };
 
 export type AgentRunStatus = {
+  kind: 'chat' | 'plan_fix';
   status: 'running' | 'completed' | 'failed';
+  fix: PlanFixView | null;
   route: AgentName[];
   steps: AgentStepEvent[];
   findings: AgentFinding[];
@@ -108,4 +174,20 @@ export async function sendAgentMessage(conversationId: string, message: string) 
 /** GET /agent/runs/:id/status — polled by AgentPage.tsx (see RUN_POLL_MS) while a run is active. */
 export async function getAgentRunStatus(runId: string) {
   return agentRequest<AgentRunStatus>(`/agent/runs/${runId}/status`);
+}
+
+/**
+ * POST /agent/plan-fix — starts the "make it pass terraform plan" agent loop on a draft copy of the
+ * conversation's diagram (or the workspace's most recent one). Runs for minutes, not seconds.
+ */
+export async function startPlanFix(conversationId?: string) {
+  return agentRequest<AgentRunResult>('/agent/plan-fix', {
+    method: 'POST',
+    body: JSON.stringify(conversationId && conversationId !== 'pending' ? { conversationId } : {}),
+  });
+}
+
+/** POST /agent/runs/:id/apply-fix — writes a finished plan-fix run's draft to the real diagram. */
+export async function applyPlanFix(runId: string) {
+  return agentRequest<{ diagramId: string; fix: PlanFixView }>(`/agent/runs/${runId}/apply-fix`, { method: 'POST' });
 }

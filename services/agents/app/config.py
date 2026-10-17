@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""  # unset/placeholder means has_real_api_key() in agents/base.py returns False
     openai_agent_model: str = "gpt-4o-mini"  # model every specialist and the router call by default
+    # Model for the plan-fix agent loop (app/planfix). Multi-step tool use benefits from a stronger
+    # model than the one-shot specialists; empty falls back to openai_agent_model.
+    openai_fix_model: str = ""
     agent_tool_secret: str = "dev-agent-tool-secret-change-me"  # must match Express's AGENT_TOOL_SECRET — verifies the machine JWT in app/security.py
     express_internal_url: str = "http://127.0.0.1:4001/api/v1"  # base URL app/gateway.py calls back into (grounding, run-step, run-complete)
 

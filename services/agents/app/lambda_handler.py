@@ -24,7 +24,7 @@ is exactly what should hit Lambda's async retry and, past that, the dead-letter 
 import asyncio
 import logging
 
-from app.runner import execute_run_sync
+from app.runner import execute_plan_fix_sync, execute_run_sync
 from app.security import AgentTokenError, decode_agent_token
 
 logging.getLogger().setLevel(logging.INFO)
@@ -55,6 +55,15 @@ def handler(event, context):  # noqa: ARG001 — context is part of the Lambda c
     if not diagram_id:
         logger.error("Rejected agent run %s: no diagramId in payload", identity.run_id)
         return {"ok": False, "error": "missing_diagram"}
+
+    if payload.get("mode") == "plan_fix":
+        if "diagram:draft:write" not in identity.scopes:
+            logger.error("Rejected plan-fix run %s: token missing diagram:draft:write", identity.run_id)
+            return {"ok": False, "error": "missing_scope"}
+        # Invoked once to start the run and again each time Express resumes it after a plan.
+        logger.info("Plan-fix invocation for run %s (workspace=%s)", identity.run_id, identity.workspace_id)
+        asyncio.run(execute_plan_fix_sync(identity.run_id, token))
+        return {"ok": True, "runId": identity.run_id}
 
     logger.info("Starting agent run %s (workspace=%s)", identity.run_id, identity.workspace_id)
     asyncio.run(execute_run_sync(identity.run_id, token, diagram_id, message, history))

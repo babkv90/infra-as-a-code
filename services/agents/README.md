@@ -30,6 +30,20 @@ copy .env.example .env
 .venv\Scripts\pytest
 ```
 
+## Two kinds of run
+
+- **chat** (`app/graph.py`): a fixed LangGraph workflow — route, fan out to specialists, synthesize,
+  propose a ChangePlan. One invocation per user message.
+- **plan_fix** (`app/planfix/`): "make it pass terraform plan" — an open-ended tool-calling loop
+  where the model decides every step: edit a draft copy of the diagram, read generated HCL, run a
+  real `terraform plan`, repeat, finish. A run spans several invocations: when the agent asks for a
+  plan, its conversation is saved in Express and the invocation ends; Express runs the plan
+  (locally, or via `.github/workflows/terraform-plan.yml` on the Lambda executor) and starts a new
+  invocation with the result. Every guardrail — no deleting resources, no invented secrets, the
+  plan/edit budgets, "passed" only after a passing plan on the current draft — is enforced in
+  `IAAS backend/src/services/agentPlanFix.js`, not in the prompt. Nothing reaches the real diagram
+  until a user clicks Apply.
+
 ## Deploying to production
 
 Runs as an async-invoked zip Lambda — build script, visual-builder node recipe, and post-deploy

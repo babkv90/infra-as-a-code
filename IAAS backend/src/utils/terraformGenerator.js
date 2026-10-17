@@ -1254,6 +1254,13 @@ function resourceName(node, suffix) {
   return sanitizeName(node.data?.label ?? node.data?.serviceName ?? node.data?.serviceId ?? suffix).slice(0, 48);
 }
 
+// The Terraform resource name generateTerraform gives a node's primary block (and the prefix of
+// its helper blocks) — exported so agentPlanFix.js can map a `terraform plan` diagnostic's
+// address back to the diagram node that produced it.
+export function terraformResourceNameForNode(node, suffix = 'diagram') {
+  return resourceName(node, sanitizeName(suffix).slice(0, 16) || 'diagram');
+}
+
 function uniqueAwsName(label, suffix) {
   return sanitizeName(`infraflow-${label}-${suffix}`).replaceAll('_', '-').slice(0, 64);
 }

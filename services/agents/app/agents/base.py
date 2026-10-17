@@ -72,18 +72,39 @@ async def call_llm(system_prompt: str, user_content: str, history: list[dict] | 
             messages.append({"role": turn["role"], "content": turn["content"]})
     messages.append({"role": "user", "content": user_content})
 
-    request_kwargs = {
-        "model": model or settings.openai_agent_model,
-        "messages": messages,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"} if json_mode else {"type": "text"},
-    }
+    completion = await _create_completion(
+        model=model or settings.openai_agent_model,
+        messages=messages,
+        temperature=0.2,
+        response_format={"type": "json_object"} if json_mode else {"type": "text"},
+    )
+    return completion.choices[0].message.content or ""
 
+
+async def call_llm_with_tools(messages: list[dict], tools: list[dict], model: str | None = None):
+    """One tool-calling Chat Completions turn over a caller-owned message list — the primitive the
+    plan-fix agent loop (app/planfix/agent.py) is built on. Returns the assistant message object;
+    the caller decides what to do with its tool_calls. One tool call per turn
+    (parallel_tool_calls=False) keeps a paused run's transcript simple to resume."""
+    if not has_real_api_key():
+        raise RuntimeError("OPENAI_API_KEY is not configured (services/agents/.env)")
+
+    completion = await _create_completion(
+        model=model or settings.openai_agent_model,
+        messages=messages,
+        tools=tools,
+        tool_choice="auto",
+        parallel_tool_calls=False,
+        temperature=0.2,
+    )
+    return completion.choices[0].message
+
+
+async def _create_completion(**request_kwargs):
     last_error: Exception | None = None
     for attempt in range(_LLM_MAX_ATTEMPTS):
         try:
-            completion = await _get_client().chat.completions.create(**request_kwargs)
-            return completion.choices[0].message.content or ""
+            return await _get_client().chat.completions.create(**request_kwargs)
         except _RETRYABLE_OPENAI_ERRORS as exc:
             last_error = exc
             if attempt < _LLM_MAX_ATTEMPTS - 1:

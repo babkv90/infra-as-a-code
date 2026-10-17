@@ -11,6 +11,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { getCachedAwsInsightsForWorkspace } from '../utils/awsInsightsForAgent.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+import { finishPlanFix, planFixStateForAgent, recordAgentChanges, requestPlanRun } from '../services/agentPlanFix.js';
 
 // Imported directly from the frontend's own source of truth — never reimplemented here. See
 // infraflow-multi-agent-plan.pdf §1.5/§1.7: "same functions the browser calls, not reimplemented."
@@ -134,4 +135,68 @@ export const postRunComplete = asyncHandler(async (req, res) => {
   );
 
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Plan-fix agent tools ("make it pass terraform plan") — see services/agentPlanFix.js for what
+// each one enforces. All four act only on the calling run's own draft, never on a real Diagram.
+// ---------------------------------------------------------------------------------------------
+
+const fixRunParams = z.object({ runId: z.string().min(1) });
+
+export const fixStateValidation = validateRequest(z.object({ params: fixRunParams }));
+export const fixChangesValidation = validateRequest(
+  z.object({ params: fixRunParams, body: z.object({ items: z.array(z.record(z.any())).max(40) }) }),
+);
+export const fixPlanValidation = validateRequest(
+  z.object({
+    params: fixRunParams,
+    body: z.object({ messages: z.array(z.record(z.any())), toolCallId: z.string().min(1), turns: z.number().int().nonnegative() }),
+  }),
+);
+export const fixFinishValidation = validateRequest(
+  z.object({
+    params: fixRunParams,
+    body: z.object({
+      outcome: z.enum(['passed', 'gave_up']),
+      summary: z.string().max(4000),
+      messages: z.array(z.record(z.any())).optional(),
+      turns: z.number().int().nonnegative().optional(),
+    }),
+  }),
+);
+
+async function loadOwnFixRun(req) {
+  assertOwnRun(req);
+  const run = await AgentRun.findOne({ _id: req.params.runId, workspace: req.agent.workspaceId, kind: 'plan_fix' });
+  if (!run || !run.fix) throw new ApiError(404, 'Plan-fix run not found');
+  if (run.status !== 'running') throw new ApiError(409, `Plan-fix run is already ${run.status}`);
+  return run;
+}
+
+// POST /internal/agent-tools/runs/:runId/fix/state — the draft, its generated Terraform, static
+// issues, every plan result so far, budgets, and the agent's own paused conversation.
+export const getFixState = asyncHandler(async (req, res) => {
+  const run = await loadOwnFixRun(req);
+  res.json({ success: true, data: planFixStateForAgent(run) });
+});
+
+// POST /internal/agent-tools/runs/:runId/fix/changes — apply_changes tool.
+export const postFixChanges = asyncHandler(async (req, res) => {
+  const run = await loadOwnFixRun(req);
+  res.json({ success: true, data: await recordAgentChanges(run, req.validated.body.items) });
+});
+
+// POST /internal/agent-tools/runs/:runId/fix/plan — run_terraform_plan tool. On success the agent
+// must stop: its conversation is persisted here and it is resumed with the plan result later.
+export const postFixPlan = asyncHandler(async (req, res) => {
+  const run = await loadOwnFixRun(req);
+  res.json({ success: true, data: await requestPlanRun(run, req.validated.body) });
+});
+
+// POST /internal/agent-tools/runs/:runId/fix/finish — finish tool, gated: "passed" is rejected
+// unless the latest plan on the current draft revision actually passed.
+export const postFixFinish = asyncHandler(async (req, res) => {
+  const run = await loadOwnFixRun(req);
+  res.json({ success: true, data: await finishPlanFix(run, req.validated.body) });
 });

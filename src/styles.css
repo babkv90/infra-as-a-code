@@ -10496,6 +10496,80 @@ button.dash-kpi-card {
   font-size: 10px;
 }
 
+/* AgentPlanFixPanel — the "make it pass terraform plan" agent loop. Built from the timeline and
+   changeplan pieces above; only the open-ended bits (wrapping agent notes, apply action) are new. */
+.agent-planfix {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.agent-planfix__budget {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.agent-timeline__row-body--wrap strong,
+.agent-timeline__row-body--wrap span {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.agent-timeline__row-body--wrap span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.agent-planfix__glyph--failed {
+  color: #f87171;
+}
+
+.agent-planfix__link {
+  color: #93c5fd;
+  font-size: 11px;
+}
+
+.agent-planfix__section {
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-planfix__patch {
+  overflow-wrap: anywhere;
+  color: #7dd3fc;
+  font-size: 10px;
+}
+
+.agent-planfix__actions {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-planfix__apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #06b6d4, #2563eb);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-planfix__apply:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .dash-agent-actions button {
   display: flex;
   align-items: center;

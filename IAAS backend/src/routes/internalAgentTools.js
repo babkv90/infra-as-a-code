@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import {
+  fixChangesValidation,
+  fixFinishValidation,
+  fixPlanValidation,
+  fixStateValidation,
+  getFixState,
   getGrounding,
   groundingValidation,
+  postFixChanges,
+  postFixFinish,
+  postFixPlan,
   postRunComplete,
   postRunStep,
   runCompleteValidation,
@@ -19,3 +27,9 @@ export const internalAgentToolsRouter = Router();
 internalAgentToolsRouter.post('/grounding', requireAgentScope('diagram:read'), groundingValidation, getGrounding);
 internalAgentToolsRouter.post('/runs/:runId/steps', requireAgentScope(), runStepValidation, postRunStep);
 internalAgentToolsRouter.post('/runs/:runId/complete', requireAgentScope(), runCompleteValidation, postRunComplete);
+
+// Plan-fix agent tools — see services/agentPlanFix.js. Scoped to tokens minted for plan_fix runs.
+internalAgentToolsRouter.post('/runs/:runId/fix/state', requireAgentScope('diagram:read'), fixStateValidation, getFixState);
+internalAgentToolsRouter.post('/runs/:runId/fix/changes', requireAgentScope('diagram:draft:write'), fixChangesValidation, postFixChanges);
+internalAgentToolsRouter.post('/runs/:runId/fix/plan', requireAgentScope('terraform:plan'), fixPlanValidation, postFixPlan);
+internalAgentToolsRouter.post('/runs/:runId/fix/finish', requireAgentScope('diagram:draft:write'), fixFinishValidation, postFixFinish);

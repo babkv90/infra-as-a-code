@@ -11,15 +11,20 @@ import { makeEnvCredentials } from '../services/awsRoleCredentials.js';
 const AGENT_START_TIMEOUT_MS = 10_000;
 
 const RUN_SCOPES = ['diagram:read', 'terraform:generate', 'aws:read:billing'];
+// A plan_fix run can edit its own draft copy of the diagram and request real `terraform plan`
+// runs — nothing else. It never gets billing access, and it can never write the real Diagram
+// (only a user can, via agentController.js's applyPlanFix).
+const PLAN_FIX_SCOPES = ['diagram:read', 'diagram:draft:write', 'terraform:plan'];
 
-export async function startAgentRun({ runId, message, history = [], userId, workspaceId, diagramId }) {
+export async function startAgentRun({ runId, message, history = [], userId, workspaceId, diagramId, mode = 'chat' }) {
   const resolvedDiagramId = diagramId ?? (await mostRecentDiagramId(workspaceId));
   if (!resolvedDiagramId) {
     return { accepted: false, error: "You don't have a diagram yet — open or save one in the builder first." };
   }
 
-  const token = mintAgentToken({ userId, workspaceId, runId, scopes: RUN_SCOPES });
-  const payload = { message, history, diagramId: resolvedDiagramId };
+  const scopes = mode === 'plan_fix' ? PLAN_FIX_SCOPES : RUN_SCOPES;
+  const token = mintAgentToken({ userId, workspaceId, runId, scopes });
+  const payload = { message, history, diagramId: resolvedDiagramId, mode };
 
   return env.AGENT_INVOKE_MODE === 'lambda'
     ? startViaLambda(token, payload)

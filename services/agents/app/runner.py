@@ -4,12 +4,21 @@ the browser directly. See infraflow-multi-agent-plan.pdf's RunBudget (§1.4) for
 """
 
 import asyncio
+import logging
+
+import httpx
 
 from app.gateway import post_run_complete, post_run_step
 from app.graph import SPECIALIST_NODES, build_graph
+from app.planfix.agent import run_plan_fix_invocation
 from app.state import RunState
 
 MAX_WALL_SECONDS = 60
+# One plan-fix *invocation* (the whole run spans several, paused between plans) — under the
+# agent Lambda's 120s timeout, above app/planfix/agent.py's own 85s soft deadline.
+PLAN_FIX_INVOCATION_WALL_SECONDS = 105
+
+logger = logging.getLogger("agents.runner")
 
 _graph = build_graph()
 _background_tasks: set[asyncio.Task] = set()
@@ -102,3 +111,35 @@ async def _stream_and_report(run_id: str, bearer_token: str, initial_state: RunS
                 final_metadata["changePlan"] = plan.model_dump(by_alias=True) if plan else None
 
     await post_run_complete(run_id, bearer_token, final_content, final_metadata)
+
+
+# --- Plan-fix runs ("make it pass terraform plan") ----------------------------------------------
+# Same two entrypoints as the chat graph above: fire-and-forget for uvicorn, awaited for Lambda.
+# Called once to start the run and again every time Express resumes it after a plan finishes.
+
+def execute_plan_fix(run_id: str, bearer_token: str) -> None:
+    task = asyncio.create_task(_run_plan_fix(run_id, bearer_token))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def execute_plan_fix_sync(run_id: str, bearer_token: str) -> None:
+    await _run_plan_fix(run_id, bearer_token)
+
+
+async def _run_plan_fix(run_id: str, bearer_token: str) -> None:
+    try:
+        outcome = await asyncio.wait_for(run_plan_fix_invocation(run_id, bearer_token), timeout=PLAN_FIX_INVOCATION_WALL_SECONDS)
+        logger.info("Plan-fix run %s invocation ended: %s", run_id, outcome)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409:
+            return  # the run was already closed (finished, failed, or applied) — nothing to report
+        await _fail_plan_fix(run_id, bearer_token, f"The plan-fix agent lost contact with the backend: {exc}")
+    except asyncio.TimeoutError:
+        await _fail_plan_fix(run_id, bearer_token, "The plan-fix agent took too long on one step and was stopped. The draft changes so far were kept but not applied.")
+    except Exception as exc:  # noqa: BLE001 — always resolve the run, never leave it stuck 'running'
+        await _fail_plan_fix(run_id, bearer_token, f"The plan-fix agent failed: {exc}")
+
+
+async def _fail_plan_fix(run_id: str, bearer_token: str, message: str) -> None:
+    await post_run_complete(run_id, bearer_token, message, {"error": "plan_fix_failed"}, status="failed")

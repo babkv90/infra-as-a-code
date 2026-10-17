@@ -90,3 +90,35 @@ async def post_run_complete(run_id: str, bearer_token: str, content: str, metada
     # All retries exhausted — nothing left to do but log; there's no one left to tell that the run
     # is stuck, since this callback IS the mechanism for telling Express the run is done.
     print(f"[agents] post_run_complete failed after retries for run {run_id}: {last_error}")
+
+
+# --- Plan-fix agent tools ("make it pass terraform plan") -----------------------------------------
+# Thin wrappers over Express's /internal/agent-tools/runs/:runId/fix/* endpoints (see
+# IAAS backend/src/services/agentPlanFix.js for what each one enforces). Unlike post_run_step these
+# raise on failure: a lost tool call would leave the agent reasoning about a draft that doesn't exist.
+
+async def _post_fix(run_id: str, bearer_token: str, action: str, payload: dict) -> dict:
+    async with httpx.AsyncClient(timeout=GATEWAY_TIMEOUT_SECONDS) as client:
+        response = await client.post(
+            f"{_base_url()}/internal/agent-tools/runs/{run_id}/fix/{action}",
+            json=payload,
+            headers={"Authorization": f"Bearer {bearer_token}"},
+        )
+        response.raise_for_status()
+        return response.json().get("data", {})
+
+
+async def fix_get_state(run_id: str, bearer_token: str) -> dict:
+    return await _post_fix(run_id, bearer_token, "state", {})
+
+
+async def fix_apply_changes(run_id: str, bearer_token: str, items: list[dict]) -> dict:
+    return await _post_fix(run_id, bearer_token, "changes", {"items": items})
+
+
+async def fix_request_plan(run_id: str, bearer_token: str, messages: list[dict], tool_call_id: str, turns: int) -> dict:
+    return await _post_fix(run_id, bearer_token, "plan", {"messages": messages, "toolCallId": tool_call_id, "turns": turns})
+
+
+async def fix_finish(run_id: str, bearer_token: str, outcome: str, summary: str, messages: list[dict], turns: int) -> dict:
+    return await _post_fix(run_id, bearer_token, "finish", {"outcome": outcome, "summary": summary, "messages": messages, "turns": turns})

@@ -10,14 +10,17 @@ from app.gateway import GroundingBundle
 MAX_CONFIG_ENTRIES_PER_NODE = 6
 
 
-def build_dsl(bundle: GroundingBundle) -> str:
+def build_dsl(bundle: GroundingBundle, max_config_entries: int | None = MAX_CONFIG_ENTRIES_PER_NODE) -> str:
+    """max_config_entries=None renders every config key — the plan-fix agent needs the full config
+    to fix it, while the Q&A specialists share a context budget and get the trimmed view."""
     lines = [f"# diagram: {bundle.diagram_name or bundle.diagram_id} region={bundle.active_region} digest={bundle.digest[:12]}"]
 
     service_nodes = [n for n in bundle.nodes if n.get("type") != "groupBox" and n.get("data", {}).get("serviceId")]
     for node in service_nodes:
         data = node.get("data", {})
         config = data.get("config") or {}
-        config_str = " ".join(f"{k}={v}" for k, v in list(config.items())[:MAX_CONFIG_ENTRIES_PER_NODE] if v not in (None, ""))
+        config_items = list(config.items()) if max_config_entries is None else list(config.items())[:max_config_entries]
+        config_str = " ".join(f"{k}={v}" for k, v in config_items if v not in (None, ""))
         label = data.get("label") or data.get("serviceName") or node.get("id")
         lines.append(f'[{node.get("id")}] {data.get("serviceId")} "{label}" {config_str}'.rstrip())
 

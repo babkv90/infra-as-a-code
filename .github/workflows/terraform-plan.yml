@@ -1,0 +1,155 @@
+name: Terraform Plan (agent)
+
+# One `terraform plan` for the AI agent's "make it pass terraform plan" loop
+# (IAAS backend/src/services/agentPlanFix.js), used when the backend is the Lambda executor. The
+# backend pushes the draft's generated main.tf to agent-plans/<run_id>/<plan_index>/ and dispatches
+# this workflow with short-lived assumed-role credentials. Read-only: plan never creates, changes or
+# destroys anything, and runs against a throwaway local state. The final step always reports the
+# result back so the paused agent can resume — success or failure.
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_run_id:
+        description: Infraflow AgentRun id
+        required: true
+        type: string
+      plan_index:
+        description: Which plan attempt within the run (0-based)
+        required: true
+        type: string
+      working_directory:
+        description: Path within this repo holding the generated main.tf for this plan
+        required: true
+        type: string
+      commit_sha:
+        description: Exact commit that pushed working_directory's files — checked out by SHA so this can never race the push.
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      aws_access_key_id:
+        description: Temporary STS credentials assumed by Infraflow's backend for this run only
+        required: true
+        type: string
+      aws_secret_access_key:
+        required: true
+        type: string
+      aws_session_token:
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_VERSION: "1.9.8"
+
+jobs:
+  plan:
+    name: Terraform plan — ${{ inputs.agent_run_id }} #${{ inputs.plan_index }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      # Same ordering as terraform-deploy.yml: mask first, from the repo root (the working
+      # directory doesn't exist until checkout).
+      - name: Mask sensitive inputs
+        working-directory: .
+        run: |
+          echo "::add-mask::${{ inputs.aws_access_key_id }}"
+          echo "::add-mask::${{ inputs.aws_secret_access_key }}"
+          echo "::add-mask::${{ inputs.aws_session_token }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ inputs.aws_access_key_id }}
+          aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
+          aws-session-token: ${{ inputs.aws_session_token }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          # The wrapper rewrites stdout/exit codes; plan's -json stream must reach the file untouched.
+          terraform_wrapper: false
+
+      - name: Restore Terraform provider plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', inputs.working_directory)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
+      - name: Configure Terraform plugin cache directory
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo "plugin_cache_dir = \"$HOME/.terraform.d/plugin-cache\"" > ~/.terraformrc
+
+      - name: Terraform init
+        id: init
+        run: |
+          set +e
+          terraform init -input=false -no-color > init-output.txt 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform plan
+        id: plan
+        if: steps.init.outputs.exit_code == '0'
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -no-color -json > plan-output.jsonl
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      # Always runs — this callback is what resumes the paused agent. Without it the run would sit
+      # at "running" until the UI's own timeout.
+      - name: Report result to Infraflow
+        if: always()
+        # From the repo root, so the callback still goes out even if checkout itself failed.
+        working-directory: .
+        run: |
+          DIR="${{ inputs.working_directory }}"
+          INIT_EXIT="${{ steps.init.outputs.exit_code }}"
+          PLAN_EXIT="${{ steps.plan.outputs.exit_code }}"
+
+          if [ "$INIT_EXIT" != "0" ]; then
+            INIT_OUTPUT=$(tail -c 4000 "$DIR/init-output.txt" 2>/dev/null || echo "terraform init did not run")
+            PAYLOAD=$(jq -n \
+              --argjson planIndex "${{ inputs.plan_index }}" \
+              --arg githubRunId "${{ github.run_id }}" \
+              --arg initOutput "$INIT_OUTPUT" \
+              '{planIndex: $planIndex, githubRunId: $githubRunId, exitCode: 1, initFailed: true, initOutput: $initOutput}')
+          else
+            if [ -s "$DIR/plan-output.jsonl" ]; then
+              DIAGNOSTICS=$(jq -cs '[.[] | select(.type == "diagnostic") | .diagnostic] | .[0:50]' "$DIR/plan-output.jsonl" 2>/dev/null || echo '[]')
+              SUMMARY=$(jq -cs '[.[] | select(.type == "change_summary") | .changes] | last // null' "$DIR/plan-output.jsonl" 2>/dev/null || echo 'null')
+            else
+              DIAGNOSTICS='[]'
+              SUMMARY='null'
+            fi
+            PAYLOAD=$(jq -n \
+              --argjson planIndex "${{ inputs.plan_index }}" \
+              --arg githubRunId "${{ github.run_id }}" \
+              --argjson exitCode "${PLAN_EXIT:-1}" \
+              --argjson diagnostics "$DIAGNOSTICS" \
+              --argjson changeSummary "$SUMMARY" \
+              '{planIndex: $planIndex, githubRunId: $githubRunId, exitCode: $exitCode, diagnostics: $diagnostics, changeSummary: $changeSummary}')
+          fi
+
+          curl -sS --fail-with-body -X POST "${{ vars.INFRAFLOW_API_BASE_URL }}/agent/plan-fix/${{ inputs.agent_run_id }}/plan-callback" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.INFRAFLOW_CALLBACK_SECRET }}" \
+            -d "$PAYLOAD"

@@ -2,14 +2,15 @@
 // messages through agentApi.ts (which hits Express's /agent/* routes), then polls the run this
 // backend kicks off via AgentRunTimeline until it completes and the assistant reply lands in
 // `conversation.messages`. This component never talks to the Python multi-agent service directly.
-import { ArrowRight, FilePlus2, Sparkles } from 'lucide-react';
+import { ArrowRight, FilePlus2, Sparkles, Wrench } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { getStoredUser } from '../../auth/authClient';
 import { PageAlert } from '../../components/PageAlert';
 import { canUseAiAgent } from '../../utils/accessControl';
-import { createAgentConversation, getAgentRunStatus, sendAgentMessage, type AgentConversation } from '../agentApi';
+import { applyPlanFix, createAgentConversation, getAgentRunStatus, sendAgentMessage, startPlanFix, type AgentConversation } from '../agentApi';
 import { AgentChangePlanPanel } from '../components/AgentChangePlanPanel';
+import { AgentPlanFixPanel } from '../components/AgentPlanFixPanel';
 import { AgentRunTimeline } from '../components/AgentRunTimeline';
 import { EmptyState, Panel } from '../components/DashPrimitives';
 import { agentActions } from '../dashboardData';
@@ -22,6 +23,12 @@ const RUN_POLL_MS = 1500;
 // leave the UI polling forever, even if some failure mode Express/Python don't already guard
 // against (a lost callback, a crashed process) leaves an AgentRun stuck at 'running'.
 const MAX_POLL_MS = 90_000;
+// A plan-fix run pauses for each real terraform plan (1–3 minutes, up to 5 of them), so it gets a
+// far longer backstop and a gentler poll rate than a one-shot chat run.
+const PLAN_FIX_POLL_MS = 3000;
+const PLAN_FIX_MAX_POLL_MS = 30 * 60_000;
+
+type RunKind = 'chat' | 'plan_fix';
 
 export function AgentPage() {
   const user = getStoredUser();
@@ -30,6 +37,10 @@ export function AgentPage() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunKind, setActiveRunKind] = useState<RunKind>('chat');
+  // Outlives activeRunId (cleared once polling stops) so a finished plan-fix run can still be applied.
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
   const [runStatus, setRunStatus] = useState<Awaited<ReturnType<typeof getAgentRunStatus>> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -43,7 +54,7 @@ export function AgentPage() {
   useEffect(() => {
     if (!activeRunId) return;
     let isMounted = true;
-    const deadline = Date.now() + MAX_POLL_MS;
+    const deadline = Date.now() + (activeRunKind === 'plan_fix' ? PLAN_FIX_MAX_POLL_MS : MAX_POLL_MS);
 
     async function poll() {
       if (Date.now() > deadline) {
@@ -68,12 +79,12 @@ export function AgentPage() {
     }
 
     void poll();
-    const timer = window.setInterval(() => void poll(), RUN_POLL_MS);
+    const timer = window.setInterval(() => void poll(), activeRunKind === 'plan_fix' ? PLAN_FIX_POLL_MS : RUN_POLL_MS);
     return () => {
       isMounted = false;
       window.clearInterval(timer);
     };
-  }, [activeRunId]);
+  }, [activeRunId, activeRunKind]);
 
   async function submitMessage(message: string) {
     const cleanMessage = message.trim();
@@ -100,9 +111,44 @@ export function AgentPage() {
           ? await sendAgentMessage(conversation._id, cleanMessage)
           : await createAgentConversation(cleanMessage);
       setConversation(result.conversation);
-      if (result.runId) setActiveRunId(result.runId);
+      if (result.runId) startPolling(result.runId, 'chat');
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Unable to send message to the AI agent.');
+    }
+  }
+
+  function startPolling(runId: string, kind: RunKind) {
+    setActiveRunKind(kind);
+    setLastRunId(runId);
+    setActiveRunId(runId);
+  }
+
+  // Starts the open-ended plan-fix agent on the current conversation's diagram (or the most recent
+  // one). Its result lands in this same thread; nothing touches the diagram until handleApplyFix.
+  async function startPlanFixRun() {
+    if (activeRunId) return;
+    setError('');
+    setRunStatus(null);
+    try {
+      const result = await startPlanFix(conversation?._id);
+      setConversation(result.conversation);
+      if (result.runId) startPolling(result.runId, 'plan_fix');
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : 'Unable to start the plan fix.');
+    }
+  }
+
+  async function handleApplyFix() {
+    if (!lastRunId || isApplying) return;
+    setIsApplying(true);
+    setError('');
+    try {
+      await applyPlanFix(lastRunId);
+      setRunStatus(await getAgentRunStatus(lastRunId));
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : 'Unable to apply the changes to the diagram.');
+    } finally {
+      setIsApplying(false);
     }
   }
 
@@ -117,6 +163,7 @@ export function AgentPage() {
     setDraft('');
     setError('');
     setRunStatus(null);
+    setLastRunId(null);
   }
 
   const isBusy = activeRunId !== null;
@@ -135,6 +182,10 @@ export function AgentPage() {
                     {action}
                   </button>
                 ))}
+                <button disabled={isBusy} onClick={() => void startPlanFixRun()} type="button">
+                  <Wrench size={15} />
+                  Make it pass terraform plan
+                </button>
                 <button disabled={isBusy} onClick={() => void startNewChat()} type="button">
                   <FilePlus2 size={15} />
                   New chat
@@ -159,8 +210,14 @@ export function AgentPage() {
                 ) : (
                   <EmptyState>Ask the AI Cloud Agent a question about your architecture, cost, or security.</EmptyState>
                 )}
-                {runStatus && <AgentRunTimeline route={runStatus.route} status={runStatus.status} steps={runStatus.steps} />}
-                {runStatus?.status === 'completed' && <AgentChangePlanPanel plan={runStatus.changePlan} />}
+                {runStatus?.kind === 'plan_fix' ? (
+                  <AgentPlanFixPanel applying={isApplying} onApply={() => void handleApplyFix()} run={runStatus} />
+                ) : (
+                  <>
+                    {runStatus && <AgentRunTimeline route={runStatus.route} status={runStatus.status} steps={runStatus.steps} />}
+                    {runStatus?.status === 'completed' && <AgentChangePlanPanel plan={runStatus.changePlan} />}
+                  </>
+                )}
                 <div ref={chatEndRef} />
               </div>
               <form className="dash-chat-input" onSubmit={handleSubmit}>
