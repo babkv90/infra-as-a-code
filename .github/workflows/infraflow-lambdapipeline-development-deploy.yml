@@ -235,5 +235,8 @@ jobs:
           (cd .lambda-build && zip -qr ../lambda.zip .)
           ls -lh lambda.zip
 
+      - name: Show Lambda runtime settings
+        run: aws lambda get-function-configuration --function-name "${{ env.LAMBDA_FUNCTION }}" --query '{Handler:Handler,Runtime:Runtime,Architectures:Architectures,MemorySize:MemorySize,Timeout:Timeout}' --output table
+
       - name: Deploy Lambda function
         run: aws lambda update-function-code --function-name ${{ env.LAMBDA_FUNCTION }} --zip-file fileb://"${{ env.LAMBDA_APP_DIR }}/lambda.zip"

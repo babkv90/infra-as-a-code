@@ -101,6 +101,10 @@ export const handler = async (event, context) => {
 `,
 );
 
+// The unbundled package had both lambda.js and src/lambda.js, and the function's handler may point
+// at either (the deploy workflow never sets it). Keep both entry paths working.
+writeFileSync(path.join(outDir, 'src', 'lambda.js'), "export { handler } from '../lambda.js';\n");
+
 // Runtime files the code reads relative to its own location.
 const sharedSource = [path.join(backendRoot, 'shared'), path.join(backendRoot, '..', 'shared')].find((dir) => existsSync(path.join(dir, 'resourceRegistry.json')));
 if (!sharedSource) throw new Error('shared/resourceRegistry.json not found next to or above the backend.');
