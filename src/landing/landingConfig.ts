@@ -1,3 +1,4 @@
+import { awsServices } from '../data/awsServices';
 import {
   Activity,
   BadgeDollarSign,
@@ -57,7 +58,7 @@ export const navItems = ['Product', 'Visual Builder', 'AWS Insights', 'Terraform
 export const solutionCards: IconItem[] = [
   {
     title: 'Visual AWS architecture builder',
-    description: 'Model AWS infrastructure with 44 supported resource types, nodes, connections, groups, labels, editable properties, and validation before deploy.',
+    description: 'Model AWS infrastructure with the current resource catalog, typed connections, groups, editable properties, and validation before deployment.',
     icon: Workflow,
   },
   {
@@ -80,8 +81,8 @@ export const heroDiagramNodes: DiagramNode[] = [
   { id: 'ddb', label: 'DynamoDB', status: 'NoSQL Table', icon: Database, x: 66, y: 22, color: '#60a5fa' },
   { id: 's3', label: 'S3 Bucket', status: 'Object Storage', icon: Boxes, x: 66, y: 43, color: '#34d399' },
   { id: 'watch', label: 'CloudWatch', status: 'Awaiting sync', icon: LineChart, x: 61, y: 68, color: '#38bdf8' },
-  { id: 'billing', label: 'AWS Billing', status: 'No live sync', icon: BadgeDollarSign, x: 37, y: 76, color: '#fbbf24' },
-  { id: 'agent', label: 'AI Agent', status: 'Awaiting data', icon: BrainCircuit, x: 84, y: 73, color: '#22c55e' },
+  { id: 'billing', label: 'SQS', status: 'Event queue', icon: Boxes, x: 37, y: 76, color: '#be7197' },
+  { id: 'agent', label: 'IAM Role', status: 'Execution permissions', icon: ShieldCheck, x: 84, y: 73, color: '#cb8a75' },
 ];
 
 export const heroDiagramEdges: DiagramEdge[] = [
@@ -93,52 +94,7 @@ export const heroDiagramEdges: DiagramEdge[] = [
   { from: 'billing', to: 'agent' },
 ];
 
-export const builderServices = [
-  'Lambda',
-  'API Gateway',
-  'S3',
-  'DynamoDB',
-  'SQS',
-  'EventBridge',
-  'IAM',
-  'CloudWatch',
-  'VPC',
-  'RDS',
-  'EC2',
-  'ECS',
-  'ECR',
-  'Elastic Beanstalk',
-  'CloudFront',
-  'Route 53',
-  'ACM',
-  'SNS',
-  'Step Functions',
-  'Kinesis',
-  'Glue',
-  'Athena',
-  'Redshift',
-  'OpenSearch',
-  'ElastiCache',
-  'Secrets Manager',
-  'SSM Parameter Store',
-  'KMS',
-  'Cognito',
-  'WAF',
-  'CloudTrail',
-  'Config',
-  'GuardDuty',
-  'Security Hub',
-  'Backup',
-  'EFS',
-  'EBS',
-  'FSx',
-  'ALB',
-  'NLB',
-  'NAT Gateway',
-  'Transit Gateway',
-  'CodeBuild',
-  'CodePipeline',
-];
+export const builderServices = awsServices.map(service => service.name);
 
 export const builderPreviewServices = [
   'Lambda',
@@ -243,9 +199,9 @@ export const footerColumns = {
 };
 
 export const heroStats = [
-  { label: 'AWS services supported', value: String(builderServices.length) },
-  { label: 'AI insight signals available', value: String(aiBullets.length) },
-  { label: 'Security controls listed', value: String(securityItems.length) },
+  { label: 'AWS resource types in the builder', value: String(awsServices.length) },
+  { label: 'Reviewable infrastructure as code', value: 'Terraform' },
+  { label: 'Your account. Your infrastructure.', value: 'Your AWS' },
 ];
 
 export const howItWorks = [

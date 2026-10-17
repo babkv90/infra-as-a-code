@@ -76,7 +76,7 @@ function BlockquoteBlock({ block }: { block: Extract<TimelineBlock, { type: 'blo
 
 function TableBlock({ block }: { block: Extract<TimelineBlock, { type: 'table' }> }) {
   return (
-    <div className="timeline-table-wrap">
+    <div className="timeline-table-wrap" tabIndex={0} role="region" aria-label="Article table">
       <table className="timeline-table">
         <thead>
           <tr>

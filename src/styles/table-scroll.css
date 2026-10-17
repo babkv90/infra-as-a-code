@@ -1,0 +1,31 @@
+/* Scroll records inside their panel; column headers stay below the app navigation.
+   Includes nested deployment details and article tables, in every color/design theme. */
+.app-theme :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-deploy-detail-table-wrap, .backlog-table-wrap, .timeline-table-wrap) {
+  position: relative;
+  min-height: 0;
+  max-height: min(62dvh, 680px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  isolation: isolate;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong, #aaa2ce) transparent;
+}
+.app-theme :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-deploy-detail-table-wrap, .backlog-table-wrap, .timeline-table-wrap)::-webkit-scrollbar { display: block; width: 8px; height: 8px; }
+.app-theme :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-deploy-detail-table-wrap, .backlog-table-wrap, .timeline-table-wrap)::-webkit-scrollbar-thumb { background: var(--border-strong, #aaa2ce); border-radius: 8px; }
+.app-theme :is(.admin-users-table, .dash-deploy-table, .dash-deploy-detail-table, .backlog-table, .timeline-table) { border-collapse: separate; border-spacing: 0; }
+.app-theme :is(.admin-users-table, .dash-deploy-table, .dash-deploy-detail-table, .backlog-table, .timeline-table) > thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--studio-soft, var(--bg-surface-hover, #f4f4fa));
+  box-shadow: 0 1px 0 var(--border-subtle, #dbdbe9);
+}
+.app-theme :is(.admin-users-table, .dash-deploy-table, .dash-deploy-detail-table, .backlog-table, .timeline-table) > thead th {
+  position: static;
+  background: var(--studio-soft, var(--bg-surface-hover, #f4f4fa));
+}
+.app-theme .dash-deploy-detail-table-wrap { max-height: min(45dvh, 360px); }
+@media print {
+  .app-theme :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-deploy-detail-table-wrap, .backlog-table-wrap, .timeline-table-wrap) { max-height: none; overflow: visible; }
+  .app-theme :is(.admin-users-table, .dash-deploy-table, .dash-deploy-detail-table, .backlog-table, .timeline-table) > thead { position: static; }
+}

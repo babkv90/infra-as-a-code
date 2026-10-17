@@ -1,0 +1,50 @@
+/* Compact headings for signed-in Studio pages. Allow natural wrapping on phones. */
+.app-theme.ui-studio .studio-interior { padding-top: 20px; }
+.app-theme.ui-studio .studio-page-heading { justify-content: flex-start; align-items: center; gap: 10px; margin-bottom: 18px; }
+.app-theme.ui-studio .studio-page-heading > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 16px; min-width: 0; }
+.app-theme.ui-studio .studio-page-heading h2 { margin: 0; font-size: 20px; line-height: 1.4; letter-spacing: -.5px; flex-shrink: 0; }
+.app-theme.ui-studio .studio-page-heading p { margin: 0; font-size: 12px; line-height: 1.5; max-width: none; }
+.app-theme.ui-studio .studio-page-heading-icon { height: 32px; width: 32px; border-radius: 8px; }
+.app-theme.ui-studio :is(.studio-welcome, .studio-project-heading, .studio-overview-section-head, .dash-aws-insights-head, .settings-heading) { align-items: center; gap: 12px; }
+.app-theme.ui-studio :is(.studio-welcome, .studio-project-heading, .studio-overview-section-head, .dash-aws-insights-head) > div:first-child,
+.app-theme.ui-studio .settings-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 14px; min-width: 0; }
+.app-theme.ui-studio :is(.studio-welcome, .studio-project-heading, .studio-overview-section-head, .dash-aws-insights-head) .studio-eyebrow,
+.app-theme.ui-studio .settings-heading > .dash-eyebrow { display: none; }
+.app-theme.ui-studio :is(.studio-welcome h2, .studio-project-heading h3, .studio-overview-section-head h2, .settings-heading h1),
+.app-theme.ui-studio .dash-page--overview #dash-aws-insights-title { margin: 0; font-size: 20px; line-height: 1.4; letter-spacing: -.5px; }
+.app-theme.ui-studio :is(.studio-welcome p, .studio-overview-section-head p, .settings-heading p),
+.app-theme.ui-studio .dash-page--overview .dash-aws-insights-head p { margin: 0; font-size: 12px; line-height: 1.5; }
+.app-theme.ui-studio .studio-welcome .studio-primary { margin-top: 0; flex-shrink: 0; }
+.app-theme.ui-studio .dash-page--overview { gap: 24px; }
+.app-theme.ui-studio .studio-workspace-summary { gap: 20px; }
+.app-theme.ui-studio .dash-page--overview .dash-aws-insights-head { align-items: center; }
+.app-theme.ui-studio .studio-interior :is(.pipeline-section-header, .perf-chart-head) > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.app-theme.ui-studio .studio-interior :is(.pipeline-section-header, .perf-chart-head) :is(h2, h3, p) { margin: 0; }
+.app-theme.ui-studio .settings-panel { margin-top: 22px; gap: 20px; }
+.app-theme.ui-studio :is(.deploy-table-panel > header, .pipeline-console-header) { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.app-theme.ui-studio :is(.admin-tab-bar, .dash-deploy-table-wrap, .backlog-table-wrap) { min-width: 0; max-width: 100%; }
+.app-theme.ui-studio .perf-chart { padding: 20px; background: var(--studio-surface); border: 1px solid var(--studio-line); border-radius: 10px; box-shadow: none; }
+.app-theme.ui-studio .perf-chart-head { flex-wrap: wrap; gap: 12px; }
+.app-theme.ui-studio .perf-chart-head strong { color: var(--studio-ink); font-size: 14px; font-weight: 550; }
+.app-theme.ui-studio .perf-chart-head span { color: var(--studio-muted); font-size: 12px; }
+.app-theme.ui-studio .perf-chart-canvas { background: var(--studio-soft); border-color: var(--studio-line); }
+.app-theme.ui-studio .perf-grid-line { stroke: var(--studio-line); }
+.app-theme.ui-studio .perf-axis-label { fill: var(--studio-muted); }
+.app-theme.ui-studio .perf-line { stroke: var(--studio-accent); }
+.app-theme.ui-studio :is(.changelog-tab, .backlog-tab, .changelog-grid, .backlog-grid, .changelog-form, .backlog-form, .changelog-list-panel, .backlog-list-panel, .perf-chart, .perf-chart-head > div) { min-width: 0; max-width: 100%; }
+.app-theme.ui-studio :is(.changelog-form, .backlog-form, .changelog-list-panel, .backlog-list-panel) > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 12px; }
+.app-theme.ui-studio :is(.changelog-form, .backlog-form, .changelog-list-panel, .backlog-list-panel) > header span { color: var(--studio-muted); }
+.app-theme.ui-studio :is(.changelog-direction, .backlog-filters) { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .app-theme.ui-studio .studio-page-heading { align-items: flex-start; margin-bottom: 15px; }
+  .app-theme.ui-studio .studio-page-heading-icon { display: none; }
+  .app-theme.ui-studio .studio-page-heading h2 { font-size: 18px; }
+  .app-theme.ui-studio :is(.studio-welcome, .studio-project-heading, .studio-overview-section-head, .dash-aws-insights-head) { display: flex; flex-wrap: wrap; gap: 10px; }
+  .app-theme.ui-studio :is(.studio-welcome h2, .studio-project-heading h3, .studio-overview-section-head h2, .settings-heading h1),
+  .app-theme.ui-studio .dash-page--overview #dash-aws-insights-title { font-size: 18px; }
+  .app-theme.ui-studio .deploy-table-search { width: 100%; min-width: 0; max-width: 100%; }
+  .app-theme.ui-studio .pipeline-console-header { width: 100%; flex-direction: row; }
+  .app-theme.ui-studio .deploy-table-panel > header { display: flex; }
+  .app-theme.ui-studio .admin-tab-bar { width: 100%; flex: 0 1 100%; overflow-x: auto; }
+  .app-theme.ui-studio :is(.changelog-form-row, .backlog-form-row) { grid-template-columns: minmax(0, 1fr); }
+}

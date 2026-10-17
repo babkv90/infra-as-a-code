@@ -1,12 +1,15 @@
 import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
+import * as Icons from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { awsServices, categories } from '../data/awsServices';
 import { useDiagramStore } from '../store/diagramStore';
 import type { AuthUser } from '../auth/authClient';
 import { isServiceAllowedForUser, serviceAccessTierForUser } from '../utils/accessControl';
+import { useUiExperience } from '../ui/UiExperience';
 
 function Sidebar({ isCollapsed = false, onToggleCollapsed, user }: { isCollapsed?: boolean; onToggleCollapsed?: () => void; user?: AuthUser | null }) {
   const [query, setQuery] = useState('');
+  const { experience } = useUiExperience();
   const nodes = useDiagramStore((state) => state.nodes);
   const accessTier = serviceAccessTierForUser(user);
 
@@ -54,6 +57,7 @@ function Sidebar({ isCollapsed = false, onToggleCollapsed, user }: { isCollapsed
               <div className="service-group__title">{category}</div>
               {services.map((service) => {
                 const isAllowed = isServiceAllowedForUser(service.id, user);
+                const Icon = (Icons[service.icon as keyof typeof Icons] || Icons.Cloud) as typeof Icons.Cloud;
                 return (
                   <div
                     key={service.id}
@@ -69,7 +73,7 @@ function Sidebar({ isCollapsed = false, onToggleCollapsed, user }: { isCollapsed
                       event.dataTransfer.effectAllowed = 'move';
                     }}
                   >
-                    <span className="service-item__icon" style={{ backgroundColor: service.color }} />
+                    <span className="service-item__icon" style={experience !== 'classic' ? { color: service.color } : { backgroundColor: service.color }}>{experience !== 'classic' && <Icon size={16} aria-hidden="true" />}</span>
                     <span className="truncate">{service.name}</span>
                     {!isAllowed && <span className="service-item__lock">Locked</span>}
                     {!!counts.get(service.id) && <span className="service-item__badge">{counts.get(service.id)}</span>}

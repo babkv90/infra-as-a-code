@@ -3,6 +3,8 @@ import AuthPage from './auth/AuthPage';
 import { validateStoredSession } from './auth/authClient';
 import DashboardShell from './dashboard/DashboardShell';
 import LandingPage from './landing/LandingPage';
+import LegacyLandingPage from './landing/LegacyLandingPage';
+import { UiExperienceSwitch, useUiExperience } from './ui/UiExperience';
 import LegalPage from './legal/LegalPage';
 import ReferenceDocsPage from './reference/ReferenceDocsPage';
 import TimelineArticlePage from './landing/TimelineArticlePage';
@@ -11,6 +13,7 @@ import GithubSettingsPage from './settings/GithubSettingsPage';
 import { getNextTheme, isThemeMode, type ThemeMode } from './theme';
 
 function App() {
+  const { experience } = useUiExperience();
   const path = window.location.pathname;
   if (path === '/terms' || path === '/privacy') {
     window.location.replace(path === '/terms' ? '/legal/terms' : '/legal/privacy');
@@ -20,14 +23,18 @@ function App() {
   const requiresAuth = path === '/dashboard' || path === '/settings' || path === '/profile';
   const [isProtectedRouteAllowed, setIsProtectedRouteAllowed] = useState(!requiresAuth);
   const [isValidatingProtectedRoute, setIsValidatingProtectedRoute] = useState(requiresAuth);
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    const saved = window.localStorage.getItem('infra-theme');
-    return isThemeMode(saved) ? saved : 'pearl';
+  const [colorTheme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved = window.localStorage.getItem('infra-theme');
+      return isThemeMode(saved) ? saved : experience !== 'classic' ? 'light' : 'pearl';
+    } catch { return 'light'; }
   });
+  // Momentum uses the reference palette; switching back restores the previous color mode.
+  const theme = experience === 'momentum' ? 'light' : colorTheme;
 
   useEffect(() => {
-    window.localStorage.setItem('infra-theme', theme);
-  }, [theme]);
+    try { window.localStorage.setItem('infra-theme', colorTheme); } catch { /* Storage is optional. */ }
+  }, [colorTheme]);
 
   useEffect(() => {
     if (!requiresAuth) return;
@@ -66,7 +73,7 @@ function App() {
 
   const toggleTheme = () => setTheme(getNextTheme);
 
-  let page = <LandingPage theme={theme} onToggleTheme={toggleTheme} />;
+  let page = experience === 'classic' ? <LegacyLandingPage theme={theme} onToggleTheme={toggleTheme} /> : <LandingPage theme={theme} onToggleTheme={toggleTheme} onSelectTheme={setTheme} />;
 
   if (path === '/dashboard') {
     page =
@@ -78,7 +85,7 @@ function App() {
           </div>
         </main>
       ) : (
-        <DashboardShell theme={theme} onToggleTheme={toggleTheme} />
+        <DashboardShell theme={theme} onToggleTheme={toggleTheme} onSelectTheme={setTheme} />
       );
   }
 
@@ -92,7 +99,7 @@ function App() {
           </div>
         </main>
       ) : (
-        <GithubSettingsPage theme={theme} onToggleTheme={toggleTheme} />
+        <GithubSettingsPage theme={theme} onToggleTheme={toggleTheme} onSelectTheme={setTheme} />
       );
   }
 
@@ -114,17 +121,17 @@ function App() {
   }
 
   if (path === '/login') {
-    page = <AuthPage mode="login" theme={theme} onToggleTheme={toggleTheme} />;
+    page = <AuthPage mode="login" theme={theme} onToggleTheme={toggleTheme} onSelectTheme={setTheme} />;
   }
 
   if (path === '/register') {
-    page = <AuthPage mode="register" theme={theme} onToggleTheme={toggleTheme} />;
+    page = <AuthPage mode="register" theme={theme} onToggleTheme={toggleTheme} onSelectTheme={setTheme} />;
   }
 
   const themeClassName =
     theme === 'pearl' ? 'app-theme app-theme-light app-theme-pearl' : `app-theme app-theme-${theme} ${theme === 'dark' ? 'dark' : ''}`;
 
-  return <div className={themeClassName}>{page}</div>;
+  return <div className={`${themeClassName} ui-${experience}${experience === 'momentum' ? ' ui-studio' : ''}`}>{page}{path !== '/dashboard' && <UiExperienceSwitch className="ui-public-switch" />}</div>;
 
 }
 

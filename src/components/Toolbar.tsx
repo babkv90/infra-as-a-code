@@ -40,6 +40,7 @@ import type { AwsNode, DiagramDetailMode, DiagramViewMode, GroupKind, RenderLens
 import type { ThemeMode } from '../theme';
 
 function Toolbar({
+  compact = false,
   theme,
   isFullscreen = false,
   onToggleFullscreen,
@@ -50,6 +51,7 @@ function Toolbar({
   saveDiagramLabel = 'Save',
   saveDiagramTitle,
 }: {
+  compact?: boolean;
   theme?: ThemeMode;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
@@ -306,7 +308,7 @@ function Toolbar({
       <header className="builder-bar">
         <button className="bx-omni" onClick={() => setIsPaletteOpen(true)} type="button">
           <SearchCheck size={14} />
-          Search or add a resource
+          {compact ? 'Add / search' : 'Search or add a resource'}
           <kbd className="bx-omni__hint">{isMacPlatform() ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
 
@@ -471,7 +473,9 @@ function Toolbar({
           lenses used to be reachable only from a settings page, which is why nobody found them. */}
       <div className="builder-bar builder-bar--lens">
         <span className="builder-bar__label">Lens</span>
-        {views.map((view) => (
+        {compact ? <select className="toolbar-select toolbar-select--connections" aria-label="Connection view" value={activeView} onChange={event => setActiveView(event.target.value as DiagramViewMode)}>
+          {views.map(view => <option key={view.view} value={view.view}>{view.label}</option>)}
+        </select> : views.map((view) => (
           <button
             key={view.view}
             className={`bx-chip ${activeView === view.view ? 'bx-chip--active' : ''}`}

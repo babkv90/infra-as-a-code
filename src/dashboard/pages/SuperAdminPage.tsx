@@ -252,7 +252,7 @@ export function SuperAdminPage() {
               </select>
             </div>
           </header>
-          <div className="admin-table-wrap">
+          <div className="admin-table-wrap" tabIndex={0} role="region" aria-label="Users and access">
             {isLoading && !overview ? (
               <TableSkeleton columnWidths={[2, 1, 1, 1, 1, 1, 1, 1]} />
             ) : (

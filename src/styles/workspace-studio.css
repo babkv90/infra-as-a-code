@@ -1,0 +1,191 @@
+/* Shared Studio design system for every authenticated page. Classic rules remain intact. */
+.app-theme.ui-studio {
+  --bg-app: var(--studio-ground); --bg-surface: var(--studio-surface); --bg-surface-hover: var(--studio-soft);
+  --border-subtle: var(--studio-line); --border-strong: #b5c9c1;
+  --text-primary: var(--studio-ink); --text-secondary: var(--studio-muted); --text-disabled: var(--studio-muted);
+  --accent-primary: var(--studio-accent); --accent-primary-hover: #245d4d; --focus-ring: var(--studio-accent-soft);
+  --pearl-bg: var(--studio-ground); --pearl-bg-soft: var(--studio-soft); --pearl-surface: var(--studio-surface); --pearl-surface-strong: var(--studio-surface);
+  --pearl-ink: var(--studio-ink); --pearl-text: var(--studio-ink); --pearl-muted: var(--studio-muted); --pearl-border: var(--studio-line); --pearl-cyan: var(--studio-accent);
+  --accent-primary-rgb: 23, 111, 96; --text-primary-rgb: 32, 58, 58;
+  --studio-danger: #b03d3d; --studio-danger-soft: #fbefed; --studio-warning: #946022; --studio-warning-soft: #fbf4e7;
+  --shadow-card: var(--studio-shadow); --shadow-modal: 0 24px 80px #10251d26;
+  --dash-radius-lg: 10px; --dash-radius-xl: 12px; --dash-control-height: 38px;
+}
+.app-theme.ui-studio.app-theme-dark { --border-strong: #526e65; --accent-primary-hover: #a7dec9; --accent-primary-rgb: 140, 208, 185; --text-primary-rgb: 223, 235, 230; --studio-danger: #f0a8a3; --studio-danger-soft: #39282b; --studio-warning: #e4bd79; --studio-warning-soft: #383327; }
+.app-theme.ui-studio :is(.dash-shell, .settings-page) { font-family: Inter, "Segoe UI", system-ui, sans-serif; font-size: 13px; line-height: 1.6; }
+.app-theme.ui-studio :is(.dash-shell, .settings-page) :is(button, input, select, textarea) { font-family: inherit; }
+.app-theme.ui-studio .studio-interior { height: auto; min-height: calc(100dvh - 68px); overflow: visible; padding: 30px 34px 42px; }
+.app-theme.ui-studio .studio-interior > .dash-page { height: auto; min-height: 0; overflow: visible; gap: 22px; max-width: 1520px; margin: 0 auto; }
+.studio-page-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; max-width: 1520px; margin: 0 auto 28px; }
+.app-theme.ui-studio .studio-page-heading h2 { margin: 10px 0 8px; font-size: 30px; font-weight: 550; line-height: 1.2; letter-spacing: -1px; color: var(--studio-ink); }
+.studio-page-heading p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--studio-muted); max-width: 650px; }
+.studio-page-heading-icon { display: grid; place-items: center; height: 54px; width: 54px; flex-shrink: 0; border: 1px solid var(--studio-line); border-radius: 13px; background: var(--studio-surface); color: var(--studio-accent); }
+.app-theme.ui-studio .studio-interior :is(.dash-page-head-group, .pipeline-console-header) { background: transparent; border: 0; box-shadow: none; padding: 0; }
+.app-theme.ui-studio .studio-interior .pipeline-console-header { min-height: 40px; gap: 14px; flex-wrap: wrap; margin-bottom: 0; }
+.app-theme.ui-studio .studio-interior .dash-eyebrow { color: var(--studio-muted); font-size: 10px; font-weight: 550; letter-spacing: 1.2px; }
+.app-theme.ui-studio :is(.studio-interior, .settings-page) :is(h2, h3, h4) { color: var(--studio-ink); font-weight: 550; letter-spacing: -.3px; }
+.app-theme.ui-studio :is(.studio-interior, .settings-page) :is(p, .pipeline-muted, .deployment-note, .legal-inline-notice, .legal-connect-note) { color: var(--studio-muted); font-size: 12px; line-height: 1.75; font-weight: 400; }
+/* Surfaces: consoles, lists, preview panes, dialogs, and nested resource cards. */
+.app-theme.ui-studio :is(.dash-panel, .deploy-table-panel, .deploy-side-panel, .pipeline-config-panel, .pipeline-preview-panel, .pipeline-section, .pipeline-result-modal, .pipeline-code-panel, .pipeline-check-card, .ticket-list-panel, .ticket-detail-panel, .ticket-modal, .admin-users-panel, .admin-activity-panel, .admin-detail-panel, .admin-credit-card, .resource-info-list-panel, .resource-info-detail-panel, .resource-info-card, .deployment-panel, .deployment-page, .deployment-terraform-preview-popup, .deployment-success-popup, .deployment-credit-request-popup, .dash-role-setup-modal, .dash-destroy-dialog, .runtime-lab-detail-modal, .settings-profile-card, .settings-github-card, .dash-role-policy-card, .dash-agent-actions, .agent-change-plan) {
+  background: var(--studio-surface); color: var(--studio-ink); border-color: var(--studio-line); border-radius: 11px; box-shadow: var(--studio-shadow); backdrop-filter: none;
+}
+.app-theme.ui-studio .studio-interior :is(.dash-panel, .pipeline-config-panel, .pipeline-preview-panel, .ticket-detail-panel, .resource-info-detail-panel) { padding: 22px; min-width: 0; }
+.app-theme.ui-studio :is(.dash-panel, .deploy-table-panel, .admin-users-panel, .admin-activity-panel, .pipeline-result-modal, .ticket-modal, .dash-role-setup-modal, .runtime-lab-detail-modal) > header { background: transparent; border-color: var(--studio-line); gap: 14px; }
+.app-theme.ui-studio .dash-panel > header { padding-bottom: 17px; margin-bottom: 15px; }
+.app-theme.ui-studio .dash-panel > header h2 { color: var(--studio-ink); font-size: 15px; font-weight: 550; }
+.app-theme.ui-studio .dash-panel > header button { color: var(--studio-accent); font-size: 11px; font-weight: 500; background: transparent; }
+.app-theme.ui-studio :is(.pipeline-summary-strip > div, .deploy-kpi-card, .admin-kpi-card, .deployment-summary > div, .settings-profile-grid > div, .admin-meta-grid > div, .pipeline-source-card, .pipeline-check-item, .dash-account-row, .dash-security-row, .dash-file-row, .dash-template-card) { background: var(--studio-surface); border: 1px solid var(--studio-line); border-radius: 9px; box-shadow: none; color: var(--studio-ink); }
+.app-theme.ui-studio :is(.deploy-kpi-card, .admin-kpi-card) { padding: 20px; gap: 12px; min-height: 110px; }
+.app-theme.ui-studio :is(.deploy-kpi-card, .admin-kpi-card) strong { color: var(--studio-ink); font-size: 28px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.app-theme.ui-studio :is(.deploy-kpi-card, .admin-kpi-card) span { color: var(--studio-muted); font-size: 11px; font-weight: 450; }
+.app-theme.ui-studio :is(.deploy-kpi-card.active, .pipeline-summary-strip > div, .admin-kpi-icon, .settings-profile-avatar, .settings-github-icon) { background: var(--studio-accent-soft); color: var(--studio-accent); border-color: var(--studio-line); }
+.app-theme.ui-studio :is(.pipeline-summary-strip strong, .deployment-summary strong, .settings-profile-card strong, .settings-github-card strong, .resource-info-card strong, .admin-detail-header strong, .admin-meta-grid strong) { color: var(--studio-ink); font-weight: 550; }
+.app-theme.ui-studio :is(.pipeline-summary-strip span, .deployment-summary span, .settings-profile-grid span, .settings-profile-grid svg, .settings-github-card span, .admin-meta-grid span, .resource-info-card__header span, .resource-info-row__label) { color: var(--studio-muted); }
+/* Forms share one surface, type size and focus treatment across all consoles. */
+.app-theme.ui-studio :is(.studio-interior, .settings-page, .pipeline-result-modal, .ticket-modal, .dash-role-setup-modal) :is(input:not([type='checkbox']):not([type='radio']):not([type='file']), select, textarea) { min-width: 0; min-height: 39px; padding: 9px 11px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-surface); color: var(--studio-ink); font-size: 13px; font-weight: 400; line-height: 1.5; box-shadow: none; }
+.app-theme.ui-studio :is(.studio-interior, .settings-page) input::placeholder, .app-theme.ui-studio .studio-interior textarea::placeholder { color: var(--studio-muted); opacity: .8; }
+.app-theme.ui-studio :is(.pipeline-field > span, .dash-role-form label, .dash-role-setup-field > span, .ticket-form-grid label, .deployment-target label) { color: var(--studio-ink); font-size: 12px; font-weight: 500; }
+.app-theme.ui-studio :is(.admin-search, .resource-info-search) { background: var(--studio-surface); color: var(--studio-muted); border: 1px solid var(--studio-line); border-radius: 7px; min-height: 39px; }
+.app-theme.ui-studio .studio-interior .admin-search input { border: 0; background: transparent; padding: 7px 0; box-shadow: none; }
+.app-theme.ui-studio :is(.pipeline-field small, .pipeline-field-hint, .pipeline-section p) { color: var(--studio-muted); font-size: 11px; font-weight: 400; }
+/* Primary and secondary actions, with danger actions retaining their meaning. */
+.app-theme.ui-studio :is(.dash-primary-action, .pipeline-primary-compact, .pipeline-primary-button, .deployment-primary) { min-height: 38px; padding: 9px 14px; background: var(--studio-accent); border: 1px solid var(--studio-accent); border-radius: 6px; box-shadow: none; color: #fff; font-size: 12px; font-weight: 550; }
+.app-theme.ui-studio.app-theme-dark :is(.dash-primary-action, .pipeline-primary-compact, .pipeline-primary-button, .deployment-primary) { color: #163b2c; }
+.app-theme.ui-studio :is(.dash-secondary-action, .pipeline-link-button, .pipeline-icon-action, .pipeline-result-close, .dash-icon-button, .pipeline-result-modal button:not(.pipeline-primary-compact), .ticket-file-picker, .resource-info__download-button) { min-height: 36px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-surface); color: var(--studio-ink); box-shadow: none; font-size: 11px; font-weight: 500; }
+.app-theme.ui-studio :is(.dash-secondary-action, .pipeline-link-button, .pipeline-icon-action):hover:not(:disabled) { background: var(--studio-soft); border-color: var(--border-strong); }
+.app-theme.ui-studio :is(.dash-danger-action, .pipeline-link-button--danger, .deployment-force-destroy-button) { color: var(--studio-danger); border-color: color-mix(in srgb, var(--studio-danger) 35%, var(--studio-line)); background: var(--studio-danger-soft); }
+.app-theme.ui-studio :is(.pipeline-badge, .admin-role-pill, .resource-info__summary span, .pipeline-file-badge) { background: var(--studio-soft); border: 1px solid var(--studio-line); color: var(--studio-muted); border-radius: 5px; font-size: 10px; font-weight: 500; padding: 4px 8px; }
+.app-theme.ui-studio :is(.pipeline-badge--warning, .dash-permission-errors > div, .dash-global-warning, .pipeline-inline-warning, .resource-info__warning) { background: var(--studio-warning-soft); border-color: color-mix(in srgb, var(--studio-warning) 30%, transparent); color: var(--studio-warning); box-shadow: none; border-radius: 7px; }
+.app-theme.ui-studio .dash-permission-errors > div { padding: 13px 16px; font-size: 12px; line-height: 1.6; }
+/* Tabs, selectable lists and file navigation. */
+.app-theme.ui-studio :is(.pipeline-tabs, .ticket-filter-tabs, .admin-tab-bar, .dash-role-policy-tabs, .app-pipeline-filter-bar) { background: var(--studio-soft); border-color: var(--studio-line); box-shadow: none; border-radius: 7px; gap: 5px; padding: 5px; }
+.app-theme.ui-studio :is(.pipeline-tabs, .ticket-filter-tabs, .admin-tab-bar, .dash-role-policy-tabs) button { background: transparent; color: var(--studio-muted); border: 0; border-radius: 5px; font-size: 12px; font-weight: 500; padding: 9px 13px; min-height: 36px; }
+.app-theme.ui-studio :is(.pipeline-tabs, .ticket-filter-tabs, .admin-tab-bar, .dash-role-policy-tabs) :is(button.active, button.is-active, button[aria-selected='true'], .admin-tab--active) { background: var(--studio-surface); color: var(--studio-accent); box-shadow: 0 1px 4px #1c392811; }
+.app-theme.ui-studio :is(.ticket-list-item, .resource-info-deployment-item, .admin-activity-item, .pipeline-file-tree button, .dash-agent-question-suggestions button) { background: transparent; color: var(--studio-ink); border-color: var(--studio-line); box-shadow: none; border-radius: 6px; }
+.app-theme.ui-studio :is(.ticket-list-item.active, .resource-info-deployment-item.active, .pipeline-file-tree button.active, .admin-users-table tr.active, .dash-deploy-table-row.active, .settings-canvas-actions .is-active) { background: var(--studio-accent-soft); border-color: var(--studio-accent); }
+.app-theme.ui-studio :is(.ticket-list-item strong, .ticket-detail-header h3, .ticket-message-head strong, .resource-info-deployment-item strong, .admin-activity-item strong, .admin-users-panel-title strong) { color: var(--studio-ink); font-size: 13px; font-weight: 550; }
+.app-theme.ui-studio :is(.ticket-number, .ticket-list-item-meta span, .ticket-detail-meta, .ticket-message-head small, .resource-info-deployment-item > span, .admin-activity-item span, .admin-activity-item em, .admin-users-panel-title span) { color: var(--studio-muted); font-size: 11px; }
+/* Tables remain tables, with horizontal scrolling for dense operational data. */
+.app-theme.ui-studio :is(.dash-deploy-table-wrap, .admin-table-wrap, .dash-deploy-detail-table-wrap) { border: 1px solid var(--studio-line); border-radius: 8px; overflow-x: auto; }
+.app-theme.ui-studio :is(.dash-deploy-table, .admin-users-table, .dash-deploy-detail-table) { background: var(--studio-surface); border-collapse: collapse; }
+.app-theme.ui-studio :is(.dash-deploy-table, .admin-users-table, .dash-deploy-detail-table) th { background: var(--studio-soft); color: var(--studio-muted); border-color: var(--studio-line); padding: 13px 16px; font-size: 10px; font-weight: 550; letter-spacing: .3px; }
+.app-theme.ui-studio :is(.dash-deploy-table, .admin-users-table, .dash-deploy-detail-table) td { padding: 16px; color: var(--studio-ink); border-color: var(--studio-line); font-size: 12px; background: transparent; }
+.app-theme.ui-studio :is(.dash-deploy-table, .admin-users-table, .dash-deploy-detail-table) :is(strong, button:not(.dash-danger-action)) { color: var(--studio-ink); font-weight: 550; }
+.app-theme.ui-studio :is(.dash-deploy-name-button, .admin-users-table td > span, .dash-deploy-elapsed) { font-size: 12px; }
+.app-theme.ui-studio .dash-deploy-elapsed { color: var(--studio-muted); }
+.app-theme.ui-studio .studio-interior :is(.dash-deploy-table tbody tr, .admin-users-table tbody tr):hover { background: var(--studio-soft); }
+.app-theme.ui-studio :is(.dash-deploy-status-pill--success, .admin-status-pill--active, .ticket-status-pill--resolved, .dash-account-status-pill--connected) { background: var(--studio-accent-soft); color: var(--studio-accent); border-color: var(--studio-line); }
+.app-theme.ui-studio :is(.dash-deploy-status-pill--failed, .admin-status-pill--disabled, .ticket-priority--urgent) { background: var(--studio-danger-soft); color: var(--studio-danger); }
+/* Code and logs use a stable dark editor palette in every theme. */
+.app-theme.ui-studio :is(.dash-code-preview, .pipeline-code-preview, .pipeline-code-block, .deployment-code, .dash-role-policy-card pre, .deployment-github-log__pane) { background: #17262c; color: #d5e8df; border-color: #33474b; border-radius: 8px; font: 12px/1.8 Consolas, "SFMono-Regular", monospace; box-shadow: none; padding: 20px; overflow: auto; }
+.app-theme.ui-studio :is(.pipeline-section, .pipeline-section-header, .pipeline-accordion, .pipeline-accordion-trigger, .pipeline-tab-body, .pipeline-files-layout, .pipeline-file-tree, .pipeline-file-preview, .resource-info-card__header, .resource-info-card__body, .resource-info-row, .ticket-message, .ticket-reply-form, .ticket-detail-header, .admin-detail-header, .admin-credit-card header, .deployment-github-log__header, .deployment-page__actions) { background: var(--studio-surface); color: var(--studio-ink); border-color: var(--studio-line); box-shadow: none; }
+.app-theme.ui-studio :is(.pipeline-section-header strong, .pipeline-accordion-trigger, .pipeline-file-preview strong, .resource-info-row__value, .dash-role-policy-card strong, .runtime-lab-detail-modal h3, .runtime-lab-detail-body h4) { color: var(--studio-ink); font-size: 13px; font-weight: 550; }
+.app-theme.ui-studio :is(.dash-role-policy-card span, .runtime-lab-detail-body p, .runtime-lab-detail-body li, .resource-info-card__empty) { color: var(--studio-muted); }
+.app-theme.ui-studio :is(.dash-empty-state, .ticket-detail-empty, .resource-info__empty) { padding: 28px; background: var(--studio-soft); color: var(--studio-muted); border: 1px dashed var(--studio-line); border-radius: 8px; font-size: 12px; line-height: 1.75; }
+.app-theme.ui-studio .dash-connect-steps { gap: 16px; }
+.app-theme.ui-studio .dash-connect-steps > div { background: var(--studio-soft); border: 1px solid var(--studio-line); border-radius: 8px; padding: 20px; }
+.app-theme.ui-studio .dash-connect-steps :is(strong, h3) { color: var(--studio-ink); font-size: 14px; font-weight: 550; }
+.app-theme.ui-studio .dash-connect-steps :is(span, svg) { color: var(--studio-accent); }
+.app-theme.ui-studio .dash-role-form { gap: 17px; }
+.app-theme.ui-studio .dash-account-row { padding: 20px; }
+.app-theme.ui-studio .dash-account-row strong { color: var(--studio-ink); font-size: 14px; }
+.app-theme.ui-studio .dash-account-row span { color: var(--studio-muted); }
+/* Agent and support conversations. */
+.app-theme.ui-studio .dash-chat-bubble { background: var(--studio-soft); color: var(--studio-ink); border: 1px solid var(--studio-line); border-radius: 10px; font-size: 13px; padding: 18px; }
+.app-theme.ui-studio .dash-chat-bubble--user { background: var(--studio-accent-soft); }
+.app-theme.ui-studio .dash-chat-bubble p { color: var(--studio-ink); }
+.app-theme.ui-studio .dash-chat-input { background: var(--studio-surface); border: 1px solid var(--studio-line); border-radius: 9px; padding: 10px; }
+.app-theme.ui-studio .dash-chat-input button { background: var(--studio-accent); color: var(--studio-surface); border-radius: 7px; border: 0; }
+.app-theme.ui-studio .dash-agent-question-suggestions button { padding: 13px 15px; background: var(--studio-soft); font-size: 12px; text-align: left; }
+.app-theme.ui-studio .ticket-message { border-radius: 9px; padding: 18px; }
+.app-theme.ui-studio .ticket-message--staff { background: var(--studio-accent-soft); }
+/* Settings is outside the dashboard shell but uses the same visual system. */
+.app-theme.ui-studio .settings-page { background: var(--studio-ground); padding: 0 0 70px; color: var(--studio-ink); }
+.app-theme.ui-studio .settings-topbar { max-width: none; padding: 20px 40px; background: var(--studio-surface); border-bottom: 1px solid var(--studio-line); margin: 0; }
+.app-theme.ui-studio .settings-panel { max-width: 1060px; margin: 40px auto 0; padding: 0 28px; gap: 24px; }
+.app-theme.ui-studio .settings-heading h1 { font-size: 32px; font-weight: 550; letter-spacing: -1px; color: var(--studio-ink); }
+.app-theme.ui-studio .settings-heading p { margin: 8px 0 0; font-size: 13px; }
+.app-theme.ui-studio :is(.settings-profile-card, .settings-github-card) { padding: 26px; gap: 24px; }
+.app-theme.ui-studio .settings-profile-grid { gap: 12px; }
+.app-theme.ui-studio .settings-profile-grid > div { padding: 16px; background: var(--studio-soft); }
+.app-theme.ui-studio .settings-profile-card__identity strong { font-size: 20px; font-weight: 550; }
+.app-theme.ui-studio .settings-profile-grid strong { font-size: 12px; overflow-wrap: anywhere; }
+.app-theme.ui-studio .settings-profile-avatar { border-radius: 13px; }
+.app-theme.ui-studio .settings-github-icon { border-radius: 10px; }
+.app-theme.ui-studio .settings-github-card__main strong { font-size: 16px; }
+.app-theme.ui-studio .settings-github-card__main span { font-size: 12px; line-height: 1.7; }
+.app-theme.ui-studio .settings-github-profile { background: var(--studio-soft); border-color: var(--studio-line); }
+/* Keep operational content scrollable instead of clipping it to old fixed-height shells. */
+.app-theme.ui-studio .studio-interior :is(.pipeline-console-grid, .resource-info-console-grid, .ticket-console-grid, .admin-console-grid, .deploy-console-grid) { min-height: 540px; height: auto; gap: 20px; }
+.app-theme.ui-studio .studio-interior :is(.pipeline-config-panel, .pipeline-preview-panel, .resource-info-list-panel, .resource-info-detail-panel, .ticket-list-panel, .ticket-detail-panel, .admin-users-panel, .admin-activity-panel, .deploy-table-panel) { min-width: 0; max-width: 100%; }
+.app-theme.ui-studio .studio-interior :is(.pipeline-config-panel, .pipeline-preview-panel, .resource-info-detail-panel, .ticket-detail-panel) { overflow: visible; }
+.app-theme.ui-studio .studio-interior :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-code-preview, .pipeline-code-preview, .pipeline-tabs, .ticket-filter-tabs) { scrollbar-width: thin; scrollbar-color: var(--studio-line) transparent; }
+.app-theme.ui-studio .studio-interior :is(.admin-table-wrap, .dash-deploy-table-wrap, .dash-code-preview, .pipeline-code-preview)::-webkit-scrollbar { display: block; height: 6px; width: 6px; }
+.app-theme.ui-studio .studio-interior ::-webkit-scrollbar-thumb { background: var(--studio-line); border-radius: 8px; }
+.app-theme.ui-studio .studio-interior .deploy-console-grid { min-height: 0; }
+.app-theme.ui-studio .deploy-table-panel { align-content: start; padding: 22px; gap: 20px; }
+.app-theme.ui-studio .deploy-table-panel > header { min-height: 40px; }
+.app-theme.ui-studio .deploy-table-panel > header strong { color: var(--studio-ink); font-size: 15px; font-weight: 550; }
+.app-theme.ui-studio .deploy-table-panel > header span { color: var(--studio-muted); }
+.app-theme.ui-studio .deploy-table-panel .dash-deploy-table-wrap { min-height: 230px; }
+.app-theme.ui-studio :is(.admin-users-panel, .admin-activity-panel) { position: static; height: auto; max-height: none; padding: 20px; gap: 16px; }
+.app-theme.ui-studio .studio-interior .admin-console-grid { min-height: 0; }
+.app-theme.ui-studio .admin-kpi-card span { white-space: normal; overflow: visible; }
+.app-theme.ui-studio .settings-topbar { width: 100%; }
+.app-theme.ui-studio .settings-panel { width: min(1060px, 100%); }
+.app-theme.ui-studio .settings-github-card__main { justify-content: flex-start; gap: 18px; }
+.app-theme.ui-studio .settings-github-card__main > div:last-child { flex: 1; }
+.app-theme.ui-studio .studio-interior .admin-search input:not([type='checkbox']):not([type='radio']) { border: 0; width: 100%; background: transparent; padding: 7px 0; box-shadow: none; }
+.app-theme.ui-studio .pipeline-field > span { text-transform: none; letter-spacing: 0; }
+.app-theme.ui-studio :is(.pipeline-stepper, .pipeline-action-bar, .pipeline-files-header, .pipeline-actions, .pipeline-result-summary, .pipeline-job, .pipeline-preview-empty) { background: var(--studio-surface); border-color: var(--studio-line); color: var(--studio-ink); box-shadow: none; border-radius: 8px; }
+.app-theme.ui-studio .pipeline-stepper-item { background: transparent; border-color: var(--studio-line); color: var(--studio-muted); }
+.app-theme.ui-studio .pipeline-stepper-item strong { color: var(--studio-muted); font-weight: 500; font-size: 12px; }
+.app-theme.ui-studio .pipeline-stepper-item span { color: var(--studio-muted); background: var(--studio-soft); }
+.app-theme.ui-studio .pipeline-stepper-item--active, .app-theme.ui-studio .pipeline-stepper-item--complete { background: var(--studio-accent-soft); }
+.app-theme.ui-studio :is(.pipeline-stepper-item--active, .pipeline-stepper-item--complete) :is(span, strong) { color: var(--studio-accent); }
+.app-theme.ui-studio :is(.pipeline-quick-connect-button, .pipeline-summary-button) { background: var(--studio-surface); border: 1px solid var(--studio-line); color: var(--studio-accent); box-shadow: none; border-radius: 6px; font-weight: 500; }
+.app-theme.ui-studio .dash-agent-question-suggestions button { font-weight: 500; }
+.app-theme.ui-studio .dash-agent-layout { background: transparent; border: 0; }
+.app-theme.ui-studio .ticket-detail-empty { align-content: center; justify-items: center; gap: 18px; }
+.app-theme.ui-studio .resource-info-row__value--pending { color: var(--studio-muted); font-size: 12px; font-weight: 400; font-style: normal; }
+.app-theme.ui-studio .resource-info-row__label { font-weight: 450; }
+.app-theme.ui-studio .legal-inline-notice a { color: var(--studio-accent); font-weight: 500; }
+.app-theme.ui-studio :is(.live-updates-launcher, .live-updates-panel) { background: var(--studio-surface); border-color: var(--studio-line); color: var(--studio-ink); box-shadow: none; }
+.app-theme.ui-studio .live-updates-launcher__orb { background: var(--studio-accent-soft); color: var(--studio-accent); box-shadow: none; }
+.app-theme.ui-studio .live-updates-launcher strong { color: var(--studio-ink); font-weight: 550; }
+.app-theme.ui-studio .live-updates-launcher small { color: var(--studio-muted); font-weight: 450; }
+.app-theme.ui-studio :is(.changelog-form, .backlog-form, .changelog-list-panel, .backlog-list-panel, .changelog-entry, .performance-chart) { background: var(--studio-surface); border: 1px solid var(--studio-line); border-radius: 10px; box-shadow: none; color: var(--studio-ink); padding: 20px; }
+.app-theme.ui-studio :is(.changelog-form, .backlog-form) :is(label, strong, h3), .app-theme.ui-studio .changelog-entry h3 { color: var(--studio-ink); font-weight: 550; font-size: 13px; }
+.app-theme.ui-studio :is(.changelog-entry, .backlog-form, .changelog-form) :is(p, small, label > span) { color: var(--studio-muted); font-size: 12px; }
+.app-theme.ui-studio :is(.changelog-direction-btn, .backlog-resolve-btn) { background: var(--studio-soft); border-color: var(--studio-line); color: var(--studio-accent); box-shadow: none; }
+.app-theme.ui-studio .backlog-table-wrap { overflow-x: auto; border: 1px solid var(--studio-line); border-radius: 8px; }
+.app-theme.ui-studio .backlog-table { background: var(--studio-surface); }
+.app-theme.ui-studio .backlog-table th { padding: 13px; color: var(--studio-muted); background: var(--studio-soft); border-color: var(--studio-line); }
+.app-theme.ui-studio .backlog-table td { padding: 15px 13px; color: var(--studio-ink); border-color: var(--studio-line); }
+@media (max-width: 1100px) {
+  .app-theme.ui-studio .studio-interior { padding: 26px 24px 36px; }
+  .app-theme.ui-studio .studio-interior :is(.pipeline-console-grid, .admin-console-grid, .deploy-console-grid, .dash-connect-layout, .dash-agent-layout) { grid-template-columns: minmax(0, 1fr); }
+  .app-theme.ui-studio :is(.changelog-grid, .backlog-grid) { grid-template-columns: minmax(0, 1fr); }
+  .app-theme.ui-studio .admin-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .app-theme.ui-studio .studio-interior { padding: 24px 15px 40px; min-height: calc(100dvh - 88px); }
+  .studio-page-heading { align-items: flex-start; margin-bottom: 23px; }
+  .app-theme.ui-studio .studio-page-heading h2 { font-size: 27px; }
+  .studio-page-heading p { font-size: 12px; }
+  .studio-page-heading .studio-eyebrow { font-size: 8px; letter-spacing: 1px; }
+  .studio-page-heading-icon { display: none; }
+  .app-theme.ui-studio .studio-interior :is(.resource-info-console-grid, .ticket-console-grid, .dash-two-col, .pipeline-field-grid, .pipeline-source-grid, .pipeline-command-grid, .pipeline-advanced-grid, .pipeline-check-grid, .pipeline-files-layout) { grid-template-columns: minmax(0, 1fr); }
+  .app-theme.ui-studio .studio-interior :is(.dash-panel, .pipeline-config-panel, .pipeline-preview-panel, .ticket-detail-panel, .resource-info-detail-panel) { padding: 17px; }
+  .app-theme.ui-studio :is(.pipeline-header-badges, .pipeline-console-header, .dash-inline-actions, .admin-users-filters, .dash-role-form-actions) { flex-wrap: wrap; max-width: 100%; }
+  .app-theme.ui-studio :is(.admin-kpi-strip, .deploy-kpi-strip, .pipeline-summary-strip, .settings-profile-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-theme.ui-studio :is(.ticket-list-panel, .resource-info-list-panel) { max-height: 340px; overflow-y: auto; }
+  .app-theme.ui-studio :is(.pipeline-tabs, .ticket-filter-tabs, .admin-tab-bar) { overflow-x: auto; flex-wrap: nowrap; }
+  .app-theme.ui-studio :is(.pipeline-tabs, .ticket-filter-tabs, .admin-tab-bar) button { flex-shrink: 0; white-space: nowrap; }
+  .app-theme.ui-studio .settings-topbar { padding: 18px 22px; flex-wrap: wrap; gap: 20px; }
+  .app-theme.ui-studio .settings-topbar > div { flex-wrap: wrap; }
+  .app-theme.ui-studio .settings-panel { margin-top: 28px; padding: 0 20px; }
+  .app-theme.ui-studio :is(.settings-profile-card, .settings-github-card) { padding: 20px; }
+  .app-theme.ui-studio :is(.settings-github-card__main, .settings-profile-card__identity) { align-items: flex-start; }
+  .app-theme.ui-studio .studio-interior :is(input, select, textarea) { max-width: 100%; }
+}

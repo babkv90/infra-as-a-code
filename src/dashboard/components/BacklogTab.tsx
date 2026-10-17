@@ -209,7 +209,7 @@ export function BacklogTab() {
             </div>
           </header>
 
-          <div className="backlog-table-wrap">
+          <div className="backlog-table-wrap" tabIndex={0} role="region" aria-label="Technical backlog">
             <table className="backlog-table">
               <thead>
                 <tr>

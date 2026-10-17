@@ -1,15 +1,21 @@
-import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound, Workflow, Code2, Database, Globe, Zap, LoaderCircle } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { PageAlert } from '../components/PageAlert';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
 import { forgotPassword, login, register, resetPassword } from './authClient';
+import AppLogo from '../components/AppLogo';
+import { useUiExperience } from '../ui/UiExperience';
+import { ThemePicker } from '../ui/ThemePicker';
 
 type AuthMode = 'login' | 'register';
 type AuthFieldErrors = Partial<Record<'name' | 'email' | 'password' | 'legal', string>>;
 
-function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: ThemeMode; onToggleTheme: () => void }) {
+function AuthPage({ mode, theme, onToggleTheme, onSelectTheme }: { mode: AuthMode; theme: ThemeMode; onToggleTheme: () => void; onSelectTheme: (theme: ThemeMode) => void }) {
+  const { experience } = useUiExperience();
+  const isStudio = experience !== 'classic';
+  const FormHeading = isStudio ? 'h1' : 'h2';
   const isRegister = mode === 'register';
   const [name, setName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
@@ -28,8 +34,8 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const title = isRegister ? 'Create your infraflow account' : 'Login to infraflow';
-  const description = isRegister
+  const title = isStudio ? (isRegister ? 'Create your account' : 'Welcome back') : isRegister ? 'Create your infraflow account' : 'Login to infraflow';
+  const description = isStudio ? (isRegister ? 'Your next architecture starts here.' : 'Sign in to continue to your workspace.') : isRegister
     ? 'Register your workspace and start designing AWS infrastructure visually.'
     : 'Access your diagrams, Terraform exports, AWS insights, and AI cloud agent.';
 
@@ -50,7 +56,10 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
 
     const validationErrors = validateAuthForm({ email, hasAcceptedLegal, isRegister, name, password });
     setFieldErrors(validationErrors);
-    if (Object.keys(validationErrors).length > 0) return;
+    if (Object.keys(validationErrors).length > 0) {
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.auth-form input[aria-invalid="true"]')?.focus());
+      return;
+    }
 
     setError('');
     setIsSubmitting(true);
@@ -122,8 +131,9 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
   return (
     <main className="auth-page">
       {forgotPasswordMessage && <PageAlert message={forgotPasswordMessage} onDismiss={() => setForgotPasswordMessage('')} />}
-      {error && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
-      <section className="auth-panel">
+      {error && !isStudio && <PageAlert message={error} tone="error" onDismiss={() => setError('')} />}
+      {isStudio && <header className="studio-auth-header"><a href="/" aria-label="CodeManus home"><AppLogo /></a><div><a className="auth-back-link" href="/"><ArrowLeft size={15} />Back to home</a><ThemePicker theme={theme} onChange={onSelectTheme} /></div></header>}
+      {isStudio ? <StudioAuthStory /> : <section className="auth-panel">
         <a className="auth-back-link" href="/">
           <ArrowLeft size={16} />
           Back to home
@@ -147,28 +157,32 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
             Terraform export
           </span>
         </div>
-      </section>
+      </section>}
 
       <section className="auth-card">
         <div className="auth-card-header">
           <div>
-            <span className="auth-eyebrow">{isRegister ? 'Register' : 'Login'}</span>
-            <h2>{title}</h2>
+            <span className="auth-eyebrow">{isStudio ? 'YOUR CODEMANUS WORKSPACE' : isRegister ? 'Register' : 'Login'}</span>
+            <FormHeading>{title}</FormHeading>
             <p>{description}</p>
           </div>
-          <button className="auth-theme-button" onClick={onToggleTheme} type="button">
+          {!isStudio && <button className="auth-theme-button" onClick={onToggleTheme} type="button">
             {getThemeToggleLabel(theme)}
-          </button>
+          </button>}
         </div>
 
-        <form className="auth-form" noValidate onSubmit={handleSubmit}>
+        <form className="auth-form" noValidate onSubmit={handleSubmit} aria-busy={isSubmitting}>
+          {isStudio && error && <div className="studio-auth-error" role="alert">{error}</div>}
           {isRegister && (
             <>
               <label className="auth-field">
-                <span>Full name</span>
+                <span id="auth-name-label">Full name</span>
                 <div>
                   <UserRound size={17} />
                   <input
+                    name="name"
+                    required
+                    aria-labelledby="auth-name-label"
                     aria-describedby={fieldErrors.name ? 'auth-name-error' : undefined}
                     aria-invalid={Boolean(fieldErrors.name)}
                     value={name}
@@ -187,10 +201,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 )}
               </label>
               <label className="auth-field">
-                <span>Workspace name</span>
+                <span>Workspace name{isStudio && <small> (optional)</small>}</span>
                 <div>
                   <CloudCog size={17} />
                   <input
+                    name="organization"
                     value={workspaceName}
                     onChange={(event) => setWorkspaceName(event.target.value)}
                     placeholder="Acme cloud platform"
@@ -202,10 +217,16 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           )}
 
           <label className="auth-field">
-            <span>Email address</span>
+            <span id="auth-email-label">Email address</span>
             <div>
               <Mail size={17} />
               <input
+                id="auth-email"
+                name="email"
+                required
+                aria-labelledby="auth-email-label"
+                autoCapitalize="none"
+                spellCheck={false}
                 aria-describedby={fieldErrors.email ? 'auth-email-error' : undefined}
                 aria-invalid={Boolean(fieldErrors.email)}
                 value={email}
@@ -214,7 +235,7 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                   clearFieldError('email');
                 }}
                 placeholder="you@company.com"
-                autoComplete="email"
+                autoComplete={isRegister ? 'email' : 'username'}
                 type="email"
               />
             </div>
@@ -225,11 +246,14 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
             )}
           </label>
 
-          <label className="auth-field">
-            <span>Password</span>
+          <div className="auth-field">
+            <label htmlFor="auth-password">Password</label>
             <div>
               <LockKeyhole size={17} />
               <input
+                id="auth-password"
+                name="password"
+                required
                 aria-describedby={fieldErrors.password ? 'auth-password-error' : undefined}
                 aria-invalid={Boolean(fieldErrors.password)}
                 value={password}
@@ -237,11 +261,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                   setPassword(event.target.value);
                   clearFieldError('password');
                 }}
-                placeholder="Minimum 8 characters"
+                placeholder={isRegister ? 'At least 8 characters' : 'Enter your password'}
                 autoComplete={isRegister ? 'new-password' : 'current-password'}
                 type={showPassword ? 'text' : 'password'}
               />
-              <button className="auth-password-toggle" onClick={() => setShowPassword((value) => !value)} type="button">
+              <button className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)} type="button">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
@@ -250,12 +274,14 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 {fieldErrors.password}
               </span>
             )}
-          </label>
+          </div>
 
           {!isRegister && (
             <div className="auth-forgot">
               <button
                 className="auth-link-button"
+                aria-expanded={showForgotPassword}
+                aria-controls="auth-password-recovery"
                 onClick={() => {
                   setShowForgotPassword((value) => !value);
                   setForgotPasswordMessage('');
@@ -265,11 +291,11 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
                 }}
                 type="button"
               >
-                Reset password
+                {isStudio ? 'Forgot password?' : 'Reset password'}
               </button>
 
               {showForgotPassword && (
-                <div className="auth-forgot-panel">
+                <div className="auth-forgot-panel" id="auth-password-recovery">
                   <p>Enter your email above, then use the emailed reset token or reset link to set a new password here.</p>
                   <button className="auth-secondary-submit" disabled={!canRequestPasswordReset} onClick={handleForgotPassword} type="button">
                     {isRequestingReset ? 'Sending...' : 'Send reset token'}
@@ -349,15 +375,16 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
           )}
 
           <button className="auth-submit" disabled={isSubmitting} type="submit">
-            {isSubmitting ? 'Please wait...' : isRegister ? 'Create account' : 'Login'}
-            <ArrowRight size={17} />
+            {isSubmitting ? (isRegister ? 'Creating account…' : 'Signing in…') : isRegister ? 'Create account' : isStudio ? 'Sign in' : 'Login'}
+            {isSubmitting ? <LoaderCircle className="studio-auth-spinner" size={17} aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
           </button>
         </form>
 
         <p className="auth-switch">
-          {isRegister ? 'Already have an account?' : 'New to infraflow?'}
+          {isRegister ? 'Already have an account?' : isStudio ? 'New to CodeManus?' : 'New to infraflow?'}
           <a href={isRegister ? LOGIN_ROUTE : REGISTER_ROUTE}>{isRegister ? ' Login' : ' Create account'}</a>
         </p>
+        {isStudio && <div className="studio-auth-legal"><a href="/legal/terms">Terms of Service</a><span aria-hidden="true">·</span><a href="/legal/privacy">Privacy Policy</a></div>}
       </section>
     </main>
   );
@@ -370,6 +397,18 @@ function AuthPage({ mode, theme, onToggleTheme }: { mode: AuthMode; theme: Theme
       return next;
     });
   }
+}
+
+function StudioAuthStory() {
+  return <section className="studio-auth-story" aria-labelledby="studio-auth-story-title">
+    <div className="studio-auth-story-copy"><span className="studio-auth-kicker"><span />ARCHITECTURE STUDIO</span><h2 id="studio-auth-story-title">A clearer view.<br /><em>A better place to build.</em></h2><p>Bring your architecture, infrastructure code, and cloud insights into one connected workspace.</p></div>
+    <div className="studio-auth-diagram" aria-hidden="true">
+      <div className="studio-auth-diagram-heading"><Workflow size={15} /><span>From idea to infrastructure</span><span className="studio-auth-diagram-dots">···</span></div>
+      <div className="studio-auth-topology"><svg viewBox="0 0 400 240" preserveAspectRatio="none"><path d="M200 55 V105 M200 105 H80 V165 M200 105 H320 V165" /></svg><div className="studio-auth-node studio-auth-node--gateway"><Globe size={20} /><div><strong>API Gateway</strong><span>Your entry point</span></div></div><div className="studio-auth-node studio-auth-node--function"><Zap size={20} /><div><strong>Lambda</strong><span>Application logic</span></div></div><div className="studio-auth-node studio-auth-node--data"><Database size={20} /><div><strong>DynamoDB</strong><span>Application data</span></div></div><span className="studio-auth-topology-dot" /></div>
+      <div className="studio-auth-diagram-footer"><Code2 size={15} /><span>Designed visually. Defined in Terraform.</span></div>
+    </div>
+    <div className="studio-auth-story-footer"><LockKeyhole size={17} /><p>Your workspace. Your AWS account.<br /><span>Access stays scoped to your role.</span></p></div>
+  </section>;
 }
 
 function getAuthRedirectTarget() {

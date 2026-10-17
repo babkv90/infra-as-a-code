@@ -1,0 +1,104 @@
+/* Fit the file controls, tools and drawing options inside one editor surface.
+   Classic retains its original directory and toolbar layout. */
+.app-theme.ui-studio .dash-content:has(.dash-page--builder-compact) {
+  padding: 6px 8px 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-theme.ui-studio .dash-page--builder-compact {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+}
+.app-theme.ui-studio .dash-page--builder-compact .builder-shell {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  --builder-palette-width: 190px;
+}
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory {
+  flex: none;
+  padding: 5px 8px;
+  gap: 3px;
+  border: 0;
+  border-bottom: 1px solid var(--studio-line);
+  border-radius: 0;
+  background: var(--studio-surface);
+}
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory header {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+}
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory header > div:first-child { flex: 0 1 220px; }
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory .dash-eyebrow { display: none; }
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory header strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  font-size: 12px;
+}
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory__actions {
+  flex: 1;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-height: none;
+  overflow: visible;
+}
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory__select { flex: 0 1 340px; width: auto; min-width: 160px; max-width: 340px; }
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory__select select { width: 100%; max-width: none; height: 30px; min-height: 30px; padding: 4px 8px; }
+.app-theme.ui-studio .dash-page--builder-compact .diagram-directory p { margin: 0; font-size: 11px; line-height: 1.4; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-view-tabs { display: flex; flex-shrink: 0; align-items: center; width: auto; gap: 3px; padding: 2px; border: 0; border-radius: 6px; background: var(--studio-soft); }
+.app-theme.ui-studio .dash-page--builder-compact .builder-view-tabs button { min-height: 26px; padding: 4px 9px; white-space: nowrap; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-bar { flex-shrink: 0; gap: 4px; padding: 4px 8px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-bar--lens { gap: 6px; }
+.app-theme.ui-studio .dash-page--builder-compact :is(.bx-button, .toolbar-select, .bx-omni) { min-height: 30px; height: 30px; padding-block: 4px; }
+.app-theme.ui-studio .dash-page--builder-compact .bx-button--icon { width: 30px; min-width: 30px; padding: 4px; }
+.app-theme.ui-studio .dash-page--builder-compact .bx-omni { min-width: 145px; gap: 6px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-bar > .toolbar-select { width: auto; max-width: 180px; min-width: 110px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-bar__divider { margin-inline: 3px; }
+.app-theme.ui-studio .dash-page--builder-compact .bx-segmented__option { min-height: 26px; padding: 4px 8px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-body { flex: 1 1 0; min-height: 0; }
+.app-theme.ui-studio .dash-page--builder-compact .status-bar { flex-shrink: 0; min-height: 26px; padding: 4px 8px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-file-menu { flex-shrink: 0; }
+.app-theme.ui-studio .dash-page--builder-compact .toolbar-tools-menu { position: relative; }
+.app-theme.ui-studio .dash-page--builder-compact .toolbar-tools-menu__content { position: absolute; top: calc(100% + 5px); right: 0; display: grid; gap: 3px; min-width: 190px; max-height: min(360px, 65dvh); overflow-y: auto; padding: 6px; border: 1px solid var(--studio-line); z-index: 80; }
+.app-theme.ui-studio .dash-page--builder-compact .toolbar-tools-menu__content button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 7px 10px; border: 0; background: var(--studio-surface); color: var(--studio-ink); border-radius: 5px; cursor: pointer; }
+.app-theme.ui-studio .dash-page--builder-compact .toolbar-tools-menu__content button:hover:not(:disabled) { background: var(--studio-soft); }
+.app-theme.ui-studio .dash-page--builder-compact .builder-file-menu .toolbar-tools-menu__content { min-width: 190px; z-index: 80; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-file-menu .toolbar-tools-menu__content button { justify-content: flex-start; width: 100%; margin: 0; border: 0; min-height: 36px; }
+.app-theme.ui-studio .dash-page--builder-compact .builder-file-menu .toolbar-tools-menu__content button:hover:not(:disabled) { background: var(--studio-soft); }
+.app-theme.ui-studio .dash-page--builder-compact .dashboard-builder-shell--fullscreen { height: 100dvh; min-height: 100dvh; }
+
+/* Let the canvas consume the actual remaining height, including on short laptops. */
+.app-theme.ui-momentum .dash-shell:has(.dash-page--builder-compact) { height: 100dvh; min-height: 0; grid-template-rows: 82px 54px minmax(0, 1fr); overflow: hidden; }
+.app-theme.ui-momentum .dash-content:has(.dash-page--builder-compact) { height: 100%; min-height: 0; flex: 1 1 0; }
+@media (max-width: 1100px) {
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory header > div:first-child { flex-basis: 140px; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-shell { --builder-palette-width: 168px; }
+  .app-theme.ui-studio .dash-page--builder-compact .bx-omni__hint { display: none; }
+  .app-theme.ui-studio .dash-page--builder-compact .bx-omni { min-width: 102px; }
+  .app-theme.ui-studio .dash-page--builder-compact .bx-count { display: none; } /* Same live validation count remains in the status bar. */
+}
+@media (max-width: 760px) {
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory header { gap: 5px; flex-wrap: wrap; }
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory header > div:first-child { display: none; } /* Selected diagram remains visible in Open. */
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory__actions { gap: 5px; flex-wrap: wrap; justify-content: flex-start; }
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory__select { flex: 1 1 150px; min-width: 125px; }
+  .app-theme.ui-studio .dash-page--builder-compact .diagram-directory__select > span { display: none; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-bar { padding: 4px 6px; gap: 4px; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-bar__divider { display: none; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-bar--lens > .builder-bar__label { display: none; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-bar__spacer { min-width: 0; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-bar > .toolbar-select { min-width: 100px; max-width: 155px; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-shell { --builder-palette-width: 150px; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-status__metric { font-size: 9px; }
+  .app-theme.ui-studio .dash-page--builder-compact .builder-shell .react-flow__minimap { width: 60px; height: 44px; bottom: 90px; }
+  .app-theme.ui-momentum .dash-content:has(.dash-page--builder-compact) { height: auto; padding: 4px; }
+}

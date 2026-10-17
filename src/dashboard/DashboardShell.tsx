@@ -8,6 +8,7 @@ import {
   BadgeDollarSign,
   Bell,
   CheckCircle2,
+  ChevronDown,
   CloudCog,
   Copy,
   Database,
@@ -147,6 +148,9 @@ import { buildDeploymentResourceBundle } from '../utils/resourceRequirements';
 import type { ValidationIssue } from '../utils/validate';
 import { canUseApplicationPipelines, hasCredits, isSuperAdmin, serviceAccessTierForUser } from '../utils/accessControl';
 import type { AuthUser } from '../auth/authClient';
+import { UiExperienceSwitch, useUiExperience } from '../ui/UiExperience';
+import { StudioWorkspaceSummary } from './components/StudioWorkspaceSummary';
+import { ThemePicker } from '../ui/ThemePicker';
 
 // Still used by KpiGrid and ResourceTable's own detail popups even though the Runtime Lab page
 // that originally introduced this type/component was removed — see RuntimeLabDetailModal below.
@@ -274,7 +278,8 @@ async function requestCreditsInsteadOf(reason: string): Promise<string> {
   }
 }
 
-function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+function DashboardShell({ theme, onToggleTheme, onSelectTheme }: { theme: ThemeMode; onToggleTheme: () => void; onSelectTheme: (theme: ThemeMode) => void }) {
+  const { experience } = useUiExperience();
   const [activePage, setActivePage] = useState<DashboardPage>(getInitialDashboardPage);
   const { showScrollHint } = useScrollHint([activePage]);
   const [awsAccounts, setAwsAccounts] = useState<AwsAccountRecord[]>([]);
@@ -434,11 +439,11 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
         <AppLogo className="app-logo--dash-gap" />
       </a>
       <aside className="dash-sidebar">
-        <nav className="dash-nav">
+        <nav className="dash-nav" aria-label="Workspace navigation">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button className={activePage === item.id ? 'active' : ''} key={item.id} onClick={() => goToDashboardPage(item.id)} title={item.label}>
+              <button aria-label={item.label} aria-current={activePage === item.id ? 'page' : undefined} className={activePage === item.id ? 'active' : ''} key={item.id} onClick={() => goToDashboardPage(item.id)} title={item.label}>
                 <Icon size={17} />
                 <span>{item.label}</span>
                 {item.badge && <i>{item.badge}</i>}
@@ -446,15 +451,17 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
             );
           })}
         </nav>
+        {experience !== 'classic' && <div className="studio-nav-footer"><span className="studio-user-avatar" title={currentUser?.name || 'Workspace member'}>{(currentUser?.name || 'U').slice(0, 2).toUpperCase()}</span><span className="studio-nav-caption">STUDIO</span></div>}
       </aside>
 
       <section className="dash-main">
         <header className="dash-topbar">
           <div>
-        
+            {experience !== 'classic' && <span className="studio-workspace-breadcrumb">{currentUser?.workspaceName || 'Your workspace'}<span>/</span></span>}
             <h1>{activeItem?.label ?? 'Dashboard'}</h1>
           </div>
           <div className="dash-top-actions">
+            <UiExperienceSwitch />
             <div
               className={`dash-account-status dash-account-status--${accountStatusClass}`}
               title={`${activeAwsAccount?.name ?? connectedAccount.accountName} - ${activeAwsAccount?.status ?? connectedAccount.syncStatus}`}
@@ -501,9 +508,9 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
                 </div>
               )}
             </div>
-            <button className="dash-icon-button" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
+            {experience !== 'classic' ? <ThemePicker theme={theme} onChange={onSelectTheme} /> : <button className="dash-icon-button" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
               {theme === 'dark' ? <Sun size={17} /> : theme === 'light' ? <Sparkles size={17} /> : <Moon size={17} />}
-            </button>
+            </button>}
             <a className="dash-secondary-action" href="/settings">
               <Settings size={16} />
               Settings
@@ -516,7 +523,7 @@ function DashboardShell({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTh
         </header>
         {awsDataError && <PageAlert message={awsDataError} tone="error" onDismiss={() => setAwsDataError('')} />}
         {awsDataMessage && <PageAlert message={awsDataMessage} onDismiss={() => setAwsDataMessage('')} />}
-        <div className="dash-content">
+        <div className={`dash-content ${experience !== 'classic' && activePage !== 'builder' ? 'studio-interior' : ''}`} data-page={activePage}>
           {renderPage(activePage, goToDashboardPage, {
             awsAccounts,
             awsInsights,
@@ -884,6 +891,7 @@ function OverviewPage({
   isSyncingAws: boolean;
   onSyncAws: () => Promise<void>;
 }) {
+  const { experience } = useUiExperience();
   const [billingRealtimeMetrics, setBillingRealtimeMetrics] = useState<BillingRealtimeMetrics>();
   const [lambdaRealtimeMetrics, setLambdaRealtimeMetrics] = useState<LambdaRealtimeMetrics>();
   const [overviewStyle, setOverviewStyle] = useState<OverviewStyle>(readStoredOverviewStyle);
@@ -952,6 +960,7 @@ function OverviewPage({
 
   return (
     <div className="dash-page dash-page--overview">
+      {experience !== 'classic' && <StudioWorkspaceSummary navigate={setActivePage} />}
       <div className="dash-page-head-group dash-page-head-group--aws-insights">
         <OverviewInsightsTop
           billingRealtimeMetrics={billingRealtimeMetrics}
@@ -976,29 +985,31 @@ function OverviewPage({
           </>
         )}
 
-        {insights && (
-          <div className="dash-two-col dash-two-col--wide">
-            <Panel title="Resource inventory" action={insights.syncedAt ? `Synced ${new Date(insights.syncedAt).toLocaleString()}` : 'No live sync'}>
-              <ResourceTable insights={insights} />
+        {experience !== 'classic' && <div className="studio-overview-section-head"><div><span className="studio-eyebrow">YOUR CONNECTED ENVIRONMENT</span><h2>Resources &amp; activity</h2><p>Inventory and account changes from your latest AWS sync.</p></div><button className="studio-text-button" onClick={() => setActivePage('resource-info')} type="button">Explore resources<ArrowRight size={15} /></button></div>}
+
+        {(insights || experience !== 'classic') && (
+          <div className={`dash-two-col dash-two-col--wide ${experience !== 'classic' ? 'studio-operational-grid' : ''}`}>
+            <Panel title="Resource inventory" action={experience !== 'classic' ? <span className="studio-panel-meta">{insights ? `${insights.inventory.filter(item => item.count > 0).length} services` : 'Awaiting sync'}</span> : insights?.syncedAt ? `Synced ${new Date(insights.syncedAt).toLocaleString()}` : 'No live sync'}>
+              <ResourceTable insights={insights} showHeadings={experience !== 'classic'} />
             </Panel>
-            <Panel title="Recent AWS events" action="CloudTrail">
+            <Panel title="Recent AWS events" action={experience !== 'classic' ? <span className="studio-panel-meta"><Activity size={12} />CloudTrail</span> : 'CloudTrail'}>
               <RecentAwsEvents insights={insights} />
             </Panel>
           </div>
         )}
 
-        {overviewStyle === 'classic' &&
+        {(overviewStyle === 'classic' || experience !== 'classic') &&
           (insights ? (
-            <Panel title="Cost Explorer by service" action="Current month">
+            <Panel title="Cost Explorer by service" action={experience !== 'classic' ? <span className="studio-panel-meta">Current month · {formatCurrency(insights.billing.monthlySpend)}</span> : 'Current month'}>
               <BillingServiceTable insights={insights} />
             </Panel>
           ) : (
-            <EmptyState>Connect AWS to load live AWS insights and Cost Explorer billing data.</EmptyState>
+            <Panel title="Cost Explorer by service"><EmptyState>Connect AWS to load live AWS insights and Cost Explorer billing data.</EmptyState></Panel>
           ))}
 
-        <CostRecommendationGrid insights={insights} />
+        {experience !== 'classic' ? <section className="studio-optimization-section" aria-label="Cost optimization"><div className="studio-overview-section-head"><div><span className="studio-eyebrow">OPPORTUNITIES TO IMPROVE</span><h2>Cost optimization</h2><p>Review savings opportunities before changing your infrastructure.</p></div><span className="studio-savings-total">{insights ? `${formatCurrency(insights.billing.estimatedSavings)}/mo` : 'Awaiting sync'}<small>estimated savings</small></span></div><CostRecommendationGrid insights={insights} onReviewResources={() => setActivePage('resource-info')} /></section> : <CostRecommendationGrid insights={insights} />}
 
-        <Panel title="Active diagrams" action="View all">
+        {experience === 'classic' && <Panel title="Active diagrams" action="View all">
           <div className="dash-list">
             {activeDiagrams.length ? (
               activeDiagrams.map((diagram) => (
@@ -1014,30 +1025,34 @@ function OverviewPage({
               <EmptyState>No diagrams yet. Start building to create your first architecture.</EmptyState>
             )}
           </div>
-        </Panel>
+        </Panel>}
+        {experience !== 'classic' && <footer className="studio-overview-footer"><CloudCog size={14} /><span>{insights?.syncedAt ? `Account snapshot · ${new Date(insights.syncedAt).toLocaleString()}` : 'Connect an AWS account to populate this overview.'}</span><span>Values reflect available account permissions.</span></footer>}
       </div>
     </div>
   );
 }
 
 function OverviewStyleToggle({ overviewStyle, onSelectOverviewStyle }: { overviewStyle: OverviewStyle; onSelectOverviewStyle: (style: OverviewStyle) => void }) {
+  const { experience } = useUiExperience();
   return (
     <div className="dash-overview-style-toggle" role="group" aria-label="Overview layout style">
       <button
         className={overviewStyle === 'modern' ? 'is-active' : ''}
+        aria-pressed={overviewStyle === 'modern'}
         onClick={() => onSelectOverviewStyle('modern')}
         type="button"
       >
         <Sparkles size={13} />
-        Modern
+        {experience !== 'classic' ? 'Trends' : 'Modern'}
       </button>
       <button
         className={overviewStyle === 'classic' ? 'is-active' : ''}
+        aria-pressed={overviewStyle === 'classic'}
         onClick={() => onSelectOverviewStyle('classic')}
         type="button"
       >
         <LayoutGrid size={13} />
-        Classic
+        {experience !== 'classic' ? 'Breakdown' : 'Classic'}
       </button>
     </div>
   );
@@ -1089,13 +1104,15 @@ function OverviewInsightsTop({
   overviewStyle: OverviewStyle;
   showCharts?: boolean;
 }) {
-  const metrics = buildAwsInsightMetrics(insights);
+  const { experience } = useUiExperience();
+  const metrics = buildAwsInsightMetrics(insights).map(metric => !insights && experience !== 'classic' ? { ...metric, value: '—' } : metric);
   const charts = buildAwsInsightMiniCharts(insights, lambdaRealtimeMetrics, billingRealtimeMetrics);
 
   return (
     <section className="dash-aws-insights-top" aria-labelledby="dash-aws-insights-title">
       <header className="dash-aws-insights-head">
         <div>
+          {experience !== 'classic' && <span className="studio-eyebrow">ACCOUNT OBSERVABILITY</span>}
           <span id="dash-aws-insights-title">AWS Insights</span>
           <p>{insights?.syncedAt ? `Live data synced ${new Date(insights.syncedAt).toLocaleString()}` : 'Connect or sync AWS to populate live infrastructure data.'}</p>
         </div>
@@ -1135,7 +1152,7 @@ function OverviewInsightsTop({
             <article className={`dash-aws-mini-chart dash-aws-mini-chart--${chart.tone}`} key={chart.title}>
               <header className="dash-aws-mini-chart-head">
                 <h3>{chart.title}</h3>
-                {chart.summary && <strong>{chart.summary}</strong>}
+                {chart.summary && <strong>{experience !== 'classic' && !chart.bars.length ? 'Awaiting data' : chart.summary}</strong>}
               </header>
               {chart.bars.length ? (
                 <>
@@ -1332,22 +1349,22 @@ function buildAwsInsightMiniCharts(insights?: AwsInsights, lambdaRealtimeMetrics
 }
 
 function normalizeMiniChartBars(items: Array<{ label: string; value: number; display: string }>) {
-  const validItems = items.filter((item) => Number.isFinite(item.value) && item.value > 0).slice(0, 6);
+  const validItems = items.filter((item) => Number.isFinite(item.value) && item.value >= 0).slice(0, 6);
   const maxValue = Math.max(...validItems.map((item) => item.value), 0);
-  if (!validItems.length || maxValue <= 0) return [];
+  if (!validItems.length) return [];
   return validItems.map((item) => ({
     ...item,
-    height: Math.max(24, Math.round((item.value / maxValue) * 100)),
+    height: maxValue > 0 ? (item.value > 0 ? Math.max(2, Math.round((item.value / maxValue) * 100)) : 0) : 0,
   }));
 }
 
 function normalizeMiniCurvePoints(items: Array<{ label: string; value: number; display: string }>) {
   const validItems = items.filter((item) => Number.isFinite(item.value));
   const maxValue = Math.max(...validItems.map((item) => item.value), 0);
-  if (!validItems.length || maxValue <= 0) return [];
+  if (!validItems.length) return [];
   return validItems.map((item) => ({
     ...item,
-    height: Math.max(5, Math.round((item.value / maxValue) * 100)),
+    height: maxValue > 0 ? Math.round((item.value / maxValue) * 100) : 0,
   }));
 }
 
@@ -1365,7 +1382,8 @@ function shortAwsLabel(label: string) {
 }
 
 function OverviewAwsGraphs({ insights }: { insights?: AwsInsights }) {
-  const charts = buildOverviewCharts(insights);
+  const { experience } = useUiExperience();
+  const charts = buildOverviewCharts(insights).map(chart => experience !== 'classic' && !insights ? { ...chart, metric: '—', data: [] } : chart);
   return (
     <section className="dash-overview-graphs">
       {charts.map((chart) => (
@@ -1378,11 +1396,12 @@ function OverviewAwsGraphs({ insights }: { insights?: AwsInsights }) {
             <em>{chart.caption}</em>
           </header>
           <div className="dash-overview-bars">
+            {!chart.data.length && <p className="dash-aws-mini-empty">Sync AWS to see this account metric.</p>}
             {chart.data.map((item) => (
               <div className="dash-overview-bar-row" key={item.label}>
                 <span>{item.label}</span>
                 <div>
-                  <i style={{ width: `${item.value}%` }} />
+                  <i style={{ width: `${experience !== 'classic' ? Math.max(0, item.value) / Math.max(1, ...chart.data.map(point => point.value)) * 100 : item.value}%` }} />
                 </div>
                 <strong>{formatOverviewChartValue(chart.title, item.value)}</strong>
               </div>
@@ -1449,12 +1468,13 @@ function formatOverviewChartValue(title: string, value: number) {
 }
 
 function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
+  const { experience } = useUiExperience();
   const terraformFileRef = useRef<HTMLInputElement>(null);
   const builderShellRef = useRef<HTMLDivElement>(null);
   const flow = useReactFlow();
   const [builderViewMode, setBuilderViewMode] = useState<'2d' | '3d'>('2d');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(false);
+  const [isServicePanelCollapsed, setIsServicePanelCollapsed] = useState(() => experience !== 'classic' && window.innerWidth <= 760);
   // Drives whether the inspector column is reserved at all. Selected here (rather than left to
   // PropertiesPanel alone) because collapsing the grid column has to happen at the same level as the
   // column definition itself.
@@ -1632,6 +1652,20 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
     fitFullDiagram();
   }
 
+  // The Studio overview opens an existing saved diagram through the same builder import path.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedId = url.searchParams.get('diagram');
+    if (!requestedId) return;
+    const requested = savedDiagrams.find(diagram => diagram._id === requestedId);
+    if (!requested) return;
+    url.searchParams.delete('diagram');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    openSavedDiagram(requested);
+    // The requested ID is consumed once; subsequent directory refreshes must not replace the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedDiagrams]);
+
   function openInfraTemplate(templateId: string) {
     const template = commonInfraTemplates.find((item) => item.id === templateId);
     if (!template) return;
@@ -1805,48 +1839,30 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
     );
   }
 
-  return (
-    <div className="dash-page dash-page--builder">
-      <section className="diagram-directory" aria-label="Saved diagrams directory">
-        <header>
-          <div>
-            <span className="dash-eyebrow">Diagram directory</span>
-            <strong>{currentDiagramId ? currentDiagramName : 'Unsaved diagram'}</strong>
+  const isCompactBuilder = experience !== 'classic';
+  const diagramViewTabs = isSuperAdminUser && (
+          <div className="builder-view-tabs" role="tablist" aria-label="Diagram view mode">
+            <button
+              aria-selected={builderViewMode === '2d'}
+              className={builderViewMode === '2d' ? 'active' : ''}
+              onClick={() => setBuilderViewMode('2d')}
+              role="tab"
+              type="button"
+            >
+              2D Diagram
+            </button>
+            <button
+              aria-selected={builderViewMode === '3d'}
+              className={builderViewMode === '3d' ? 'active' : ''}
+              onClick={() => setBuilderViewMode('3d')}
+              role="tab"
+              type="button"
+            >
+              3D View
+            </button>
           </div>
-          <div className="diagram-directory__actions">
-            <label className="diagram-directory__select">
-              <span>Open</span>
-              <select value={currentDiagramId ?? ''} onChange={(event) => selectSavedDiagram(event.target.value)} disabled={isLoadingDirectory || !hasOpenableDiagrams}>
-                <option value="">{isLoadingDirectory ? 'Loading diagrams...' : hasOpenableDiagrams ? 'Select diagram or template' : 'No diagrams'}</option>
-                {commonInfraTemplates.length > 0 && (
-                  <optgroup label="Application templates">
-                    {commonInfraTemplates.map((template) => (
-                      <option value={templateDiagramId(template.id)} key={template.id}>
-                        {template.name} ({template.snapshot.nodes.length} nodes)
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {demoDiagrams.length > 0 && (
-                  <optgroup label="Demo diagrams">
-                    {demoDiagrams.map((diagram) => (
-                      <option value={diagram._id} key={diagram._id}>
-                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {savedDiagrams.length > 0 && (
-                  <optgroup label="Your saved diagrams">
-                    {savedDiagrams.map((diagram) => (
-                      <option value={diagram._id} key={diagram._id}>
-                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </label>
+        );
+  const diagramActions = <>
             <button className="dash-secondary-action" onClick={startBlankDiagram} type="button">
               <FilePlus2 size={15} />
               New blank
@@ -1881,6 +1897,62 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
                 Delete
               </button>
             )}
+  </>;
+  const diagramDirectory = (
+    <section className="diagram-directory" aria-label="Saved diagrams directory">
+        <header>
+          <div>
+            <span className="dash-eyebrow">Diagram directory</span>
+            <strong title={currentDiagramName}>{currentDiagramId ? currentDiagramName : 'Unsaved diagram'}</strong>
+          </div>
+          <div className="diagram-directory__actions">
+            <label className="diagram-directory__select">
+              <span>Open</span>
+              <select aria-label="Open diagram or template" value={currentDiagramId ?? ''} onChange={(event) => selectSavedDiagram(event.target.value)} disabled={isLoadingDirectory || !hasOpenableDiagrams}>
+                <option value="">{isLoadingDirectory ? 'Loading diagrams...' : hasOpenableDiagrams ? 'Select diagram or template' : 'No diagrams'}</option>
+                {commonInfraTemplates.length > 0 && (
+                  <optgroup label="Application templates">
+                    {commonInfraTemplates.map((template) => (
+                      <option value={templateDiagramId(template.id)} key={template.id}>
+                        {template.name} ({template.snapshot.nodes.length} nodes)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {demoDiagrams.length > 0 && (
+                  <optgroup label="Demo diagrams">
+                    {demoDiagrams.map((diagram) => (
+                      <option value={diagram._id} key={diagram._id}>
+                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {savedDiagrams.length > 0 && (
+                  <optgroup label="Your saved diagrams">
+                    {savedDiagrams.map((diagram) => (
+                      <option value={diagram._id} key={diagram._id}>
+                        {diagram.name} ({diagram.nodes?.length ?? 0} nodes)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+            {isCompactBuilder ? (
+              <details className="builder-file-menu toolbar-tools-menu toolbar-tools-menu--align-right" onKeyDown={event => {
+                if (event.key === 'Escape') {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector('summary')?.focus();
+                }
+              }}>
+                <summary className="bx-button toolbar-tools-menu__summary">Diagram actions<ChevronDown size={13} /></summary>
+                <div className="toolbar-tools-menu__content" onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button')) event.currentTarget.closest('details')?.removeAttribute('open');
+                }}>{diagramActions}</div>
+              </details>
+            ) : diagramActions}
+            {isCompactBuilder && diagramViewTabs}
           </div>
         </header>
         <input
@@ -1897,8 +1969,14 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
             it's true: some plan/role-based restriction is in effect. */}
         {!hasCredits(user) && <p>Access tier: {accessTier}. Locked services cannot be dragged or deployed for this account.</p>}
       </section>
+  );
+
+  return (
+    <div className={`dash-page dash-page--builder ${isCompactBuilder ? 'dash-page--builder-compact' : ''}`}>
+      {!isCompactBuilder && diagramDirectory}
       <div ref={builderShellRef} className={`builder-shell dashboard-builder-shell ${isFullscreen ? 'dashboard-builder-shell--fullscreen' : ''}`}>
-        {isFullscreen && (
+        {isCompactBuilder && diagramDirectory}
+        {isFullscreen && (!isCompactBuilder || builderViewMode === '3d') && (
           <div className="dashboard-builder-fullscreen-bar">
             <strong>Visual Builder</strong>
             <button className="dashboard-builder-fullscreen-exit" onClick={() => void toggleBuilderFullscreen()} type="button">
@@ -1907,31 +1985,11 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
             </button>
           </div>
         )}
-        {isSuperAdminUser && (
-          <div className="builder-view-tabs" role="tablist" aria-label="Diagram view mode">
-            <button
-              aria-selected={builderViewMode === '2d'}
-              className={builderViewMode === '2d' ? 'active' : ''}
-              onClick={() => setBuilderViewMode('2d')}
-              role="tab"
-              type="button"
-            >
-              2D Diagram
-            </button>
-            <button
-              aria-selected={builderViewMode === '3d'}
-              className={builderViewMode === '3d' ? 'active' : ''}
-              onClick={() => setBuilderViewMode('3d')}
-              role="tab"
-              type="button"
-            >
-              3D View
-            </button>
-          </div>
-        )}
+        {!isCompactBuilder && diagramViewTabs}
         {builderViewMode === '2d' || !isSuperAdminUser ? (
           <>
             <Toolbar
+              compact={isCompactBuilder}
               theme={theme}
               isFullscreen={isFullscreen}
               onToggleFullscreen={() => void toggleBuilderFullscreen()}
@@ -1955,7 +2013,6 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
             <ThreeDView />
           </Suspense>
         )}
-      </div>
       {isDeleteDialogOpen && (
         <div className="diagram-delete-dialog-backdrop" role="presentation" onMouseDown={() => setIsDeleteDialogOpen(false)}>
           <section
@@ -2056,6 +2113,7 @@ function VisualBuilderPage({ theme }: { theme: ThemeMode }) {
           </section>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -2307,7 +2365,7 @@ function DeploymentsPage({
               />
             </label>
           </header>
-          <div className="dash-deploy-table-wrap">
+          <div className="dash-deploy-table-wrap" tabIndex={0} role="region" aria-label="Deployment records">
             {isLoadingDeployments && !deploymentRecords.length ? (
               <TableSkeleton columnWidths={[3, 1, 1, 1, 1, 1, 1]} />
             ) : visibleDeployments.length ? (
@@ -3657,7 +3715,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
             </button>
           </div>
         )}
-        <div className="dash-deploy-table-wrap">
+        <div className="dash-deploy-table-wrap" tabIndex={0} role="region" aria-label="Application pipelines">
           {filteredPipelines.length ? (
             <table className="dash-deploy-table app-pipeline-inventory-table">
               <thead>
@@ -3884,7 +3942,7 @@ function InfraDeploymentPipelinePage({ insights }: { insights?: AwsInsights }) {
               </button>
             </header>
             {resourceHealthMetrics.length ? (
-              <div className="dash-deploy-detail-table-wrap">
+              <div className="dash-deploy-detail-table-wrap" tabIndex={0} role="region" aria-label="Deployment resource details">
                 <table className="dash-deploy-detail-table dash-deploy-live-table">
                   <thead>
                     <tr>
@@ -6076,10 +6134,11 @@ function getCostRecommendationCards(insights?: AwsInsights) {
   );
 }
 
-function CostRecommendationGrid({ insights }: { insights?: AwsInsights }) {
+function CostRecommendationGrid({ insights, onReviewResources }: { insights?: AwsInsights; onReviewResources?: () => void }) {
   const recommendations = getCostRecommendationCards(insights);
 
   if (!recommendations.length) {
+    if (onReviewResources) return <div className="studio-optimization-empty"><CheckCircle2 size={25} /><div><strong>{insights ? 'No savings recommendations yet' : 'Your next opportunity starts with a sync'}</strong><p>{insights ? 'Recommendations will appear here when the connected account returns cost optimization opportunities.' : 'Connect your AWS account to review available cost and resource recommendations.'}</p></div></div>;
     return insights ? <EmptyState>No Cost Explorer recommendations generated yet.</EmptyState> : null;
   }
 
@@ -6093,7 +6152,7 @@ function CostRecommendationGrid({ insights }: { insights?: AwsInsights }) {
             <h3>{item.title}</h3>
             <strong>{item.savings}</strong>
             <span>Effort: {item.effort}</span>
-            <button>Apply recommendation</button>
+            {onReviewResources ? <button onClick={onReviewResources} type="button">Review resources<ArrowRight size={14} /></button> : <button>Apply recommendation</button>}
           </div>
         );
       })}
@@ -6232,7 +6291,7 @@ function ScrollHintIcon() {
   );
 }
 
-function ResourceTable({ insights }: { insights?: AwsInsights }) {
+function ResourceTable({ insights, showHeadings = false }: { insights?: AwsInsights; showHeadings?: boolean }) {
   const [detail, setDetail] = useState<RuntimeLabDetail | null>(null);
   const inventory = insights
     ? insights.inventory
@@ -6248,6 +6307,7 @@ function ResourceTable({ insights }: { insights?: AwsInsights }) {
 
   return (
     <>
+      {showHeadings && inventory.length > 0 && <div className="studio-inventory-columns" aria-hidden="true"><span>Service</span><span>Resources</span><span>Health</span><span>Spend</span></div>}
       <div className="dash-resource-table">
         {inventory.length ? inventory.map((resource) => {
           const Icon = resource.icon;

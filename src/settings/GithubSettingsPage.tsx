@@ -8,13 +8,17 @@ import { useDiagramStore } from '../store/diagramStore';
 import { getNextTheme, type ThemeMode } from '../theme';
 import { disconnectGithub, getGithubStatus, githubOAuthUrl, type GithubConnection } from '../github/githubApi';
 import { getAccessPlan, isSuperAdmin, serviceAccessTierForUser } from '../utils/accessControl';
+import { useUiExperience } from '../ui/UiExperience';
+import { ThemePicker } from '../ui/ThemePicker';
 
 type SettingsPageProps = {
   theme: ThemeMode;
   onToggleTheme: () => void;
+  onSelectTheme: (theme: ThemeMode) => void;
 };
 
-export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPageProps) {
+export default function GithubSettingsPage({ theme, onToggleTheme, onSelectTheme }: SettingsPageProps) {
+  const { experience } = useUiExperience();
   const user = getStoredUser();
   const whiteboardMode = useDiagramStore((state) => state.whiteboardMode);
   const setWhiteboardMode = useDiagramStore((state) => state.setWhiteboardMode);
@@ -112,10 +116,10 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
           <a className="dash-secondary-action" href="/dashboard">
             Dashboard
           </a>
-          <button className="dash-secondary-action" onClick={onToggleTheme} title={`Switch to ${getNextTheme(theme)} theme`} type="button">
+          {experience !== 'classic' ? <ThemePicker theme={theme} onChange={onSelectTheme} /> : <button className="dash-secondary-action" onClick={onToggleTheme} title={`Switch to ${getNextTheme(theme)} theme`} type="button">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             Theme
-          </button>
+          </button>}
           <button className="dash-secondary-action" onClick={signOut} type="button">
             <LogOut size={16} />
             Sign out
@@ -124,12 +128,6 @@ export default function GithubSettingsPage({ theme, onToggleTheme }: SettingsPag
       </header>
 
       <section className="settings-panel">
-        <div className="settings-heading">
-          <span className="dash-eyebrow">Profile settings</span>
-          <h1>Connected accounts</h1>
-          <p>{user?.email}</p>
-        </div>
-
         <article className="settings-profile-card" aria-label="User profile information">
           <div className="settings-profile-card__identity">
             <div className="settings-profile-avatar">

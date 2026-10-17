@@ -29,6 +29,9 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import AppLogo from '../components/AppLogo';
+import { ThemePicker } from '../ui/ThemePicker';
+import { awsServices } from '../data/awsServices';
+import { ProductJourneySection, ServiceCatalogSection, LiveDataSection, ProductFaqSection } from './ProductSections';
 import { getThemeToggleTitle, type ThemeMode } from '../theme';
 import { renderInlineMarkdown } from './blocks/inlineMarkdown';
 import { getTimelineEntries, type TimelineEntry } from './timelineApi';
@@ -127,7 +130,7 @@ const heroPipelineSteps = [
   { label: 'Live', meta: 'Release verified', icon: Check },
 ];
 
-function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+function LandingPage({ theme, onToggleTheme, onSelectTheme }: { theme: ThemeMode; onToggleTheme: () => void; onSelectTheme: (theme: ThemeMode) => void }) {
   const [detail, setDetail] = useState<LearningDetail | null>(null);
   const [isScrollCueHidden, setIsScrollCueHidden] = useState(false);
   const footerRef = useRef<HTMLElement>(null);
@@ -149,7 +152,7 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
 
   return (
     <div className="landing-page">
-      <Navbar theme={theme} onToggleTheme={onToggleTheme} />
+      <Navbar theme={theme} onToggleTheme={onToggleTheme} onSelectTheme={onSelectTheme} />
       <a className={`lp-scroll-cue${isScrollCueHidden ? ' lp-scroll-cue--hidden' : ''}`} href="#visual-builder" aria-label="Scroll down to visual builder section">
         <span className="lp-scroll-cue__mouse" aria-hidden="true">
           <span />
@@ -160,15 +163,17 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
         <HeroSection />
         <ProblemSection />
         <TrustBar />
-        <SolutionSection onOpenDetail={setDetail} />
+        <ProductJourneySection />
         <BuilderSection />
         <AgentSection />
         <TerraformSection />
-        <InsightsSection onOpenDetail={setDetail} />
+        <LiveDataSection />
+        <ServiceCatalogSection />
         <UseCasesSection onOpenDetail={setDetail} />
         <SecuritySection onOpenDetail={setDetail} />
         <HowItWorksSection onOpenDetail={setDetail} />
         {/* <PricingSection /> */}
+        <ProductFaqSection />
         <TimelineTeaserSection />
         <FinalCTA />
       </main>
@@ -178,7 +183,7 @@ function LandingPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme
   );
 }
 
-function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+function Navbar({ theme, onToggleTheme, onSelectTheme }: { theme: ThemeMode; onToggleTheme: () => void; onSelectTheme: (theme: ThemeMode) => void }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNavbarHidden, setIsNavbarHidden] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -214,9 +219,7 @@ function Navbar({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () 
         ))}
       </nav>
       <div className="lp-nav-actions">
-        <button className="lp-theme-toggle" onClick={onToggleTheme} title={getThemeToggleTitle(theme)}>
-          {theme === 'dark' ? <Sun size={16} /> : theme === 'light' ? <Sparkles size={16} /> : <Moon size={16} />}
-        </button>
+        <ThemePicker theme={theme} onChange={onSelectTheme} />
         {/* <a className="lp-reference-nav-button" href={REFERENCE_DOCS_ROUTE}>
           <FileText size={15} />
           Lab Reference
@@ -278,20 +281,18 @@ function HeroSection() {
       <div className="lp-hero-glow lp-hero-glow--cyan" />
       <div className="lp-hero-glow lp-hero-glow--violet" />
       <div className="lp-hero-content">
-        <h1>Design AWS infrastructure visually, deploy it for real, and ship your own app alongside it.</h1>
+        <span className="studio-hero-eyebrow"><span />YOUR CLOUD. YOUR NEXT BIG IDEA.</span><h1>Build with clarity.<br /><em>Ship with confidence.</em></h1>
         <p>
-          Infraflow helps teams model AWS architecture on a React Flow canvas, generate Terraform for 44 supported
-          resource types, connect AWS through IAM roles, and monitor cost, inventory, security, logs, deployments, and
-          drift — then generate a working CI/CD pipeline so your own application deploys itself too.
+          Design AWS infrastructure visually. Review the Terraform behind it. Connect your application and follow its journey into your own cloud account.
         </p>
         <div className="lp-hero-actions">
           <a className="lp-primary-button" href={REGISTER_ROUTE}>
-            Create Free Workspace
+            Start building
             <ArrowRight size={18} />
           </a>
           <a className="lp-secondary-button" href="#visual-builder">
             <Play size={17} />
-            See Visual Builder
+            Explore the visual builder
           </a>
           <a className="lp-inline-link" href="#terraform-export">
             Review Terraform workflow
@@ -482,7 +483,7 @@ function TrustBar() {
 
 function ProblemSection() {
   return (
-    <Section id="product-pain" eyebrow="Platform Snapshot" title="What Infraflow connects from the start.">
+    <Section id="product-pain" eyebrow="Platform Snapshot" title="An open view of your infrastructure.">
       <div className="lp-hero-stats lp-hero-stats--section">
         {heroStats.map((stat) => (
           <div key={stat.label}>
@@ -497,7 +498,7 @@ function ProblemSection() {
 
 function SolutionSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDetail) => void }) {
   return (
-    <Section id="ai-agent" eyebrow="Solution" title="One visual canvas for designing, generating, and managing AWS infrastructure.">
+    <Section id="platform-capabilities" eyebrow="Solution" title="One visual canvas for designing, generating, and managing AWS infrastructure.">
       <div className="lp-card-grid lp-card-grid--3">
         {solutionCards.map((card) => (
           <InfoCard detail={getLandingInfoDetail('solution', card.title, card.description)} key={card.title} onOpenDetail={onOpenDetail} {...card} large />
@@ -509,7 +510,7 @@ function SolutionSection({ onOpenDetail }: { onOpenDetail: (detail: LearningDeta
 
 function BuilderSection() {
   return (
-    <Section id="visual-builder" eyebrow="Visual Builder" title="An n8n-style builder for cloud infrastructure.">
+    <Section id="visual-builder" eyebrow="Visual Builder" title="The whole architecture. Every detail within reach.">
       <div className="lp-builder-mockup">
         <aside className="lp-builder-sidebar">
           <div className="lp-builder-title">AWS Services</div>
@@ -526,15 +527,15 @@ function BuilderSection() {
           <div className="lp-builder-status">
             <span>
               <Check size={14} />
-              Validation passed
+              Example architecture
             </span>
             <span>
               <TerminalSquare size={14} />
-              Terraform generated
+              Reviewable Terraform
             </span>
             <span>
               <Rocket size={14} />
-              Ready to deploy
+              Configure before deployment
             </span>
           </div>
         </div>
@@ -566,7 +567,7 @@ function BuilderSection() {
 
 function AgentSection() {
   return (
-    <section className="lp-split-section section-reveal" id="ai-agent">
+    <section className="lp-split-section section-reveal" id="platform-capabilities">
       <div>
         <div className="lp-section-eyebrow">AWS Insights</div>
         <h2>Connect AWS once, then work from normalized cloud context.</h2>
@@ -819,16 +820,16 @@ function formatTeaserDate(iso: string) {
 
 function FinalCTA() {
   return (
-    <section className="lp-final-cta section-reveal">
+    <section className="lp-final-cta">
       <div className="lp-final-glow" />
-      <h2>Start with a visual AWS diagram. Keep Terraform, deployment, and operations connected.</h2>
+      <h2>Your next architecture starts with a clearer view.</h2>
       <p>
         Create a workspace, design supported AWS services, generate Terraform, connect an IAM role, generate a CI/CD
         pipeline for your own app, and operate everything from one workspace-scoped dashboard.
       </p>
       <div className="lp-hero-actions">
         <a className="lp-primary-button lp-final-cta-button" href={DASHBOARD_ROUTE}>
-          Open Infraflow
+          Open CodeManus
           <ArrowRight size={17} />
         </a>
       </div>
@@ -875,10 +876,11 @@ function Footer({ footerRef }: { footerRef: React.RefObject<HTMLElement | null> 
 }
 
 function footerLinkHref(label: string) {
-  if (label === 'Terms') return '/legal/terms';
-  if (label === 'Privacy') return '/legal/privacy';
+  if (label === 'Terms' || label === 'Terms of Service') return '/legal/terms';
+  if (label === 'Privacy' || label === 'Privacy Policy') return '/legal/privacy';
   if (label === 'Changelog') return '/blog';
-  return '/';
+  const destinations: Record<string, string> = { 'Visual Builder': '#visual-builder', 'AWS Insights': '#aws-insights', 'Terraform Export': '#terraform-export', 'CI/CD Pipelines': '#application-delivery', Deployments: '/dashboard?view=deployments', Workflow: '#docs', 'AWS Connection': '/dashboard?view=connect-aws', 'Terraform Guide': '/references', Support: '#questions', 'About Developer': 'https://github.com/babkv90', Contact: 'https://www.linkedin.com/in/abiece32', Security: '#security' };
+  return destinations[label] || '/';
 }
 
 function DiagramMockup({ variant }: { variant: 'hero' | 'builder' | 'mini' }) {

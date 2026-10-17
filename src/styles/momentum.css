@@ -1,0 +1,213 @@
+/* Study Momentum, ported from soulmed/design-preview/src/{styles,landing,app-flows}.css.
+   The reference's exact palette and type are mapped onto the existing app components.
+   Every override is scoped: Studio and Classic keep their own presentation. */
+.app-theme.ui-studio.ui-momentum {
+  --ink: #232843;
+  --muted: #5f637b;
+  --accent: #4939b1;
+  --accent-hover: #38258e;
+  --tint: #eeecfb;
+  --canvas: #f4f4fa;
+  --surface: #fff;
+  --line: #dbdbe9;
+  --radius: 12px;
+  --heading: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  --focus: #ac3e1a;
+  --citron: #eff594;
+  --studio-ground: var(--canvas);
+  --studio-surface: var(--surface);
+  --studio-soft: var(--tint);
+  --studio-line: var(--line);
+  --studio-ink: var(--ink);
+  --studio-muted: var(--muted);
+  --studio-accent: var(--accent);
+  --studio-accent-soft: var(--tint);
+  --studio-shadow: none;
+  --accent-primary-hover: var(--accent-hover);
+  --accent-primary-rgb: 73, 57, 177;
+  --text-primary-rgb: 35, 40, 67;
+  --border-strong: #aaa2ce;
+  --dash-topbar-height: 82px;
+  --dash-radius-lg: 12px;
+  --dash-radius-xl: 12px;
+  --shadow-modal: 0 24px 80px #24213f26;
+  color-scheme: light;
+  font-family: var(--heading);
+  min-height: 100dvh;
+}
+body:has(.ui-momentum) { background: #f4f4fa; }
+.ui-experience-switch select { min-width: 0; max-width: 100%; border: 0; border-radius: 0; padding: 0; min-height: 24px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.ui-experience-switch select option { background: #fff; color: #232843; }
+.ui-experience-switch:focus-within { outline: 3px solid #ac3e1a; outline-offset: 3px; }
+.app-theme.ui-momentum :is(.dash-shell, .landing-page, .auth-page, .settings-page, .reference-page, .legal-page, .timeline-page) { font-family: var(--heading); color: var(--ink); background: var(--canvas); }
+.app-theme.ui-momentum :is(h1, h2, h3, h4, button, input, select, textarea) { font-family: inherit; }
+.app-theme.ui-momentum :is(h1, h2, h3) { font-weight: 600; letter-spacing: -.035em; }
+.app-theme.ui-momentum :is(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.app-theme.ui-momentum .ui-experience-switch { font-family: var(--heading); color: var(--accent); background: var(--tint); border-color: var(--line); padding: 8px 12px; border-radius: 8px; }
+.app-theme.ui-momentum .studio-logo__mark { background: var(--accent); color: white; border-radius: 12px; }
+.app-theme.ui-momentum .studio-logo__word { color: var(--ink); font-weight: 700; }
+.app-theme.ui-momentum .studio-logo__word > span { color: var(--accent); }
+
+/* The reference's full-width header and horizontal workspace navigation. */
+.app-theme.ui-momentum .dash-shell { grid-template-columns: 255px minmax(0, 1fr); grid-template-rows: 82px 54px auto; align-content: start; }
+.app-theme.ui-momentum .dash-main { display: contents; }
+.app-theme.ui-momentum .dash-brand { grid-column: 1; grid-row: 1; width: auto; height: 82px; min-height: 82px; padding-left: 5vw; justify-content: flex-start; border: 0; }
+.app-theme.ui-momentum .dash-brand .studio-logo__word { display: inline; }
+.app-theme.ui-momentum .dash-brand .studio-logo { display: inline-flex; gap: 10px; }
+.app-theme.ui-momentum .dash-topbar { grid-column: 2; grid-row: 1; min-height: 82px; padding: 12px 5vw 12px 16px; border: 0; }
+.app-theme.ui-momentum .dash-topbar > div:first-child { display: none; }
+.app-theme.ui-momentum .dash-top-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.app-theme.ui-momentum .dash-sidebar { grid-column: 1 / -1; grid-row: 2; top: 82px; z-index: 35; height: 54px; min-width: 0; padding: 0 5vw; border: 0; border-block: 1px solid var(--line); display: block; overflow-x: auto; scrollbar-width: thin; }
+.app-theme.ui-momentum .dash-nav { flex-direction: row; gap: 7px; width: max-content; }
+.app-theme.ui-momentum .dash-nav button { width: auto; height: 53px; min-height: 53px; padding: 10px 12px; gap: 8px; border-radius: 0; border-bottom: 3px solid transparent; font-size: 12px; white-space: nowrap; }
+.app-theme.ui-momentum .dash-nav button > span { display: inline; }
+.app-theme.ui-momentum .dash-nav button > svg { width: 16px; height: 16px; }
+.app-theme.ui-momentum .dash-nav button.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; font-weight: 650; }
+.app-theme.ui-momentum .dash-nav button:hover { background: var(--tint); }
+.app-theme.ui-momentum .dash-nav button.active::before, .app-theme.ui-momentum .studio-nav-footer { display: none; }
+.app-theme.ui-momentum .dash-content { grid-column: 1 / -1; grid-row: auto; width: 100%; min-width: 0; }
+.app-theme.ui-momentum .dash-shell > .page-alert { grid-column: 1 / -1; }
+.app-theme.ui-momentum .dash-content.studio-interior { max-width: none; margin: 0; padding: 34px clamp(20px, 2vw, 32px) 44px; min-height: calc(100dvh - 136px); }
+.app-theme.ui-momentum .studio-interior > .dash-page, .app-theme.ui-momentum .studio-page-heading { max-width: none; width: 100%; }
+.app-theme.ui-momentum .dash-content:has(.dash-page--overview) { padding: 34px clamp(20px, 2vw, 32px) 44px; }
+.app-theme.ui-momentum .dash-content:has(.dash-page--builder) { height: calc(100dvh - 136px); min-height: 550px; }
+.app-theme.ui-momentum .studio-page-heading { margin-bottom: 28px; align-items: flex-start; gap: 18px; }
+.app-theme.ui-momentum .studio-page-heading > div, .app-theme.ui-momentum .studio-welcome > div:first-child { display: block; }
+.app-theme.ui-momentum .studio-page-heading h2, .app-theme.ui-momentum .studio-welcome h2 { font-size: 43px; font-weight: 700; line-height: 1.16; letter-spacing: -1.8px; margin: 14px 0 18px; }
+.app-theme.ui-momentum .studio-page-heading p, .app-theme.ui-momentum .studio-welcome p { font-size: 15px; line-height: 1.7; }
+.app-theme.ui-momentum .studio-welcome .studio-eyebrow { display: block; font-size: 10px; letter-spacing: 1.6px; }
+.app-theme.ui-momentum .studio-page-heading-icon { width: 44px; height: 44px; background: var(--tint); border: 0; border-radius: 13px; }
+.app-theme.ui-momentum .studio-workspace-summary { gap: 22px; }
+.app-theme.ui-momentum .studio-welcome { margin-bottom: 12px; }
+.app-theme.ui-momentum .studio-welcome > button { display: none; }
+.app-theme.ui-momentum .studio-summary-stats { grid-row: 2; gap: 0; padding: 28px 26px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.app-theme.ui-momentum .studio-summary-stats > div { padding: 0 22px; border: 0; border-right: 1px solid var(--line); border-radius: 0; }
+.app-theme.ui-momentum .studio-summary-stats > div:first-child { padding-left: 0; }
+.app-theme.ui-momentum .studio-summary-stats > div:last-child { border: 0; }
+.app-theme.ui-momentum .studio-summary-stats strong { font-size: 32px; font-weight: 650; margin: 12px 0; }
+.app-theme.ui-momentum .studio-summary-stats small { white-space: normal; font-size: 12px; }
+.momentum-actions { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 22px; }
+.momentum-continue { display: flex; flex-direction: column; gap: 24px; padding: 28px; border-radius: 14px; background: var(--accent); color: white; min-width: 0; }
+.app-theme.ui-momentum .momentum-continue .studio-eyebrow { color: white; font-size: 10px; }
+.momentum-continue-body { display: flex; align-items: center; gap: 24px; flex: 1; }
+.momentum-architecture-icon { display: grid; place-items: center; width: 105px; height: 136px; border-radius: 6px 15px 15px 6px; background: var(--tint); color: var(--accent); box-shadow: -5px 0 #9184d2; flex-shrink: 0; }
+.app-theme.ui-momentum .momentum-continue h3 { color: white; font-size: 28px; line-height: 1.2; margin: 0 0 12px; overflow-wrap: anywhere; }
+.app-theme.ui-studio.ui-momentum .momentum-continue p { color: white; font-size: 13px; margin: 0; }
+.momentum-continue > button { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 46px; padding: 12px 18px; border: 0; border-radius: 8px; background: var(--citron); color: #24254a; cursor: pointer; }
+.momentum-continue > button:hover { background: #dfe98e; }
+.momentum-continue > small { text-align: center; font-size: 12px; }
+.momentum-shortcuts { display: grid; gap: 12px; }
+.momentum-shortcuts > button { display: flex; gap: 14px; align-items: center; padding: 20px 17px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); text-align: left; min-width: 0; cursor: pointer; }
+.momentum-shortcuts > button:hover { border-color: var(--accent); background: var(--tint); }
+.momentum-shortcuts .studio-project-icon { margin: 0; border-radius: 13px; flex-shrink: 0; }
+.momentum-shortcuts > button > svg { margin-left: auto; flex-shrink: 0; }
+.momentum-shortcuts strong, .momentum-shortcuts small { display: block; }
+.momentum-shortcuts strong { font-size: 15px; }
+.momentum-shortcuts small { font-size: 12px; line-height: 1.6; color: var(--muted); margin-top: 5px; }
+
+/* Existing modules, forms, tables, dialogs, charts, and the canvas share the palette. */
+.app-theme.ui-momentum :is(.dash-panel, .dash-kpi-card, .dash-aws-insight-card, .dash-template-card, .studio-project-card, .ticket-modal, .pipeline-config-panel, .pipeline-preview-panel, .resource-info-card, .admin-users-panel, .settings-profile-card, .settings-github-card) { border-radius: var(--radius); box-shadow: none; }
+.app-theme.ui-momentum :is(.dash-template-card, .studio-project-card) { border-top: 4px solid var(--accent); }
+.app-theme.ui-momentum :is(.deploy-kpi-card, .admin-kpi-card, .dash-aws-insight-card) { border-left: 4px solid var(--accent); }
+.app-theme.ui-momentum .dash-page--overview { --chart-green: #4939b1; --chart-blue: #777ac0; --chart-violet: #9a88cf; --chart-amber: #a0ac42; }
+.app-theme.ui-momentum :is(.dash-overview-style-toggle, .builder-view-tabs, .admin-tabs) { background: #e5e4f0; border: 0; border-radius: 9px; padding: 5px; gap: 6px; }
+.app-theme.ui-momentum :is(.dash-primary-action, .pipeline-primary-button, .studio-primary, .lp-primary-button):hover { background: var(--accent-hover); }
+.app-theme.ui-momentum .builder-shell { --bx-sans: 'Trebuchet MS', 'Segoe UI', sans-serif; --bx-accent: var(--accent); }
+.app-theme.ui-momentum .builder-shell :is(.bx-button--primary, .deploy-button) { background: var(--accent); color: white; }
+.app-theme.ui-momentum .builder-shell .canvas-shell { background: var(--canvas); }
+
+/* Give data tables the available screen width before resorting to horizontal scrolling. */
+.app-theme.ui-momentum .studio-interior .admin-console-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+.app-theme.ui-momentum .admin-users-panel { min-width: 0; }
+.app-theme.ui-momentum .admin-users-table { width: 100%; min-width: 0; table-layout: auto; }
+.app-theme.ui-momentum .admin-users-table :is(th, td) { padding: 10px 12px; white-space: nowrap; vertical-align: middle; }
+.app-theme.ui-momentum .admin-users-table td :is(strong, span) { white-space: nowrap; }
+.app-theme.ui-momentum .studio-interior .admin-users-table select { width: 108px; }
+.app-theme.ui-momentum .admin-activity-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 10px; max-height: 300px; overflow-y: auto; }
+.app-theme.ui-momentum .admin-activity-item { min-width: 0; margin: 0; }
+.app-theme.ui-momentum .admin-activity-item > div { min-width: 0; }
+.app-theme.ui-momentum .admin-activity-item strong { overflow-wrap: anywhere; }
+.app-theme.ui-momentum :is(.dash-deploy-table, .dash-deploy-detail-table, .dash-table) :is(th, td) { padding-inline: 12px; }
+@media (min-width: 1800px) {
+  .app-theme.ui-momentum .admin-users-table td > :is(strong, span) { display: inline; }
+  .app-theme.ui-momentum .admin-users-table td > strong + span { margin-left: 8px; }
+  .app-theme.ui-momentum .admin-users-table td > strong + span::before { content: '\00b7'; margin-right: 8px; color: var(--muted); }
+}
+
+/* Public site: keep the product sections and illustrations, apply the source treatment. */
+.app-theme.ui-momentum .lp-nav { min-height: 82px; background: var(--surface); padding-inline: 5vw; border-bottom: 1px solid var(--line); }
+.app-theme.ui-momentum .lp-hero { max-width: 1340px; margin: 0 auto; padding: 74px 5vw 54px; }
+.app-theme.ui-momentum .lp-hero::before, .app-theme.ui-momentum .lp-hero-glow { display: none; }
+.app-theme.ui-momentum .lp-hero-network__line { stroke: #9184d2; }
+.app-theme.ui-momentum .lp-hero-content h1 { font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; letter-spacing: -2px; }
+.app-theme.ui-momentum .lp-hero-content h1 em { color: var(--ink); font-style: normal; }
+.app-theme.ui-momentum .lp-hero-content > p { font-size: 15px; line-height: 1.8; }
+.app-theme.ui-momentum .lp-hero-network-card { background: var(--tint); border-color: var(--line); box-shadow: 7px 7px 0 #d8d3f0; transform: rotate(-1deg); }
+.app-theme.ui-momentum .lp-hero-stats { background: #e9e7f6; border-radius: 12px; border: 0; }
+.app-theme.ui-momentum :is(.studio-journey-showcase, .studio-journey-preview, .studio-live-preview, .studio-catalog-card, .lp-info-card, .lp-step-card) { border-radius: 12px; }
+.app-theme.ui-momentum :is(.studio-catalog-card, .lp-info-card) { border-top: 3px solid var(--accent); }
+.app-theme.ui-momentum :is(.studio-section-heading h2, .lp-section-heading h2, .lp-split-section h2, .lp-security h2) { font-weight: 700; letter-spacing: -1.1px; }
+.app-theme.ui-momentum .lp-final-cta { --cta-background: #4939b1; --cta-border: #4939b1; --cta-heading: #fff; --cta-copy: #fff; --cta-button: #e2f49a; --cta-button-text: #232843; box-shadow: none; border-radius: 12px; }
+.app-theme.ui-momentum .lp-final-cta .lp-primary-button { background: #e2f49a; color: var(--ink); border-color: #e2f49a; }
+.app-theme.ui-momentum .lp-footer { background: var(--canvas); border-color: var(--line); }
+.app-theme.ui-momentum .auth-page { --auth-story: #eeecfb; }
+.app-theme.ui-momentum .studio-auth-story { background: var(--tint); border-radius: 12px; }
+.app-theme.ui-momentum .studio-auth-story h2 { font-weight: 700; }
+.app-theme.ui-momentum :is(.reference-topbar, .reference-sidebar, .reference-reader, .legal-topbar, .legal-shell) { background: var(--surface); color: var(--ink); border-color: var(--line); }
+.app-theme.ui-momentum :is(.reference-page, .legal-page) :is(h1, h2, h3, strong) { color: var(--ink); }
+.app-theme.ui-momentum :is(.reference-page, .legal-page) :is(p, li) { color: var(--muted); }
+.app-theme.ui-momentum .legal-topbar nav :is(a, button) { background: var(--tint); color: var(--accent); border: 1px solid var(--line); border-radius: 8px; }
+.app-theme.ui-momentum .reference-doc-list button { background: var(--surface); color: var(--ink); border-color: var(--line); }
+.app-theme.ui-momentum .reference-doc-list button.active { background: var(--tint); border-color: var(--accent); color: var(--accent); }
+.app-theme.ui-momentum .timeline-page { --timeline-bg: var(--canvas); --timeline-surface: var(--surface); --timeline-text: var(--ink); --timeline-text-secondary: var(--muted); --timeline-text-tertiary: var(--muted); --timeline-hairline: var(--line); --timeline-accent: var(--accent); --timeline-accent-hover: var(--accent-hover); --timeline-accent-tint: var(--tint); --timeline-accent-tint-strong: var(--tint); --timeline-topbar-bg: var(--surface); --timeline-font-serif: var(--heading); --timeline-font-sans: var(--heading); }
+.app-theme.ui-momentum :is(.reference-actions, .timeline-topbar__actions) > button[title^='Switch to'] { display: none; }
+
+@media (max-width: 1100px) {
+  .app-theme.ui-momentum .dash-shell { grid-template-columns: 205px minmax(0, 1fr); }
+  .app-theme.ui-momentum .dash-topbar { padding-right: 22px; }
+  .app-theme.ui-momentum .dash-brand { padding-left: 22px; }
+  .app-theme.ui-momentum .dash-account-status { display: none; }
+  .app-theme.ui-momentum .dash-content.studio-interior { padding-inline: 22px; }
+  .momentum-architecture-icon { width: 76px; height: 110px; }
+}
+@media (max-width: 760px) {
+  .app-theme.ui-momentum .dash-shell { display: flex; flex-direction: column; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .app-theme.ui-momentum .dash-brand { position: relative; top: auto; min-height: 66px; height: 66px; padding: 0 20px; z-index: 1; }
+  .app-theme.ui-momentum .dash-topbar { position: relative; top: auto; min-height: 58px; padding: 4px 20px 14px; border-bottom: 1px solid var(--line); }
+  .app-theme.ui-momentum .dash-top-actions { justify-content: flex-start; gap: 8px; }
+  .app-theme.ui-momentum .dash-top-actions .ui-experience-switch { margin-right: auto; }
+  .app-theme.ui-momentum .dash-top-actions > .dash-secondary-action { font-size: 11px; padding: 7px; }
+  .app-theme.ui-momentum .dash-sidebar { position: fixed; inset: auto 0 0; width: 100%; height: calc(70px + env(safe-area-inset-bottom)); padding: 0 8px env(safe-area-inset-bottom); z-index: 45; background: var(--surface); border-top: 1px solid var(--line); }
+  .app-theme.ui-momentum .dash-nav { flex-direction: row; gap: 4px; }
+  .app-theme.ui-momentum .dash-nav button { flex-direction: column; justify-content: center; min-width: 76px; min-height: 65px; height: 65px; gap: 6px; font-size: 10px; padding: 7px; border-bottom: 0; border-top: 3px solid transparent; }
+  .app-theme.ui-momentum .dash-nav button.active { border-top-color: var(--accent); background: var(--tint); }
+  .app-theme.ui-momentum .dash-nav button > svg { width: 20px; height: 20px; }
+  .app-theme.ui-momentum .dash-content.studio-interior { padding: 26px 20px 34px; min-height: 0; }
+  .app-theme.ui-momentum .studio-page-heading h2, .app-theme.ui-momentum .studio-welcome h2 { font-size: 32px; letter-spacing: -1.1px; }
+  .app-theme.ui-momentum .studio-page-heading p, .app-theme.ui-momentum .studio-welcome p { font-size: 13px; }
+  .app-theme.ui-studio.ui-momentum .studio-summary-stats { grid-row: 3; grid-template-columns: 1fr 1fr 1.2fr; padding: 20px; gap: 10px; }
+  .app-theme.ui-momentum .studio-summary-stats > div { padding: 0 8px 0 0; border: 0; border-right: 1px solid var(--line); }
+  .app-theme.ui-momentum .studio-summary-stats > div:last-child { grid-column: auto; padding: 0; }
+  .app-theme.ui-momentum .studio-summary-stats > div > span { align-items: flex-start; line-height: 1.5; font-size: 10px; }
+  .app-theme.ui-momentum .studio-summary-stats > div > span svg { display: none; }
+  .app-theme.ui-momentum .studio-summary-stats small { font-size: 10px; line-height: 1.6; }
+  .app-theme.ui-momentum .studio-summary-stats .studio-run-status { font-size: 18px; line-height: 40px; overflow-wrap: anywhere; }
+  .momentum-actions { grid-row: 2; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .momentum-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .momentum-shortcuts > button { flex-direction: column; align-items: flex-start; padding: 17px; }
+  .momentum-shortcuts > button > svg { display: none; }
+  .momentum-shortcuts > button:last-child { grid-column: 1 / -1; flex-direction: row; align-items: center; }
+  .momentum-continue { padding: 22px; }
+  .momentum-continue-body { gap: 18px; }
+  .app-theme.ui-momentum .momentum-continue h3 { font-size: 24px; }
+  .app-theme.ui-momentum .dash-content:has(.dash-page--builder) { height: calc(100dvh - 202px); min-height: 530px; padding: 12px; }
+  .app-theme.ui-momentum .lp-hero { padding: 40px 22px; }
+  .app-theme.ui-momentum .lp-nav { min-height: 66px; padding-inline: 20px; }
+  .app-theme.ui-momentum .ui-public-switch { right: 12px; bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-theme.ui-momentum .studio-project-card:hover { transform: none; }
+}
+@media print {
+  .ui-experience-switch { display: none; }
+}
