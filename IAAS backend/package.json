@@ -9,7 +9,8 @@
     "start": "node --import tsx/esm src/server.js",
     "test": "node --test",
     "check": "node --check src/server.js && node --check src/lambda.js && node --check lambda.js",
-    "bundle:lambda": "node scripts/bundle-lambda.mjs"
+    "bundle:lambda": "node scripts/bundle-lambda.mjs",
+    "e2e:oauth-browser": "node --import tsx/esm scripts/e2e/oauth-browser-check.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-apigatewayv2": "^3.1063.0",

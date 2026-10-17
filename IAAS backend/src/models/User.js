@@ -7,7 +7,16 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 8, select: false },
+    // Absent for accounts that only ever signed in with Google/GitHub (models/AuthIdentity.js). Such a
+    // user can still add one later through forgot-password, which proves they own the inbox.
+    password: { type: String, minlength: 8, select: false },
+    // True once this person has proven they control `email`: a provider-verified email at OAuth
+    // sign-in, or a completed password reset. Plain registration doesn't verify it — which is exactly
+    // why services/oauthLogin.js treats an unverified password account specially when linking.
+    emailVerified: { type: Boolean, default: false },
+    // Embedded as `sv` in every access/refresh token (utils/tokens.js). Bumping it revokes every
+    // session issued before — stateless JWTs otherwise stay valid until they expire.
+    sessionVersion: { type: Number, default: 0 },
     role: { type: String, enum: Object.values(roles), default: roles.VIEWER },
     status: { type: String, enum: ['active', 'invited', 'disabled'], default: 'active' },
     workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' },
@@ -46,12 +55,14 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.pre('save', async function hashPassword(next) {
-  if (!this.isModified('password')) return next();
+  // `!this.password`: clearing the password (services/oauthLogin.js) is a modification with nothing to hash.
+  if (!this.isModified('password') || !this.password) return next();
   this.password = await bcrypt.hash(this.password, env.BCRYPT_ROUNDS);
   next();
 });
 
 userSchema.methods.comparePassword = function comparePassword(candidatePassword) {
+  if (!this.password) return Promise.resolve(false);
   return bcrypt.compare(candidatePassword, this.password);
 };
 

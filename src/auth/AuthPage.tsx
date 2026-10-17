@@ -1,10 +1,19 @@
-import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, LockKeyhole, Mail, UserRound, Workflow, Code2, Database, Globe, Zap, LoaderCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CloudCog, Eye, EyeOff, Github, LockKeyhole, Mail, UserRound, Workflow, Code2, Database, Globe, Zap, LoaderCircle } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { PageAlert } from '../components/PageAlert';
 import { DASHBOARD_ROUTE, LOGIN_ROUTE, REGISTER_ROUTE } from '../landing/landingConfig';
 import { getThemeToggleLabel, type ThemeMode } from '../theme';
-import { forgotPassword, login, register, resetPassword } from './authClient';
+import {
+  completeOAuthSignIn,
+  fetchOAuthProviders,
+  forgotPassword,
+  login,
+  register,
+  resetPassword,
+  startOAuthSignIn,
+  type OAuthProvider,
+} from './authClient';
 import AppLogo from '../components/AppLogo';
 import { useUiExperience } from '../ui/UiExperience';
 import { ThemePicker } from '../ui/ThemePicker';
@@ -33,6 +42,11 @@ function AuthPage({ mode, theme, onToggleTheme, onSelectTheme }: { mode: AuthMod
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [oauthProviders, setOAuthProviders] = useState<OAuthProvider[]>([]);
+  // Provider id while redirecting out to it, 'completing' while redeeming the ticket on the way back.
+  const [oauthPending, setOAuthPending] = useState<OAuthProvider['id'] | 'completing' | null>(null);
+  // Where to continue to once the user has read the "password removed" notice; null = no notice.
+  const [oauthNoticeTarget, setOAuthNoticeTarget] = useState<string | null>(null);
 
   const title = isStudio ? (isRegister ? 'Create your account' : 'Welcome back') : isRegister ? 'Create your infraflow account' : 'Login to infraflow';
   const description = isStudio ? (isRegister ? 'Your next architecture starts here.' : 'Sign in to continue to your workspace.') : isRegister
@@ -49,6 +63,67 @@ function AuthPage({ mode, theme, onToggleTheme, onSelectTheme }: { mode: AuthMod
     setShowForgotPassword(true);
     setResetToken(token);
   }, [isRegister]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    void fetchOAuthProviders().then((providers) => {
+      if (isCurrent) setOAuthProviders(providers);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  // Landing back from Google/GitHub: /login#oauth_ticket=…&next=… on success, ?oauth_error=… on failure.
+  useEffect(() => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const query = new URLSearchParams(window.location.search);
+    const ticket = fragment.get('oauth_ticket');
+    const oauthError = query.get('oauth_error');
+    if (!ticket && !oauthError) return;
+
+    // Strip it from the address bar (and history) before anything async, so the ticket can't be
+    // bookmarked, shared, or read back — and so StrictMode's second effect run finds nothing to redeem.
+    query.delete('oauth_error');
+    const remainingQuery = query.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}`);
+
+    if (oauthError) {
+      setError(oauthErrorMessage(oauthError));
+      return;
+    }
+
+    setOAuthPending('completing');
+    completeOAuthSignIn(ticket as string)
+      .then((session) => {
+        const next = fragment.get('next');
+        const target = next?.startsWith('/') && !next.startsWith('//') ? next : DASHBOARD_ROUTE;
+        if (session.notice === 'password_removed') {
+          // Signed in, but hold here: the user must learn their password stopped working now, not
+          // the next time they try it.
+          setOAuthPending(null);
+          setOAuthNoticeTarget(target);
+          return;
+        }
+        window.location.href = target;
+      })
+      .catch((oauthCompleteError) => {
+        setOAuthPending(null);
+        setError(oauthCompleteError instanceof Error ? oauthCompleteError.message : 'Sign-in failed. Please try again.');
+      });
+  }, []);
+
+  async function handleOAuthSignIn(providerId: OAuthProvider['id']) {
+    if (oauthPending) return;
+    setError('');
+    setOAuthPending(providerId);
+    try {
+      await startOAuthSignIn(providerId, getAuthRedirectTarget());
+    } catch {
+      setOAuthPending(null);
+      setError('Could not start sign-in. Please try again.');
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -170,6 +245,56 @@ function AuthPage({ mode, theme, onToggleTheme, onSelectTheme }: { mode: AuthMod
             {getThemeToggleLabel(theme)}
           </button>}
         </div>
+
+        {oauthNoticeTarget && (
+          <div className="auth-oauth-notice" role="alert">
+            <strong>You’re signed in. One thing changed on your account.</strong>
+            <p>
+              The password on this account has been removed. Its email address had never been verified, so we couldn’t be
+              sure that password was set by you. Keep signing in with Google or GitHub, or use “Forgot password?” on this
+              page any time to set a new password.
+            </p>
+            <button className="auth-submit" onClick={() => (window.location.href = oauthNoticeTarget)} type="button">
+              Continue <ArrowRight size={17} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {oauthProviders.length > 0 && !oauthNoticeTarget && (
+          <div className="auth-oauth" aria-busy={Boolean(oauthPending)}>
+            {oauthProviders.map((provider) => (
+              <button
+                className="auth-oauth-button"
+                disabled={Boolean(oauthPending)}
+                key={provider.id}
+                onClick={() => void handleOAuthSignIn(provider.id)}
+                type="button"
+              >
+                {oauthPending === provider.id ? (
+                  <LoaderCircle className="studio-auth-spinner" size={18} aria-hidden="true" />
+                ) : provider.id === 'google' ? (
+                  <GoogleMark />
+                ) : (
+                  <Github size={18} aria-hidden="true" />
+                )}
+                Continue with {provider.name}
+              </button>
+            ))}
+            {oauthPending === 'completing' && (
+              <p className="auth-oauth-status" role="status">
+                <LoaderCircle className="studio-auth-spinner" size={15} aria-hidden="true" /> Signing you in…
+              </p>
+            )}
+            <p className="auth-oauth-legal">
+              By continuing with {oauthProviders.map((provider) => provider.name).join(' or ')}, you agree to the{' '}
+              <a href="/legal/terms" rel="noreferrer" target="_blank">Terms of Service</a> and{' '}
+              <a href="/legal/privacy" rel="noreferrer" target="_blank">Privacy Policy</a>.
+            </p>
+            <div className="auth-oauth-divider" role="separator">
+              <span>or {isRegister ? 'sign up' : 'sign in'} with email</span>
+            </div>
+          </div>
+        )}
 
         <form className="auth-form" noValidate onSubmit={handleSubmit} aria-busy={isSubmitting}>
           {isStudio && error && <div className="studio-auth-error" role="alert">{error}</div>}
@@ -409,6 +534,39 @@ function StudioAuthStory() {
     </div>
     <div className="studio-auth-story-footer"><LockKeyhole size={17} /><p>Your workspace. Your AWS account.<br /><span>Access stays scoped to your role.</span></p></div>
   </section>;
+}
+
+// The backend sends only a code in ?oauth_error= (never text), so this page alone decides the
+// wording — a crafted link can't make the login page display a message of someone else's choosing.
+function oauthErrorMessage(code: string) {
+  switch (code) {
+    case 'cancelled':
+      return 'Sign-in was cancelled.';
+    case 'state_invalid':
+      return 'This sign-in attempt expired or was started in a different browser. Please try again.';
+    case 'email_unverified':
+      return 'Your account with that provider has no verified email address. Verify one there, then try again.';
+    case 'account_inactive':
+      return 'This account is not active. Contact your workspace administrator.';
+    case 'not_enabled':
+      return 'That sign-in method is not available right now.';
+    case 'provider_error':
+      return 'We couldn’t complete sign-in with the provider. Please try again in a moment.';
+    default:
+      return 'Sign-in failed. Please try again.';
+  }
+}
+
+// Google's multi-colour "G" — its brand guidelines ask for the original mark on sign-in buttons.
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" height="18" viewBox="0 0 48 48" width="18">
+      <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z" />
+      <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z" />
+    </svg>
+  );
 }
 
 function getAuthRedirectTarget() {

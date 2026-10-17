@@ -13,7 +13,7 @@ import { User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
-import { verifyAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { assertSessionCurrent, verifyAccessToken, verifyRefreshToken } from '../utils/tokens.js';
 import {
   assertGithubOAuthConfigured,
   createGithubOAuthState,
@@ -356,6 +356,7 @@ async function userFromOAuthRequest(req) {
   const payload = token ? verifyAccessToken(String(token)) : verifyRefreshTokenFromCookie(req);
   const user = await User.findById(payload.sub);
   if (!user || user.status !== 'active') throw new ApiError(401, 'Invalid or disabled user.');
+  assertSessionCurrent(payload, user);
   return user;
 }
 

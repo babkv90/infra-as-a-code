@@ -9,7 +9,7 @@ import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
-import { sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { assertSessionCurrent, sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
 import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
 import { EmailConfigurationError, sendPasswordResetEmail } from '../services/emailService.js';
 
@@ -88,6 +88,13 @@ export const register = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.validated.body;
   const user = await User.findOne({ email }).select('+password');
+
+  if (user && !user.password) {
+    throw new ApiError(
+      401,
+      'This account signs in with Google or GitHub. Use that button above, or choose "Forgot password?" to set a password.',
+    );
+  }
 
   if (!user || !(await user.comparePassword(password))) {
     throw new ApiError(401, 'Invalid email or password');
@@ -202,6 +209,10 @@ export const resetPassword = asyncHandler(async (req, res) => {
   user.password = password;
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
+  // Using the emailed token proves inbox ownership. A reset also revokes every existing session —
+  // a reset is very often "someone else may have my password".
+  user.emailVerified = true;
+  user.sessionVersion = (user.sessionVersion ?? 0) + 1;
   await user.save();
 
   res.clearCookie('refreshToken');
@@ -223,6 +234,7 @@ export const refresh = asyncHandler(async (req, res) => {
   if (!user || user.status !== 'active') {
     throw new ApiError(401, 'Invalid refresh token');
   }
+  assertSessionCurrent(payload, user);
 
   res.json({
     success: true,
@@ -243,7 +255,7 @@ export const logout = asyncHandler(async (_req, res) => {
   res.json({ success: true, message: 'Logged out' });
 });
 
-function serializeUser(user, workspace) {
+export function serializeUser(user, workspace) {
   return {
     id: user._id,
     name: user.name,

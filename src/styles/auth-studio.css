@@ -118,3 +118,22 @@
   .app-theme.ui-studio .auth-card-header p { font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .studio-auth-spinner { animation: none; } }
+
+/* Continue with Google / GitHub. Base rules inherit the surrounding theme's text colour so Classic
+   (dark, pearl, light) needs no per-theme overrides; Studio swaps in its own tokens below. */
+.auth-oauth { display: grid; gap: 10px; margin-bottom: 18px; }
+.auth-oauth-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 10px 16px; border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 10px; background: rgba(148, 163, 184, 0.08); color: inherit; font: inherit; font-weight: 600; cursor: pointer; transition: background 120ms, border-color 120ms; }
+.auth-oauth-button:hover:not(:disabled) { background: rgba(148, 163, 184, 0.16); border-color: rgba(148, 163, 184, 0.6); }
+.auth-oauth-button:disabled { opacity: 0.6; cursor: wait; }
+.auth-oauth-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.auth-oauth-status { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; font-size: 13px; }
+.auth-oauth-legal { margin: 2px 0 0; font-size: 12px; line-height: 1.5; opacity: 0.75; text-align: center; }
+.auth-oauth-legal a { color: inherit; text-decoration: underline; }
+.auth-oauth-divider { display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
+.auth-oauth-divider::before, .auth-oauth-divider::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.3; }
+.app-theme.ui-studio .auth-oauth-button { border-color: var(--studio-line); border-radius: 8px; background: var(--studio-surface); color: var(--studio-ink); font-weight: 550; }
+.app-theme.ui-studio .auth-oauth-button:hover:not(:disabled) { border-color: var(--studio-line); background: var(--studio-soft); }
+.app-theme.ui-studio :is(.auth-oauth-legal, .auth-oauth-divider) { color: var(--studio-muted); opacity: 1; }
+.auth-oauth-notice { display: grid; gap: 8px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid rgba(217, 119, 6, 0.45); border-radius: 10px; background: rgba(245, 158, 11, 0.1); }
+.auth-oauth-notice p { margin: 0; font-size: 13px; line-height: 1.55; }
+.app-theme.ui-studio .auth-oauth-notice { border-color: var(--studio-line); background: var(--studio-soft); color: var(--studio-ink); }

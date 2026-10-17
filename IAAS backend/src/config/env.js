@@ -64,8 +64,14 @@ function readMergedList(names, fallback) {
   );
 }
 
+const DEV_OAUTH_STATE_SECRET = 'dev-oauth-state-secret-change-me';
+
 export const env = {
   NODE_ENV: readString('NODE_ENV', 'development'),
+  // True on any real deployment — production NODE_ENV, or running inside Lambda at all (same signal
+  // the dotenv guard above uses). Used where "is this a developer's laptop?" must not hinge on
+  // someone remembering to set NODE_ENV: Secure cookies, and never trusting localhost/http origins.
+  IS_DEPLOYED: readString('NODE_ENV') === 'production' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME),
   PORT: readNumber('PORT', 4000),
   MONGODB_URI: readString('MONGODB_URI'),
   JWT_ACCESS_SECRET: readString('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
@@ -136,6 +142,24 @@ export const env = {
     ['INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY', 'GITHUB_TOKEN_ENCRYPTION_KEY'],
     'dev-github-token-encryption-key-change-me',
   ),
+  // "Continue with Google / GitHub" on the login page (controllers/oauthController.js). Each provider
+  // is switched on only when both its client id and secret are set — GET /auth/oauth/providers tells
+  // the login page which buttons to render, so an unconfigured provider simply never appears.
+  GOOGLE_CLIENT_ID: readString('GOOGLE_CLIENT_ID'),
+  GOOGLE_CLIENT_SECRET: readString('GOOGLE_CLIENT_SECRET'),
+  // Deliberately a separate GitHub OAuth app from GITHUB_CLIENT_ID above: that one asks for
+  // repo+workflow so it can push Terraform, while signing in only needs read:user user:email — and a
+  // GitHub OAuth app has exactly one callback URL, which is already the repo-connection callback.
+  GITHUB_LOGIN_CLIENT_ID: readString('GITHUB_LOGIN_CLIENT_ID'),
+  GITHUB_LOGIN_CLIENT_SECRET: readString('GITHUB_LOGIN_CLIENT_SECRET'),
+  // Public base URL of this API including /api/v1 (e.g. https://api.example.com/api/v1). Provider
+  // callbacks become <base>/auth/oauth/<provider>/callback and must match the redirect URI registered
+  // with Google/GitHub byte for byte. Empty = derived from the incoming request's protocol + host.
+  OAUTH_CALLBACK_BASE_URL: readString('OAUTH_CALLBACK_BASE_URL').replace(/\/+$/, ''),
+  // Signs the short-lived cookie that carries one sign-in attempt's state/nonce/PKCE verifier between
+  // /oauth/<provider>/start and its callback. Its own secret, like the others here, so rotating it
+  // only abandons sign-ins that are in flight at that moment.
+  OAUTH_STATE_SECRET: readString('OAUTH_STATE_SECRET', DEV_OAUTH_STATE_SECRET),
   // Selects which runner NEW deployments are created with (src/services/deploymentExecutorDispatch.js).
   // Read once, at deployment-creation time only — Deployment.executor then pins that single record to
   // whichever value was in effect at that moment, for its entire lifecycle. Flipping this later never
@@ -210,6 +234,28 @@ if (env.GITHUB_TOKEN_ENCRYPTION_KEY === 'dev-github-token-encryption-key-change-
       'Every stored GitHub token is encrypted with this key; set INFRAFLOW_GITHUB_TOKEN_ENCRYPTION_KEY ' +
       'to a real secret before any real user connects GitHub.',
   );
+}
+
+// Fails closed, but only for social sign-in: on a real deployment a publicly-known state secret
+// switches every provider off (services/oauthProviders.js) instead of throwing here, so a missing
+// OAuth setting can't take the rest of the API — password login included — down with it.
+export const oauthStateSecretUsable = !(env.IS_DEPLOYED && env.OAUTH_STATE_SECRET === DEV_OAUTH_STATE_SECRET);
+
+if (
+  env.OAUTH_STATE_SECRET === DEV_OAUTH_STATE_SECRET &&
+  ((env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) || (env.GITHUB_LOGIN_CLIENT_ID && env.GITHUB_LOGIN_CLIENT_SECRET))
+) {
+  if (oauthStateSecretUsable) {
+    console.warn(
+      'OAUTH_STATE_SECRET is not set — falling back to a shared, publicly-known dev value. ' +
+        'Set OAUTH_STATE_SECRET to a real secret before enabling Google/GitHub sign-in anywhere real.',
+    );
+  } else {
+    console.error(
+      'OAUTH_STATE_SECRET is not set on a deployed environment — Google/GitHub sign-in is DISABLED ' +
+        'until it is set to a real secret. Password login is unaffected.',
+    );
+  }
 }
 
 if (env.STORAGE_MODE === 's3' && !env.STORAGE_S3_BUCKET) {
