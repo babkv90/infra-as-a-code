@@ -8,9 +8,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 import { env } from '../config/env.js';
+
+// pdf-parse (pdfjs + a native canvas binary, Node >= 20.16) and mammoth are loaded on first use,
+// not at import: this module is reachable from every route, so a top-level import that fails on
+// the host would take the whole API down instead of failing just the one document scan.
+const loadPdfParse = () => import('pdf-parse');
+const loadMammoth = () => import('mammoth').then((module) => module.default ?? module);
 
 const SUPPORTED_EXTENSIONS = new Set(['.pdf', '.md', '.docx']);
 const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', '.venv', 'dist', '__pycache__', '.next']);
@@ -218,6 +222,7 @@ async function extractContent(filePath, ext) {
     }
     if (ext === '.pdf') {
       const buffer = await fs.readFile(filePath);
+      const { PDFParse } = await loadPdfParse();
       const parser = new PDFParse({ data: buffer });
       try {
         const parsed = await parser.getText();
@@ -227,6 +232,7 @@ async function extractContent(filePath, ext) {
       }
     }
     if (ext === '.docx') {
+      const mammoth = await loadMammoth();
       const { value } = await mammoth.extractRawText({ path: filePath });
       return { blocks: capBlocks(parseParagraphBlocks(value)) };
     }

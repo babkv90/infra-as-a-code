@@ -70,7 +70,36 @@ const result = await build({
   metafile: true,
 });
 
-writeFileSync(path.join(outDir, 'lambda.js'), "export { handler } from './src/bundle/lambda.mjs';\n");
+// The entrypoint loads the bundle itself, so a failure while loading it (a missing native binary,
+// an unsupported Node version) becomes a logged, explained 500 instead of an opaque Lambda init
+// crash that API Gateway reports only as "Internal Server Error".
+writeFileSync(
+  path.join(outDir, 'lambda.js'),
+  `let app;
+let startupError;
+try {
+  app = await import('./src/bundle/lambda.mjs');
+} catch (error) {
+  startupError = error;
+  console.error('Backend failed to start', error);
+}
+
+export const handler = async (event, context) => {
+  if (app) return app.handler(event, context);
+  return {
+    statusCode: 500,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      success: false,
+      message: 'Backend failed to start',
+      startupError: \`\${startupError?.code ?? startupError?.name ?? 'Error'}: \${String(startupError?.message ?? startupError).split('\\n')[0].slice(0, 300)}\`,
+      node: process.version,
+      arch: process.arch,
+    }),
+  };
+};
+`,
+);
 
 // Runtime files the code reads relative to its own location.
 const sharedSource = [path.join(backendRoot, 'shared'), path.join(backendRoot, '..', 'shared')].find((dir) => existsSync(path.join(dir, 'resourceRegistry.json')));
