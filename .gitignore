@@ -10,3 +10,9 @@ pnpm-debug.log*
 coverage
 dist
 .DS_Store
+
+# Local scratch: screenshots, render checks, design backups, throwaway prototypes
+tmp/
+output/
+backups/
+prototypes/
