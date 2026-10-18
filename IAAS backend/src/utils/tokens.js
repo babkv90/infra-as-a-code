@@ -50,14 +50,31 @@ export function assertSessionCurrent(payload, user) {
   }
 }
 
+// The refresh cookie is the only thing that survives a reload — the SPA keeps the access token in
+// memory and calls POST /auth/refresh to get a new one. Deployed, the SPA (CloudFront) and the API
+// (execute-api) are different sites, so the cookie must be SameSite=None (which requires Secure) or
+// the browser never sends it on that fetch; utils/cors.js is what stops other sites from using it.
+// Locally both run on 127.0.0.1, where Lax works over plain http.
+function refreshCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: env.IS_DEPLOYED ? 'none' : 'lax',
+    secure: env.IS_DEPLOYED,
+  };
+}
+
+// Must carry the same SameSite/Secure as when it was set: a cross-site response can't overwrite a
+// SameSite=None cookie with a Lax one, so a bare clearCookie would silently leave it in place.
+export function clearRefreshCookie(res) {
+  res.clearCookie('refreshToken', refreshCookieOptions());
+}
+
 export function sendAuthTokens(res, user) {
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user);
 
   res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: env.NODE_ENV === 'production',
+    ...refreshCookieOptions(),
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 

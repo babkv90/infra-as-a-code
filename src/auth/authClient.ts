@@ -1,7 +1,17 @@
 import { API_BASE_URL } from '../utils/apiBaseUrl';
 
-const TOKEN_KEY = 'infra-auth-token';
 const USER_KEY = 'infra-auth-user';
+
+// The access token lives only in this module's memory — never in localStorage, where any script that
+// runs on the page could read it. A reload or a new tab starts without one, and refreshSession()
+// trades the httpOnly refresh cookie (which page scripts can't read) for a fresh one. The cached user
+// in localStorage is not a credential; it only lets the UI render roles before the API answers.
+let accessToken: string | null = null;
+let refreshInFlight: Promise<AuthUser | null> | null = null;
+
+// Earlier builds kept the token in localStorage; drop any copy left behind.
+const LEGACY_TOKEN_KEY = 'infra-auth-token';
+try { window.localStorage.removeItem(LEGACY_TOKEN_KEY); } catch { /* Storage is optional. */ }
 
 export type AuthUser = {
   id: string;
@@ -175,13 +185,11 @@ export async function resetPassword(payload: { token: string; password: string }
 }
 
 export async function logout() {
-  const token = getStoredToken();
-
   try {
     await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
       credentials: 'include',
     });
@@ -190,8 +198,48 @@ export async function logout() {
   }
 }
 
-export function getStoredToken() {
-  return window.localStorage.getItem(TOKEN_KEY);
+export function getAccessToken() {
+  return accessToken;
+}
+
+// Trades the refresh cookie for a new access token (and the current user). Concurrent callers — a
+// page's parallel requests all hitting 401 at once — share one request. Resolves null when the
+// session is gone (no cookie, expired, revoked) and clears the local session.
+export function refreshSession(): Promise<AuthUser | null> {
+  refreshInFlight ??= (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
+      const result = (await response.json().catch(() => null)) as AuthResponse | null;
+      if (!response.ok || !result?.success || !result.data?.accessToken) {
+        clearAuthSession();
+        return null;
+      }
+      storeAuthSession(result.data.accessToken, result.data.user);
+      return result.data.user;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+// fetch() for authenticated API calls: attaches the bearer token and, on a 401 (token expired or
+// missing after a reload), refreshes once and retries. If the refresh fails, the original 401
+// response is returned for the caller to report.
+export async function authFetch(url: string, init: RequestInit = {}) {
+  const send = () =>
+    fetch(url, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...init.headers,
+      },
+    });
+
+  const response = await send();
+  if (response.status !== 401) return response;
+  return (await refreshSession()) ? send() : response;
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -205,32 +253,25 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-export function storeAuthSession(accessToken: string, user: AuthUser) {
-  window.localStorage.setItem(TOKEN_KEY, accessToken);
+export function storeAuthSession(token: string, user: AuthUser) {
+  accessToken = token;
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function clearAuthSession() {
-  window.localStorage.removeItem(TOKEN_KEY);
+  accessToken = null;
   window.localStorage.removeItem(USER_KEY);
 }
 
+// Resolves the signed-in user, or null. After a reload there is no access token in memory, so this
+// restores one from the refresh cookie. A visitor with no cached user has never signed in on this
+// browser (or signed out), so it skips the round trip and answers null straight away.
 export async function validateStoredSession() {
-  const token = getStoredToken();
-
-  if (!token) {
-    clearAuthSession();
-    return null;
+  if (!accessToken) {
+    return getStoredUser() ? refreshSession() : null;
   }
 
-  const response = await fetch(`${API_BASE_URL}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    credentials: 'include',
-    
-  });
-
+  const response = await authFetch(`${API_BASE_URL}/auth/me`);
   const result = (await response.json().catch(() => null)) as MeResponse | null;
 
   if (!response.ok || !result?.success || !result.data?.user) {
@@ -238,7 +279,7 @@ export async function validateStoredSession() {
     return null;
   }
 
-  storeAuthSession(token, result.data.user);
+  window.localStorage.setItem(USER_KEY, JSON.stringify(result.data.user));
   return result.data.user;
 }
 

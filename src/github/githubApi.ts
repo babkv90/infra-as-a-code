@@ -1,4 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
+import { getAccessToken } from '../auth/authClient';
 import { API_BASE_URL, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
 export type GithubConnection = {
@@ -58,9 +58,10 @@ export type GithubRepositoryAccess = {
 
 export function githubOAuthUrl({ mode = 'redirect', returnTo = '/settings' }: { mode?: 'redirect' | 'popup'; returnTo?: string } = {}) {
   const params = new URLSearchParams({ mode, returnTo });
-  const token = getStoredToken();
+  // A navigation can't send an Authorization header. If this token has expired by the time the user
+  // clicks, the backend falls back to the refresh cookie (githubController.js accessOrRefreshPayload).
+  const token = getAccessToken();
   if (token) params.set('token', token);
-  console.log( `${API_BASE_URL}/github/oauth/connect?${params.toString()}`)
   return `${API_BASE_URL}/github/oauth/connect?${params.toString()}`;
 }
 

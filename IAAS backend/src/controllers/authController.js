@@ -9,7 +9,7 @@ import { Workspace } from '../models/Workspace.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../utils/audit.js';
-import { assertSessionCurrent, sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
+import { assertSessionCurrent, clearRefreshCookie, sendAuthTokens, signAccessToken, verifyRefreshToken } from '../utils/tokens.js';
 import { ensureWorkspaceOwnerRole } from '../utils/workspaceOwnerRole.js';
 import { EmailConfigurationError, sendPasswordResetEmail } from '../services/emailService.js';
 
@@ -215,7 +215,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
   user.sessionVersion = (user.sessionVersion ?? 0) + 1;
   await user.save();
 
-  res.clearCookie('refreshToken');
+  clearRefreshCookie(res);
   await auditLog({ user, ip: req.ip }, 'auth.password_reset.completed', 'User', user._id);
 
   res.json({ success: true, message: 'Password has been reset. Please log in with your new password.' });
@@ -251,7 +251,7 @@ export const me = asyncHandler(async (req, res) => {
 });
 
 export const logout = asyncHandler(async (_req, res) => {
-  res.clearCookie('refreshToken');
+  clearRefreshCookie(res);
   res.json({ success: true, message: 'Logged out' });
 });
 

@@ -46,7 +46,7 @@ test('allowedAppOrigin: exact allowlist match only; anything else falls back to 
   const fallback = new URL(env.APP_BASE_URL).origin;
   const listed = new URL(env.CLIENT_ORIGINS[0]).origin;
   assert.equal(allowedAppOrigin(`${listed}/some/path`), listed);
-  // *.vercel.app passes the CORS check (utils/cors.js) but anyone can deploy there — not a redirect target.
+  // Anyone can deploy to *.vercel.app — an origin not listed in CLIENT_ORIGINS is never a redirect target.
   assert.equal(allowedAppOrigin('https://attacker.vercel.app'), fallback);
   assert.equal(allowedAppOrigin('javascript:alert(1)'), fallback);
   assert.equal(allowedAppOrigin(undefined), fallback);

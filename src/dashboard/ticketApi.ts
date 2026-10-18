@@ -1,4 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
+import { authFetch } from '../auth/authClient';
 import { API_BASE_URL, apiFormRequest, apiRequest as sharedApiRequest } from '../utils/apiClient';
 
 const ticketRequest = <T,>(path: string, init?: RequestInit) => sharedApiRequest<T>(path, init, 'Ticket request failed');
@@ -121,11 +121,7 @@ export async function updateTicketStatus(id: string, status: TicketStatus) {
 // authenticate. Fetch the bytes with the token attached and hand back a short-lived blob URL
 // instead of putting the token in a URL (which would leak into logs, history, and Referer headers).
 export async function fetchTicketAttachmentBlobUrl(attachment: TicketAttachment) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${attachment.url}`, {
-    credentials: 'include',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const response = await authFetch(`${API_BASE_URL}${attachment.url}`);
   if (!response.ok) throw new Error('Unable to load attachment');
   const blob = await response.blob();
   return URL.createObjectURL(blob);

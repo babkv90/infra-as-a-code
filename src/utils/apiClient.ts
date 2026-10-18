@@ -1,4 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
+import { authFetch } from '../auth/authClient';
 import { API_BASE_URL } from './apiBaseUrl';
 
 export { API_BASE_URL };
@@ -17,7 +17,8 @@ async function unwrap<T>(response: Response, fallbackMessage: string): Promise<T
   return result.data as T;
 }
 
-// Shared JSON request helper used by every API client module — attaches the bearer token, sets
+// Shared JSON request helper used by every API client module — goes through authFetch (bearer
+// token, one refresh-and-retry on 401), sets
 // the JSON content type, and unwraps the backend's {success,data,message} envelope into a thrown
 // Error on failure. A few call sites have genuinely different contracts and intentionally don't
 // use this: authClient.ts's validateStoredSession() returns null instead of throwing (App.tsx's
@@ -25,13 +26,10 @@ async function unwrap<T>(response: Response, fallbackMessage: string): Promise<T
 // fetchTicketAttachmentBlobUrl() reads a Blob rather than JSON, and terraformPayloadApi.ts returns
 // the whole response envelope rather than just its `data` field.
 export async function apiRequest<T>(path: string, init: RequestInit = {}, fallbackMessage = 'Request failed'): Promise<T> {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authFetch(`${API_BASE_URL}${path}`, {
     ...init,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
   });
@@ -41,14 +39,6 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, fallba
 // Same as apiRequest, but for multipart/form-data uploads — no Content-Type header, so the
 // browser can set the multipart boundary itself.
 export async function apiFormRequest<T>(path: string, form: FormData, fallbackMessage = 'Request failed'): Promise<T> {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: form,
-  });
+  const response = await authFetch(`${API_BASE_URL}${path}`, { method: 'POST', body: form });
   return unwrap<T>(response, fallbackMessage);
 }

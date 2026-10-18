@@ -1,6 +1,6 @@
 // Real-browser check of "Continue with Google": drives Chrome through the actual SPA and backend.
 //
-//   1. Start the frontend:   npm run dev            (repo root — must serve http://localhost:5173)
+//   1. Start the frontend:   npm run dev            (repo root — must serve http://127.0.0.1:5173)
 //   2. Run this:             OAUTH_IT_MONGODB_URI=mongodb://127.0.0.1:27017 npm run e2e:oauth-browser
 //                            (IAAS backend/; set CHROME_PATH if Chrome isn't at the Windows default)
 //
@@ -20,7 +20,9 @@ if (!MONGO_URI) {
   process.exit(2);
 }
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const SPA = 'http://localhost:5173';
+// Same site as the API on 127.0.0.1:4001, so the refresh cookie is sent (src/main.tsx redirects
+// localhost here in dev for the same reason).
+const SPA = 'http://127.0.0.1:5173';
 const screenshotDir = process.env.E2E_SCREENSHOT_DIR || '';
 
 process.env.GOOGLE_CLIENT_ID = 'browser-e2e.apps.googleusercontent.com';
@@ -113,11 +115,31 @@ try {
 
   await clickGoogle();
   check('Google round trip ends on /dashboard', await waitFor(`location.pathname === '/dashboard'`, 30000), await evaluate('location.href'));
-  check('access token stored for the Google identity', (await evaluate(`JSON.parse(localStorage.getItem('infra-auth-user') || '{}').email`)) === identity.email);
+  check('signed in as the Google identity', (await evaluate(`JSON.parse(localStorage.getItem('infra-auth-user') || '{}').email`)) === identity.email);
   check('tab verifier consumed', (await evaluate(`sessionStorage.getItem('infra-oauth-verifier')`)) === null);
   check('no ticket left in the URL', !(await evaluate('location.href')).includes('oauth_ticket'));
   await sleep(1500);
   await screenshot('02-dashboard.png');
+
+  // The access token is held in memory only (src/auth/authClient.ts); the httpOnly refresh cookie
+  // is what carries the session across a reload.
+  const jwtInStorage = `[localStorage, sessionStorage].some((s) => Object.keys(s).some((k) => /eyJ[\\w-]+\\.eyJ/.test(s.getItem(k) || '')))`;
+  check('no JWT in localStorage or sessionStorage', (await evaluate(jwtInStorage)) === false);
+  await navigate(`${SPA}/dashboard`);
+  check('reload stays signed in via the refresh cookie', await waitFor(`import('/src/auth/authClient.ts').then((m) => !!m.getAccessToken())`));
+  await sleep(1000);
+  check('…and is still on /dashboard', (await evaluate('location.pathname')) === '/dashboard', await evaluate('location.href'));
+  check('…still with no JWT in storage', (await evaluate(jwtInStorage)) === false);
+  check(
+    'an expired access token is refreshed and the request retried',
+    await evaluate(`(async () => {
+      const auth = await import('/src/auth/authClient.ts');
+      const api = await import('/src/utils/apiClient.ts');
+      auth.storeAuthSession('expired.access.token', auth.getStoredUser());
+      const me = await api.apiRequest('/auth/me');
+      return me?.user?.email === ${JSON.stringify(identity.email)} && auth.getAccessToken() !== 'expired.access.token';
+    })()`),
+  );
   await evaluate(`localStorage.clear()`);
 
   await navigate(`${SPA}/login?oauth_error=cancelled`);
@@ -146,7 +168,21 @@ try {
   await evaluate(`document.querySelector('.auth-oauth-notice button').click()`);
   check('Continue goes to /dashboard', await waitFor(`location.pathname === '/dashboard'`));
 
-  await evaluate(`localStorage.setItem('codemanus-ui-experience', 'classic'); localStorage.removeItem('infra-auth-token')`);
+  // Email + password login goes through the same in-memory session.
+  await realFetch('http://127.0.0.1:4001/api/v1/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Password Person', email: 'password.person@example.com', password: 'password-pass-1', acceptTerms: true }),
+  });
+  await evaluate(`import('/src/auth/authClient.ts').then((m) => m.login({ email: 'password.person@example.com', password: 'password-pass-1' }))`);
+  check('password login keeps the JWT out of storage', (await evaluate(jwtInStorage)) === false);
+  await navigate(`${SPA}/dashboard`);
+  check('password session survives a reload', await waitFor(`import('/src/auth/authClient.ts').then((m) => m.getAccessToken() && m.getStoredUser()?.email === 'password.person@example.com')`));
+  await evaluate(`import('/src/auth/authClient.ts').then((m) => m.logout())`);
+  await navigate(`${SPA}/dashboard`);
+  check('after logout a reload lands on /login', await waitFor(`location.pathname === '/login'`));
+
+  await evaluate(`localStorage.setItem('codemanus-ui-experience', 'classic'); localStorage.removeItem('infra-auth-user')`);
   await navigate(`${SPA}/login`);
   check('Classic experience renders the buttons too', await waitFor(`document.querySelectorAll('.auth-oauth-button').length === 2`));
   await screenshot('05-login-classic.png');

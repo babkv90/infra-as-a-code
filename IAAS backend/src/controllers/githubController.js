@@ -353,7 +353,7 @@ export async function githubTokenForUser(userId) {
 
 async function userFromOAuthRequest(req) {
   const token = bearerToken(req) || req.query.token;
-  const payload = token ? verifyAccessToken(String(token)) : verifyRefreshTokenFromCookie(req);
+  const payload = token ? accessOrRefreshPayload(req, String(token)) : verifyRefreshTokenFromCookie(req);
   const user = await User.findById(payload.sub);
   if (!user || user.status !== 'active') throw new ApiError(401, 'Invalid or disabled user.');
   assertSessionCurrent(payload, user);
@@ -363,6 +363,18 @@ async function userFromOAuthRequest(req) {
 function bearerToken(req) {
   const authHeader = req.headers.authorization ?? '';
   return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+}
+
+// The connect URL is opened synchronously from a click (popup blockers), so the SPA can't refresh
+// first: a short-lived access token in it may already have expired. The refresh cookie still
+// identifies the same session, so fall back to it rather than failing the connect.
+function accessOrRefreshPayload(req, token) {
+  try {
+    return verifyAccessToken(token);
+  } catch (error) {
+    if (!req.cookies?.refreshToken) throw error;
+    return verifyRefreshTokenFromCookie(req);
+  }
 }
 
 function verifyRefreshTokenFromCookie(req) {

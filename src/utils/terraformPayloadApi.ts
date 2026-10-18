@@ -1,4 +1,4 @@
-import { getStoredToken } from '../auth/authClient';
+import { authFetch } from '../auth/authClient';
 import type { AwsEdge, AwsNode } from '../types';
 import { API_BASE_URL } from './apiBaseUrl';
 
@@ -15,13 +15,10 @@ export type TerraformPayloadResponse = {
 };
 
 export async function sendTerraformPayload(payload: TerraformPayload) {
-  const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}/terraform-payload`, {
+  const response = await authFetch(`${API_BASE_URL}/terraform-payload`, {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload),
   });

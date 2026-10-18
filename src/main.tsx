@@ -4,6 +4,7 @@ import { ReactFlowProvider } from 'reactflow';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initializeAnalytics } from './utils/analytics';
+import { API_BASE_URL } from './utils/apiBaseUrl';
 import { UiExperienceProvider } from './ui/UiExperience';
 import 'reactflow/dist/style.css';
 import './styles.css';
@@ -19,14 +20,23 @@ import './styles/momentum.css';
 import './styles/builder-compact.css';
 import './styles/table-scroll.css';
 
-initializeAnalytics();
+// Dev only: the local API is 127.0.0.1:4001, and to the browser localhost is a different site, so
+// the refresh cookie would never reach /auth/refresh and every reload would sign you out.
+const isDevSiteMismatch =
+  import.meta.env.DEV && window.location.hostname === 'localhost' && new URL(API_BASE_URL, window.location.href).hostname === '127.0.0.1';
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <ReactFlowProvider>
-        <UiExperienceProvider><App /></UiExperienceProvider>
-      </ReactFlowProvider>
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+if (isDevSiteMismatch) {
+  window.location.replace(window.location.href.replace('//localhost', '//127.0.0.1'));
+} else {
+  initializeAnalytics();
+
+  ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ReactFlowProvider>
+          <UiExperienceProvider><App /></UiExperienceProvider>
+        </ReactFlowProvider>
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+}

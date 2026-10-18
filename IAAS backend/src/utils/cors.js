@@ -1,20 +1,25 @@
 import { env } from '../config/env.js';
 
-const allowedCorsOrigins = new Set([
-  ...env.CLIENT_ORIGINS.map(normalizeOrigin),
-  'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
-  'https://d3pgg5abvvdatt.cloudfront.net',
-  'https://codemanus.in',
-  'https://www.codemanus.in',
-]);
+// Exact origins only — every allowed origin gets Access-Control-Allow-Credentials, and the refresh
+// cookie is SameSite=None when deployed (utils/tokens.js), so an allowed origin can call
+// POST /auth/refresh as the visitor and read back their access token. A wildcard such as
+// *.cloudfront.net or *.vercel.app would hand that to anyone who deploys a page there. Add preview
+// or extra frontends to CLIENT_ORIGINS instead.
+const allowedCorsOrigins = new Set(
+  [
+    ...env.CLIENT_ORIGINS,
+    'https://v72gcv51pi.execute-api.ap-south-1.amazonaws.com',
+    'https://d3pgg5abvvdatt.cloudfront.net',
+    'https://codemanus.in',
+    'https://www.codemanus.in',
+  ]
+    .map(normalizeOrigin)
+    .filter((origin) => !env.IS_DEPLOYED || isPublicHttpsOrigin(origin)),
+);
 
 export function isAllowedCorsOrigin(origin) {
-  const normalizedOrigin = normalizeOrigin(origin);
   if (!origin) return true;
-  if (allowedCorsOrigins.has(normalizedOrigin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.execute-api\.[^.]+\.amazonaws\.com$/i.test(normalizedOrigin)
-    || /^https:\/\/[a-z0-9-]+\.cloudfront\.net$/i.test(normalizedOrigin)
-    || /^https:\/\/[a-z0-9-]+(?:-[a-z0-9-]+)*\.vercel\.app$/i.test(normalizedOrigin);
+  return allowedCorsOrigins.has(normalizeOrigin(origin));
 }
 
 export function corsHeaders(origin) {
@@ -31,4 +36,15 @@ export function corsHeaders(origin) {
 
 function normalizeOrigin(origin = '') {
   return String(origin).trim().replace(/\/+$/, '');
+}
+
+// env.js always merges the http://localhost dev origins into CLIENT_ORIGINS; a deployed API must not
+// let whatever happens to run on a visitor's localhost read their session.
+function isPublicHttpsOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
